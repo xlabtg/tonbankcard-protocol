@@ -111,7 +111,22 @@ Direct pushes to `main` are prohibited.
 
 ---
 
-### 8. Security & Disclosure
+### 8. Architecture Governance
+
+The protocol architecture is frozen and defined in the Architecture Baseline (PR #10).
+
+Any changes to:
+- protocol layers
+- trust boundaries
+- core responsibilities
+
+require a dedicated Architecture Issue and explicit approval.
+
+Architecture changes must not be introduced implicitly via implementation PRs.
+
+---
+
+### 9. Security & Disclosure
 
 Security issues must NOT be disclosed publicly.
 
