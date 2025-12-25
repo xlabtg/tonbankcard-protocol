@@ -346,6 +346,52 @@ See `CONTRIBUTING.md` for detailed development rules.
 5. Tests required for smart contracts
 6. Documentation updated with code
 
+## Payment Hub Components
+
+### Account Locks (Implemented - Issue #7)
+
+**Purpose**: On-chain lock flags for NFT accounts to restrict operations without taking custody.
+
+**Lock Types**:
+- **FRAUD_LOCK**: Blocks suspicious accounts from sending TBC
+- **COLLATERAL_LOCK**: Restricts accounts used as lending collateral
+- **READ_ONLY** (future): Full lockdown for regulatory compliance
+
+**Key Features**:
+- Non-custodial: Locks are flags, not custody mechanisms
+- Receiving always allowed: Locked accounts can still receive TBC
+- Authorization-based: Only designated authorities can manage locks
+- Event-driven: All lock changes emit indexable events
+
+**Public Interface**:
+```
+get_account_lock_state(nft_address) -> (fraud_locked, collateral_locked)
+get_is_account_locked(nft_address) -> bool
+get_can_send(nft_address) -> bool
+get_can_receive(nft_address) -> bool
+```
+
+**Integration Points**:
+- Payment Hub checks locks before SEND operations
+- Merchant API queries lock status for risk assessment
+- UI displays lock warnings to users
+- Marketplace shows lock flags on NFT listings
+
+**Authorization**:
+- Risk Authority: Manages fraud locks (future: DAO-controlled)
+- Lending Adapter: Manages collateral locks
+
+**Contract Location**: `contracts/payments/account-locks.fc`
+**Documentation**: `contracts/payments/README.md`
+
+### Account State Machine (Planned - Issue #5)
+
+Manages account states (ACTIVE, FROZEN, COLLATERAL_LOCKED, CLOSED) and balance tracking.
+
+### Internal Transfers (Planned - Issue #6)
+
+Zero-fee TBC transfers between NFT accounts with lock enforcement.
+
 ## Future Architecture Components
 
 ### Not Yet Implemented
@@ -374,6 +420,6 @@ See `CONTRIBUTING.md` for detailed development rules.
 
 ---
 
-**Document Status**: Initial architecture baseline (Issue #2)
-**Last Updated**: 2024
+**Document Status**: Architecture with Account Locks implementation (Issue #7)
+**Last Updated**: 2025-12-25
 **Maintainers**: Tonbankcard Protocol Team

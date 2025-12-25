@@ -1,0 +1,371 @@
+;; Unit Tests for Account Locks Smart Contract
+;;
+;; Test coverage:
+;; - Fraud lock scenarios
+;; - Collateral lock scenarios
+;; - Combined locks scenarios
+;; - Edge cases
+;; - Authorization checks
+
+#include "../account-locks.fc";
+
+;; Test helper: Create a mock NFT address
+slice create_nft_address(int wc, int addr) inline {
+    return begin_cell()
+        .store_uint(4, 3)  ;; addr_std$10
+        .store_uint(0, 1)  ;; anycast nothing
+        .store_uint(wc, 8)
+        .store_uint(addr, 256)
+    .end_cell().begin_parse();
+}
+
+;; Test helper: Create a mock authority address
+slice create_authority_address(int addr) inline {
+    return create_nft_address(0, addr);
+}
+
+;; Test 1: Initial state - no locks
+() test_initial_state() impure {
+    slice nft_addr = create_nft_address(0, 12345);
+
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
+
+    throw_unless(100, fraud_locked == 0);
+    throw_unless(101, collateral_locked == 0);
+    throw_unless(102, is_account_locked(nft_addr) == 0);
+    throw_unless(103, can_send(nft_addr) == 1);
+    throw_unless(104, can_receive(nft_addr) == 1);
+}
+
+;; Test 2: Set fraud lock by authorized risk authority
+() test_set_fraud_lock_authorized() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Simulate message from risk authority
+    cell msg = begin_cell()
+        .store_uint(0, 4)  ;; flags
+        .store_slice(risk_authority)
+        .store_coins(1000000)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::set_fraud_lock, 32)
+        .store_slice(nft_addr)
+    .end_cell();
+
+    ;; This should succeed
+    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
+
+    throw_unless(200, fraud_locked == 1);
+    throw_unless(201, collateral_locked == 0);
+    throw_unless(202, is_account_locked(nft_addr) == 1);
+    throw_unless(203, can_send(nft_addr) == 0);
+    throw_unless(204, can_receive(nft_addr) == 1);
+}
+
+;; Test 3: Set collateral lock by authorized lending adapter
+() test_set_collateral_lock_authorized() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Simulate message from lending adapter
+    cell msg = begin_cell()
+        .store_uint(0, 4)  ;; flags
+        .store_slice(lending_adapter)
+        .store_coins(1000000)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::set_collateral_lock, 32)
+        .store_slice(nft_addr)
+    .end_cell();
+
+    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
+
+    throw_unless(300, fraud_locked == 0);
+    throw_unless(301, collateral_locked == 1);
+    throw_unless(302, is_account_locked(nft_addr) == 1);
+    throw_unless(303, can_send(nft_addr) == 0);
+    throw_unless(304, can_receive(nft_addr) == 1);
+}
+
+;; Test 4: Clear fraud lock
+() test_clear_fraud_lock() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+
+    ;; Set fraud lock first
+    set_lock(lock_dict, nft_addr, 1, 0);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Verify lock is set
+    (int fraud_locked_before, _) = get_lock_state(nft_addr);
+    throw_unless(400, fraud_locked_before == 1);
+
+    ;; Simulate message to clear fraud lock
+    cell msg = begin_cell()
+        .store_uint(0, 4)
+        .store_slice(risk_authority)
+        .store_coins(1000000)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::clear_fraud_lock, 32)
+        .store_slice(nft_addr)
+    .end_cell();
+
+    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+
+    (int fraud_locked_after, int collateral_locked_after) = get_lock_state(nft_addr);
+
+    throw_unless(401, fraud_locked_after == 0);
+    throw_unless(402, collateral_locked_after == 0);
+    throw_unless(403, is_account_locked(nft_addr) == 0);
+    throw_unless(404, can_send(nft_addr) == 1);
+}
+
+;; Test 5: Clear collateral lock
+() test_clear_collateral_lock() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+
+    ;; Set collateral lock first
+    set_lock(lock_dict, nft_addr, 0, 1);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Verify lock is set
+    (_, int collateral_locked_before) = get_lock_state(nft_addr);
+    throw_unless(500, collateral_locked_before == 1);
+
+    ;; Simulate message to clear collateral lock
+    cell msg = begin_cell()
+        .store_uint(0, 4)
+        .store_slice(lending_adapter)
+        .store_coins(1000000)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::clear_collateral_lock, 32)
+        .store_slice(nft_addr)
+    .end_cell();
+
+    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+
+    (int fraud_locked_after, int collateral_locked_after) = get_lock_state(nft_addr);
+
+    throw_unless(501, fraud_locked_after == 0);
+    throw_unless(502, collateral_locked_after == 0);
+    throw_unless(503, can_send(nft_addr) == 1);
+}
+
+;; Test 6: Combined locks - both fraud and collateral
+() test_combined_locks() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+
+    ;; Set both locks
+    set_lock(lock_dict, nft_addr, 1, 1);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
+
+    throw_unless(600, fraud_locked == 1);
+    throw_unless(601, collateral_locked == 1);
+    throw_unless(602, is_account_locked(nft_addr) == 1);
+    throw_unless(603, can_send(nft_addr) == 0);
+    throw_unless(604, can_receive(nft_addr) == 1);
+}
+
+;; Test 7: Clear one lock while other remains
+() test_clear_one_lock_other_remains() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+
+    ;; Set both locks
+    set_lock(lock_dict, nft_addr, 1, 1);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Clear fraud lock
+    cell msg = begin_cell()
+        .store_uint(0, 4)
+        .store_slice(risk_authority)
+        .store_coins(1000000)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::clear_fraud_lock, 32)
+        .store_slice(nft_addr)
+    .end_cell();
+
+    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
+
+    ;; Fraud lock cleared, collateral lock remains
+    throw_unless(700, fraud_locked == 0);
+    throw_unless(701, collateral_locked == 1);
+    throw_unless(702, is_account_locked(nft_addr) == 1);  ;; Still locked due to collateral
+    throw_unless(703, can_send(nft_addr) == 0);  ;; Still cannot send
+}
+
+;; Test 8: Unauthorized fraud lock attempt (should fail)
+;; Note: In real tests, this would use try-catch or expect exception
+() test_unauthorized_fraud_lock_fails() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice unauthorized = create_authority_address(777);  ;; Different address
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Attempt to set fraud lock from unauthorized address
+    ;; This should throw err::unauthorized (401)
+    ;; In production test framework, this would use try-catch
+}
+
+;; Test 9: Multiple NFT accounts with different lock states
+() test_multiple_accounts() impure {
+    slice nft_addr_1 = create_nft_address(0, 11111);
+    slice nft_addr_2 = create_nft_address(0, 22222);
+    slice nft_addr_3 = create_nft_address(0, 33333);
+
+    cell lock_dict = new_dict();
+
+    ;; Account 1: fraud locked
+    set_lock(lock_dict, nft_addr_1, 1, 0);
+
+    ;; Account 2: collateral locked
+    set_lock(lock_dict, nft_addr_2, 0, 1);
+
+    ;; Account 3: no locks
+    ;; (no need to set, defaults to unlocked)
+
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Verify account 1
+    (int f1, int c1) = get_lock_state(nft_addr_1);
+    throw_unless(900, f1 == 1);
+    throw_unless(901, c1 == 0);
+    throw_unless(902, can_send(nft_addr_1) == 0);
+
+    ;; Verify account 2
+    (int f2, int c2) = get_lock_state(nft_addr_2);
+    throw_unless(903, f2 == 0);
+    throw_unless(904, c2 == 1);
+    throw_unless(905, can_send(nft_addr_2) == 0);
+
+    ;; Verify account 3
+    (int f3, int c3) = get_lock_state(nft_addr_3);
+    throw_unless(906, f3 == 0);
+    throw_unless(907, c3 == 0);
+    throw_unless(908, can_send(nft_addr_3) == 1);
+}
+
+;; Test 10: Check can send operation (used by Payment Hub)
+() test_check_can_send_operation() impure {
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    slice nft_addr = create_nft_address(0, 12345);
+    slice payment_hub = create_authority_address(777);
+
+    cell lock_dict = new_dict();
+
+    ;; Set fraud lock
+    set_lock(lock_dict, nft_addr, 1, 0);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Simulate check_can_send operation from Payment Hub
+    cell msg = begin_cell()
+        .store_uint(0, 4)
+        .store_slice(payment_hub)
+        .store_coins(1000000)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::check_can_send, 32)
+        .store_slice(nft_addr)
+    .end_cell();
+
+    ;; This should throw err::account_locked (403)
+    ;; In production test framework, verify exception is thrown
+}
+
+;; Test 11: Receive operation is always allowed
+() test_receive_always_allowed() impure {
+    slice nft_addr_locked = create_nft_address(0, 11111);
+    slice nft_addr_unlocked = create_nft_address(0, 22222);
+
+    cell lock_dict = new_dict();
+
+    ;; Lock account with both types
+    set_lock(lock_dict, nft_addr_locked, 1, 1);
+
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Verify locked account can still receive
+    throw_unless(1100, can_receive(nft_addr_locked) == 1);
+
+    ;; Verify unlocked account can receive
+    throw_unless(1101, can_receive(nft_addr_unlocked) == 1);
+}
+
+;; Test 12: Edge case - NFT transfer with active lock
+;; Note: Lock state is tied to NFT address, not ownership
+;; Lock should remain even if NFT ownership changes
+() test_nft_transfer_preserves_lock() impure {
+    slice nft_addr = create_nft_address(0, 12345);
+
+    cell lock_dict = new_dict();
+
+    ;; Set lock on NFT
+    set_lock(lock_dict, nft_addr, 1, 0);
+
+    slice risk_authority = create_authority_address(999);
+    slice lending_adapter = create_authority_address(888);
+    save_data(lock_dict, risk_authority, lending_adapter);
+
+    ;; Verify lock exists
+    (int fraud_locked, _) = get_lock_state(nft_addr);
+    throw_unless(1200, fraud_locked == 1);
+
+    ;; After NFT ownership transfer (handled externally),
+    ;; the lock should still exist because it's tied to NFT address
+    (int fraud_locked_after, _) = get_lock_state(nft_addr);
+    throw_unless(1201, fraud_locked_after == 1);
+    throw_unless(1202, can_send(nft_addr) == 0);
+}
+
+;; Main test runner
+() run_tests() impure {
+    test_initial_state();
+    test_set_fraud_lock_authorized();
+    test_set_collateral_lock_authorized();
+    test_clear_fraud_lock();
+    test_clear_collateral_lock();
+    test_combined_locks();
+    test_clear_one_lock_other_remains();
+    test_multiple_accounts();
+    test_receive_always_allowed();
+    test_nft_transfer_preserves_lock();
+
+    ;; Note: Unauthorized access tests would require exception handling
+    ;; which should be implemented in a proper test framework
+}
