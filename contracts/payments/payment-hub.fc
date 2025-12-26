@@ -1,0 +1,371 @@
+;; Payment Hub Contract
+;; Core banking logic for Tonbankcard Protocol
+;;
+;; Responsibilities:
+;; - Route payments between NFT cards using TBC token
+;; - Validate NFT ownership for account operations
+;; - Support internal transfers (zero fee)
+;; - Enable merchant payment flows
+;; - Emit events for off-chain indexing
+;;
+;; Non-custodial by design:
+;; - No admin withdrawal of user funds
+;; - All operations require user signature
+;; - NFT ownership = account authority
+
+#include "stdlib.fc";
+
+;; Operation codes
+const int op::internal_transfer = 0x73774302;
+const int op::merchant_payment = 0x73774303;
+const int op::payment_received = 0x73774304;
+const int op::account_flagged = 0x73774305;
+const int op::set_paused = 0x73774306;
+const int op::verify_nft_ownership = 0x73774307;
+
+;; Error codes
+const int error::invalid_sender = 100;
+const int error::invalid_nft = 101;
+const int error::account_blocked = 102;
+const int error::insufficient_balance = 103;
+const int error::contract_paused = 104;
+const int error::unauthorized = 105;
+const int error::invalid_amount = 106;
+
+;; Storage layout
+;;
+;; admin_address: slice - admin for emergency pause only
+;; paused: int - emergency pause flag (0 = active, 1 = paused)
+;; nft_collection_addresses: cell - dictionary of allowed NFT collection addresses
+;; blocked_accounts: cell - dictionary of blocked NFT addresses
+;; tbc_jetton_master: slice - TBC jetton master contract address
+;;
+global slice admin_address;
+global int paused;
+global cell nft_collection_addresses;
+global cell blocked_accounts;
+global slice tbc_jetton_master;
+
+;; Load contract storage
+() load_data() impure {
+    slice ds = get_data().begin_parse();
+    admin_address = ds~load_msg_addr();
+    paused = ds~load_uint(1);
+    nft_collection_addresses = ds~load_dict();
+    blocked_accounts = ds~load_dict();
+    tbc_jetton_master = ds~load_msg_addr();
+}
+
+;; Save contract storage
+() save_data() impure {
+    set_data(begin_cell()
+        .store_slice(admin_address)
+        .store_uint(paused, 1)
+        .store_dict(nft_collection_addresses)
+        .store_dict(blocked_accounts)
+        .store_slice(tbc_jetton_master)
+        .end_cell()
+    );
+}
+
+;; Get NFT owner address
+;; This function queries the NFT item contract to retrieve the owner
+slice get_nft_owner(slice nft_address) inline {
+    ;; Call get_nft_data() method on NFT contract
+    ;; Returns: (int init?, int index, slice collection_address, slice owner_address, cell individual_content)
+    var (init?, index, collection_address, owner_address, individual_content) =
+        get_nft_data_raw(nft_address);
+
+    return owner_address;
+}
+
+;; Helper to call NFT contract's get_nft_data method
+;; In production, this would use run_method or similar TVM operation
+(int, int, slice, slice, cell) get_nft_data_raw(slice nft_address) inline_ref {
+    ;; This is a placeholder for the actual NFT data retrieval
+    ;; In real implementation, use: var result = run_method(nft_address, "get_nft_data");
+    ;; For now, return dummy data structure
+    ;; Production implementation would use proper cross-contract call
+
+    ;; Note: Actual implementation requires proper TVM run_method call
+    ;; This simplified version demonstrates the expected interface
+    return (1, 0, begin_cell().end_cell().begin_parse(), begin_cell().end_cell().begin_parse(), begin_cell().end_cell());
+}
+
+;; Verify NFT ownership and check if account is active
+(int, slice) verify_nft_account(slice nft_address, slice expected_owner) inline {
+    ;; Check if NFT is from allowed collection
+    var (collection_found, collection_value) = nft_collection_addresses.udict_get?(256, slice_hash(nft_address));
+    throw_unless(error::invalid_nft, collection_found);
+
+    ;; Check if account is not blocked
+    var (blocked, blocked_value) = blocked_accounts.udict_get?(256, slice_hash(nft_address));
+    throw_if(error::account_blocked, blocked);
+
+    ;; Get NFT owner
+    slice owner = get_nft_owner(nft_address);
+
+    ;; Verify ownership matches expected owner
+    throw_unless(error::unauthorized, equal_slices(owner, expected_owner));
+
+    return (true, owner);
+}
+
+;; Emit event for indexing
+() emit_event(int event_type, cell event_data) impure inline {
+    ;; Events are emitted as external messages for indexer to capture
+    var msg = begin_cell()
+        .store_uint(0x10, 6)  ;; external message
+        .store_uint(event_type, 32)
+        .store_ref(event_data)
+        .end_cell();
+
+    send_raw_message(msg, 0);
+}
+
+;; Internal transfer: NFT → NFT (zero fee)
+() handle_internal_transfer(
+    slice sender_address,
+    slice from_nft,
+    slice to_nft,
+    int amount,
+    cell memo
+) impure {
+    ;; Verify sender is owner of from_nft
+    var (valid, owner) = verify_nft_account(from_nft, sender_address);
+
+    ;; Verify to_nft is valid and active
+    var (to_collection_found, _) = nft_collection_addresses.udict_get?(256, slice_hash(to_nft));
+    throw_unless(error::invalid_nft, to_collection_found);
+
+    var (to_blocked, _) = blocked_accounts.udict_get?(256, slice_hash(to_nft));
+    throw_if(error::account_blocked, to_blocked);
+
+    ;; Amount must be positive
+    throw_unless(error::invalid_amount, amount > 0);
+
+    ;; In actual implementation, this would:
+    ;; 1. Get TBC jetton wallet address for from_nft
+    ;; 2. Send jetton transfer message
+    ;; 3. Jetton wallet validates balance and executes transfer
+    ;;
+    ;; For now, we emit the event to demonstrate the flow
+
+    ;; Emit TransferInternal event
+    cell event_data = begin_cell()
+        .store_slice(from_nft)
+        .store_slice(to_nft)
+        .store_coins(amount)
+        .store_ref(memo)
+        .end_cell();
+
+    emit_event(op::internal_transfer, event_data);
+}
+
+;; Merchant payment flow
+() handle_merchant_payment(
+    slice sender_address,
+    slice payer_nft,
+    slice merchant_nft,
+    int amount,
+    cell payment_details  ;; Contains: invoice_id, order_id, memo
+) impure {
+    ;; Verify payer NFT ownership
+    var (valid, owner) = verify_nft_account(payer_nft, sender_address);
+
+    ;; Verify merchant NFT is valid
+    var (merchant_valid, _) = nft_collection_addresses.udict_get?(256, slice_hash(merchant_nft));
+    throw_unless(error::invalid_nft, merchant_valid);
+
+    ;; Amount must be positive
+    throw_unless(error::invalid_amount, amount > 0);
+
+    ;; In actual implementation:
+    ;; - Execute jetton transfer from payer to merchant
+    ;; - Parse payment_details for invoice_id, order_id
+    ;; - Potentially trigger callback webhook (via off-chain indexer)
+
+    ;; Emit MerchantPaid event
+    cell event_data = begin_cell()
+        .store_slice(payer_nft)
+        .store_slice(merchant_nft)
+        .store_coins(amount)
+        .store_ref(payment_details)
+        .end_cell();
+
+    emit_event(op::merchant_payment, event_data);
+}
+
+;; Handle incoming payment (external entry from DEX)
+() handle_payment_received(
+    slice recipient_nft,
+    int amount,
+    slice source_address,
+    cell details
+) impure {
+    ;; Verify recipient NFT is valid
+    var (nft_valid, _) = nft_collection_addresses.udict_get?(256, slice_hash(recipient_nft));
+    throw_unless(error::invalid_nft, nft_valid);
+
+    var (blocked, _) = blocked_accounts.udict_get?(256, slice_hash(recipient_nft));
+    throw_if(error::account_blocked, blocked);
+
+    ;; Amount must be positive
+    throw_unless(error::invalid_amount, amount > 0);
+
+    ;; In actual implementation:
+    ;; - Verify incoming jetton transfer notification
+    ;; - Credit to recipient NFT's jetton wallet
+    ;; - Source could be DEX contract after swap
+
+    ;; Emit PaymentReceived event
+    cell event_data = begin_cell()
+        .store_slice(recipient_nft)
+        .store_coins(amount)
+        .store_slice(source_address)
+        .store_ref(details)
+        .end_cell();
+
+    emit_event(op::payment_received, event_data);
+}
+
+;; Admin function: Emergency pause
+() handle_set_paused(slice sender_address, int pause_state) impure {
+    ;; Only admin can pause
+    throw_unless(error::unauthorized, equal_slices(sender_address, admin_address));
+
+    paused = pause_state;
+    save_data();
+}
+
+;; Admin function: Flag account (anti-fraud)
+() handle_flag_account(slice sender_address, slice nft_address, int flag_state) impure {
+    ;; Only admin can flag accounts
+    throw_unless(error::unauthorized, equal_slices(sender_address, admin_address));
+
+    if (flag_state) {
+        ;; Block account
+        blocked_accounts~udict_set(256, slice_hash(nft_address), begin_cell().store_uint(1, 1).end_cell().begin_parse());
+    } else {
+        ;; Unblock account
+        blocked_accounts~udict_delete?(256, slice_hash(nft_address));
+    }
+
+    save_data();
+
+    ;; Emit AccountFlagged event
+    cell event_data = begin_cell()
+        .store_slice(nft_address)
+        .store_uint(flag_state, 1)
+        .end_cell();
+
+    emit_event(op::account_flagged, event_data);
+}
+
+;; Main message receiver
+() recv_internal(int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    ;; Parse incoming message
+    if (in_msg_body.slice_empty?()) {
+        return ();  ;; Ignore empty messages
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    slice sender_address = cs~load_msg_addr();
+
+    ;; Load contract data
+    load_data();
+
+    ;; Check if contract is paused
+    throw_if(error::contract_paused, paused);
+
+    ;; Parse operation
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+
+    ;; Route to appropriate handler
+    if (op == op::internal_transfer) {
+        slice from_nft = in_msg_body~load_msg_addr();
+        slice to_nft = in_msg_body~load_msg_addr();
+        int amount = in_msg_body~load_coins();
+        cell memo = in_msg_body~load_ref();
+
+        handle_internal_transfer(sender_address, from_nft, to_nft, amount, memo);
+        return ();
+    }
+
+    if (op == op::merchant_payment) {
+        slice payer_nft = in_msg_body~load_msg_addr();
+        slice merchant_nft = in_msg_body~load_msg_addr();
+        int amount = in_msg_body~load_coins();
+        cell payment_details = in_msg_body~load_ref();
+
+        handle_merchant_payment(sender_address, payer_nft, merchant_nft, amount, payment_details);
+        return ();
+    }
+
+    if (op == op::payment_received) {
+        slice recipient_nft = in_msg_body~load_msg_addr();
+        int amount = in_msg_body~load_coins();
+        slice source_address = in_msg_body~load_msg_addr();
+        cell details = in_msg_body~load_ref();
+
+        handle_payment_received(recipient_nft, amount, source_address, details);
+        return ();
+    }
+
+    if (op == op::set_paused) {
+        int pause_state = in_msg_body~load_uint(1);
+        handle_set_paused(sender_address, pause_state);
+        return ();
+    }
+
+    if (op == op::account_flagged) {
+        slice nft_address = in_msg_body~load_msg_addr();
+        int flag_state = in_msg_body~load_uint(1);
+        handle_flag_account(sender_address, nft_address, flag_state);
+        return ();
+    }
+
+    ;; Unknown operation
+    throw(0xffff);
+}
+
+;; Get methods for querying contract state
+
+;; Check if NFT account is active (not blocked)
+int is_account_active(slice nft_address) method_id {
+    load_data();
+
+    ;; Check if in allowed collection
+    var (collection_found, _) = nft_collection_addresses.udict_get?(256, slice_hash(nft_address));
+    if (~ collection_found) {
+        return 0;
+    }
+
+    ;; Check if blocked
+    var (blocked, _) = blocked_accounts.udict_get?(256, slice_hash(nft_address));
+    if (blocked) {
+        return 0;
+    }
+
+    return -1;  ;; True in FunC
+}
+
+;; Get contract paused state
+int get_paused() method_id {
+    load_data();
+    return paused;
+}
+
+;; Get admin address
+slice get_admin() method_id {
+    load_data();
+    return admin_address;
+}
+
+;; Get TBC jetton master address
+slice get_tbc_jetton_master() method_id {
+    load_data();
+    return tbc_jetton_master;
+}
