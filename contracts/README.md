@@ -241,5 +241,5 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines.
 
 ---
 
-**Last Updated**: 2024
+**Last Updated**: 26.12.2025
 **Maintainer**: Tonbankcard Protocol Team
