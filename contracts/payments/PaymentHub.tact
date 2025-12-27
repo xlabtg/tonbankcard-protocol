@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Tonbankcard Protocol - Payment Hub: Internal TBC Transfers
 // Issue #6: Issue 3.3 Payment Hub — Internal TBC Transfers Between NFT Accounts
+//
+// PROTOCOL INVARIANTS (see docs/invariants.md):
+// - I1 (Non-Custodial): Only NFT owner can initiate transfers (line 164)
+// - I2 (NFT Authority): NFT ownership determines account control (line 36)
+// - I3 (No Admin Control): Deployer cannot move funds, only initialize for testing (lines 229-240)
+// - I4 (Atomic Transfers): Reentrancy protection (lines 149-150) and atomic balance updates (lines 197-198)
+// - I5 (Ledger Conservation): Direct debit/credit with no fees (lines 197-198)
 
 import "@stdlib/deploy";
 
@@ -144,8 +151,12 @@ contract PaymentHub with Deployable {
     // Core Transfer Function
     // ========================================
 
+    /// @notice Execute internal TBC transfer between NFT accounts
+    /// @dev INVARIANT I1: Validates sender is NFT owner (non-custodial)
+    /// @dev INVARIANT I4: Atomic transfer with reentrancy protection
+    /// @dev INVARIANT I5: Conservation of balances (debit = credit, zero fees)
     receive(msg: TransferInternalRequest) {
-        // Reentrancy guard
+        // INVARIANT I4: Reentrancy guard for atomicity
         require(!self.locked, "Reentrancy detected");
         self.locked = true;
 
@@ -160,7 +171,7 @@ contract PaymentHub with Deployable {
         let from_account: AccountState = self.getOrCreateAccount(msg.from_nft);
         let to_account: AccountState = self.getOrCreateAccount(msg.to_nft);
 
-        // Validation 3: msg.sender must be owner of from_nft
+        // INVARIANT I1 & I2: msg.sender must be owner of from_nft (non-custodial, NFT authority)
         require(sender() == from_account.owner, "Unauthorized: sender is not NFT owner");
 
         // Validation 4: from_account must be ACTIVE (can send)
@@ -193,7 +204,7 @@ contract PaymentHub with Deployable {
             return;
         }
 
-        // Atomic balance update
+        // INVARIANT I4 & I5: Atomic balance update, conservation of funds (no fees)
         from_account.balance = from_account.balance - msg.amount_tbc;
         to_account.balance = to_account.balance + msg.amount_tbc;
 
@@ -225,9 +236,12 @@ contract PaymentHub with Deployable {
     // Account Management
     // ========================================
 
-    // Initialize or update an account (for testing/development)
+    /// @notice Initialize or update an account (TESTING ONLY - must be removed in production)
+    /// @dev INVARIANT I3: Deployer can initialize but NOT withdraw/move existing funds
+    /// @dev WARNING: This function violates production security and must be removed before mainnet
     receive(msg: InitializeAccount) {
-        // Only deployer can initialize accounts during development
+        // INVARIANT I3: Only deployer can initialize accounts during development
+        // NOTE: This is a test-only function and does NOT allow moving existing funds
         require(sender() == self.deployer, "Unauthorized: only deployer");
 
         let account: AccountState = AccountState{

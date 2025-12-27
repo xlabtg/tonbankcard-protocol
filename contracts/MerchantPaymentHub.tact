@@ -1,5 +1,13 @@
 // Merchant Payment Hub Contract
 // Implementation of Issue #8 - Merchant Payments (On-Chain Settlement in TBC)
+//
+// PROTOCOL INVARIANTS (see docs/invariants.md):
+// - I1 (Non-Custodial): Validates payer is NFT owner before payment (lines 90-96)
+// - I2 (NFT Authority): NFT ownership stored and validated (lines 42, 90-96)
+// - I3 (No Admin Control): Admin functions are test-only, cannot move funds (lines 223-245)
+// - I4 (Atomic Transfers): Atomic debit/credit in single transaction (lines 134-135)
+// - I5 (Ledger Conservation): Direct debit/credit with no fees (lines 178-187)
+// - I6 (Lock ≠ Confiscation): Checks locks before send, allows receive (lines 116-119)
 
 import "./types/AccountState.tact";
 import "./types/LockState.tact";
@@ -86,13 +94,13 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
         payload: Cell?
     ): Int {
 
-        // VALIDATION 1: Check ownership
+        // INVARIANT I1 & I2: Check ownership (non-custodial, NFT authority)
         let payer_owner: Address? = self.nft_owners.get(payer_nft);
         if (payer_owner == null) {
             return ERROR_PAYER_NOT_EXISTS;
         }
         if (payer_owner!! != sender) {
-            return ERROR_NOT_OWNER;
+            return ERROR_NOT_OWNER;  // Only NFT owner can initiate payment
         }
 
         // VALIDATION 2: Check merchant exists
@@ -112,10 +120,10 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
             return ERROR_PAYER_NOT_ACTIVE;
         }
 
-        // VALIDATION 5: Check payer locks (must not be locked)
+        // INVARIANT I6: Check payer locks (locks prevent sending, not confiscation)
         let payer_locks: LockState = self.getLockState(payer_nft);
         if (!canSendWithLocks(payer_locks)) {
-            return ERROR_PAYER_LOCKED;
+            return ERROR_PAYER_LOCKED;  // Lock prevents send but doesn't move funds
         }
 
         // VALIDATION 6: Check merchant state (must not be CLOSED)
@@ -130,7 +138,7 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
             return ERROR_INSUFFICIENT_BALANCE;
         }
 
-        // SETTLEMENT: Execute atomic transfer
+        // INVARIANT I4 & I5: Execute atomic transfer with balance conservation
         self.debitBalance(payer_nft, amount_tbc);
         self.creditBalance(merchant_nft, amount_tbc);
 
@@ -217,8 +225,8 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     // ADMIN FUNCTIONS (FOR TESTING/SETUP ONLY)
     // ============================================
 
-    // Note: In production, these would be removed or restricted
-    // They are here for testing purposes only
+    // INVARIANT I3: Admin functions are test-only and do NOT allow fund withdrawal
+    // WARNING: These functions MUST be removed before production deployment
 
     receive("setup_account") {
         // Setup test accounts - for testing only
