@@ -1,0 +1,260 @@
+;; Account Locks Smart Contract
+;; Part of Tonbankcard Payment Hub
+;;
+;; Implements lock mechanism for NFT accounts to:
+;; - Block fraudulent accounts (FRAUD_LOCK)
+;; - Lock collateralized accounts (COLLATERAL_LOCK)
+;; - Maintain non-custodial architecture (locks are flags, not custody)
+
+#include "stdlib.fc";
+
+;; Lock type constants
+const int LOCK_NONE = 0;
+const int FRAUD_LOCK = 1;
+const int COLLATERAL_LOCK = 2;
+const int READ_ONLY = 4;  ;; future-proof
+
+;; Operation codes
+const int op::set_fraud_lock = 0x1001;
+const int op::clear_fraud_lock = 0x1002;
+const int op::set_collateral_lock = 0x1003;
+const int op::clear_collateral_lock = 0x1004;
+const int op::check_can_send = 0x2001;
+const int op::get_lock_state = 0x3001;
+
+;; Exit codes
+const int err::unauthorized = 401;
+const int err::account_locked = 403;
+const int err::invalid_nft = 404;
+const int err::invalid_operation = 400;
+
+;; Storage structure
+;; cell storage contains:
+;; - dict: nft_address -> (fraud_locked, collateral_locked)
+;; - slice: risk_authority_address
+;; - slice: lending_adapter_address
+
+(cell, slice, slice) load_data() inline {
+    slice ds = get_data().begin_parse();
+    cell lock_dict = ds~load_dict();
+    slice risk_authority = ds~load_msg_addr();
+    slice lending_adapter = ds~load_msg_addr();
+    return (lock_dict, risk_authority, lending_adapter);
+}
+
+() save_data(cell lock_dict, slice risk_authority, slice lending_adapter) impure inline {
+    set_data(
+        begin_cell()
+            .store_dict(lock_dict)
+            .store_slice(risk_authority)
+            .store_slice(lending_adapter)
+        .end_cell()
+    );
+}
+
+;; Get lock state for an NFT account
+;; Returns (fraud_locked: int, collateral_locked: int)
+(int, int) get_lock_state(slice nft_address) method_id {
+    (cell lock_dict, _, _) = load_data();
+
+    ;; Convert address to 256-bit hash for dictionary key
+    int key = slice_hash(nft_address);
+
+    (slice value, int found) = lock_dict.udict_get?(256, key);
+
+    if (found) {
+        int fraud_locked = value~load_uint(1);
+        int collateral_locked = value~load_uint(1);
+        return (fraud_locked, collateral_locked);
+    }
+
+    ;; Account not locked
+    return (0, 0);
+}
+
+;; Check if account is locked (any lock type)
+int is_account_locked(slice nft_address) method_id {
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
+    return fraud_locked | collateral_locked;
+}
+
+;; Check if account can send TBC
+;; Returns 1 if can send, 0 if locked
+int can_send(slice nft_address) method_id {
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
+
+    ;; Cannot send if either fraud_locked or collateral_locked
+    if (fraud_locked | collateral_locked) {
+        return 0;
+    }
+
+    return 1;
+}
+
+;; Check if account can receive TBC
+;; Always returns 1 (receiving is always allowed)
+int can_receive(slice nft_address) method_id {
+    return 1;  ;; RECEIVE operations are always allowed
+}
+
+;; Set lock state for an NFT account
+() set_lock(cell lock_dict, slice nft_address, int fraud_locked, int collateral_locked) impure inline {
+    int key = slice_hash(nft_address);
+
+    cell value = begin_cell()
+        .store_uint(fraud_locked, 1)
+        .store_uint(collateral_locked, 1)
+    .end_cell();
+
+    lock_dict~udict_set(256, key, value.begin_parse());
+}
+
+;; Emit AccountLocked event
+() emit_account_locked(slice nft_address, int lock_type) impure inline {
+    var msg = begin_cell()
+        .store_uint(0x18, 6)  ;; nobounce
+        .store_slice(nft_address)
+        .store_coins(0)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(0x4c6f636b, 32)  ;; "Lock" marker
+        .store_uint(lock_type, 8)
+    .end_cell();
+
+    send_raw_message(msg, 64);  ;; carry remaining value
+}
+
+;; Emit AccountUnlocked event
+() emit_account_unlocked(slice nft_address, int lock_type) impure inline {
+    var msg = begin_cell()
+        .store_uint(0x18, 6)  ;; nobounce
+        .store_slice(nft_address)
+        .store_coins(0)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(0x556e6c6b, 32)  ;; "Unlk" marker
+        .store_uint(lock_type, 8)
+    .end_cell();
+
+    send_raw_message(msg, 64);  ;; carry remaining value
+}
+
+;; Main message receiver
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        return ();  ;; ignore empty messages
+    }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) {
+        return ();  ;; ignore bounced messages
+    }
+
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+
+    (cell lock_dict, slice risk_authority, slice lending_adapter) = load_data();
+
+    ;; Set FRAUD_LOCK
+    if (op == op::set_fraud_lock) {
+        ;; Only risk authority can set fraud lock
+        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+
+        slice nft_address = in_msg_body~load_msg_addr();
+        (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
+
+        set_lock(lock_dict, nft_address, 1, collateral_locked);
+        save_data(lock_dict, risk_authority, lending_adapter);
+
+        emit_account_locked(nft_address, FRAUD_LOCK);
+        return ();
+    }
+
+    ;; Clear FRAUD_LOCK
+    if (op == op::clear_fraud_lock) {
+        ;; Only risk authority can clear fraud lock (or DAO in future)
+        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+
+        slice nft_address = in_msg_body~load_msg_addr();
+        (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
+
+        set_lock(lock_dict, nft_address, 0, collateral_locked);
+        save_data(lock_dict, risk_authority, lending_adapter);
+
+        emit_account_unlocked(nft_address, FRAUD_LOCK);
+        return ();
+    }
+
+    ;; Set COLLATERAL_LOCK
+    if (op == op::set_collateral_lock) {
+        ;; Only lending adapter can set collateral lock
+        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+
+        slice nft_address = in_msg_body~load_msg_addr();
+        (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
+
+        set_lock(lock_dict, nft_address, fraud_locked, 1);
+        save_data(lock_dict, risk_authority, lending_adapter);
+
+        emit_account_locked(nft_address, COLLATERAL_LOCK);
+        return ();
+    }
+
+    ;; Clear COLLATERAL_LOCK
+    if (op == op::clear_collateral_lock) {
+        ;; Only lending adapter can clear collateral lock
+        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+
+        slice nft_address = in_msg_body~load_msg_addr();
+        (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
+
+        set_lock(lock_dict, nft_address, fraud_locked, 0);
+        save_data(lock_dict, risk_authority, lending_adapter);
+
+        emit_account_unlocked(nft_address, COLLATERAL_LOCK);
+        return ();
+    }
+
+    ;; Check if account can send (used by Payment Hub before SEND operations)
+    if (op == op::check_can_send) {
+        slice nft_address = in_msg_body~load_msg_addr();
+        int can_send_flag = can_send(nft_address);
+
+        ;; Throw if account is locked
+        throw_unless(err::account_locked, can_send_flag);
+
+        return ();
+    }
+
+    ;; Unknown operation
+    throw(err::invalid_operation);
+}
+
+;; Get methods for public interface
+
+;; Get lock state for NFT account
+;; Returns tuple (fraud_locked, collateral_locked)
+(int, int) get_account_lock_state(slice nft_address) method_id {
+    return get_lock_state(nft_address);
+}
+
+;; Check if account has any active lock
+int get_is_account_locked(slice nft_address) method_id {
+    return is_account_locked(nft_address);
+}
+
+;; Check if account can send TBC
+int get_can_send(slice nft_address) method_id {
+    return can_send(nft_address);
+}
+
+;; Check if account can receive TBC
+int get_can_receive(slice nft_address) method_id {
+    return can_receive(nft_address);
+}
+
+;; Get contract version
+int get_version() method_id {
+    return 1;
+}
