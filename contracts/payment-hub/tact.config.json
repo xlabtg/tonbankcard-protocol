@@ -1,0 +1,16 @@
+{
+  "projects": [
+    {
+      "name": "account-state",
+      "path": "./account-state.tact",
+      "output": "./dist",
+      "options": {
+        "debug": true,
+        "external": true,
+        "experimental": {
+          "inline": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+;; NFT Account Resolver (Core Account Abstraction)
+;; Purpose: Links NFT cards to owners and validates NFT-based accounts
+;; Security: Stateless, read-only, no fund custody
+;; Standard: TEP-62 compliant
+
+#include "stdlib.fc";
+
+;; Storage structure
+;; payment_hub_address - Address of Payment Hub contract (set after Issue #3)
+(slice) load_data() inline {
+    slice ds = get_data().begin_parse();
+    return (ds~load_msg_addr());  ;; payment_hub_address
+}
+
+() save_data(slice payment_hub_address) impure inline {
+    set_data(begin_cell()
+        .store_slice(payment_hub_address)
+        .end_cell());
+}
+
+;; Whitelisted collections (hardcoded for security)
+slice get_collection_7777() inline {
+    ;; EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le
+    return begin_cell()
+        .store_uint(4, 3)  ;; addr_std$10 anycast:(Maybe Anycast) workchain_id:int8
+        .store_int(0, 8)   ;; workchain = 0
+        .store_uint(0x231e41edb753082a453973b7648ef746f11303380e8944ab7f2aa1fe98279e295, 256)
+        .end_cell()
+        .begin_parse();
+}
+
+slice get_collection_8888() inline {
+    ;; EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7
+    return begin_cell()
+        .store_uint(4, 3)
+        .store_int(0, 8)
+        .store_uint(0x5e772268f2810a244986516c4f10b5ccf1d414cd737741c78aedc58c267bf5e1, 256)
+        .end_cell()
+        .begin_parse();
+}
+
+;; ==================== HELPER FUNCTIONS ====================
+
+;; Compare two addresses
+int addr_equal?(slice addr1, slice addr2) inline {
+    return equal_slices(addr1, addr2);
+}
+
+;; Check if collection is whitelisted
+int is_whitelisted_collection?(slice collection_addr) inline {
+    return addr_equal?(collection_addr, get_collection_7777()) |
+           addr_equal?(collection_addr, get_collection_8888());
+}
+
+;; ==================== GET METHODS ====================
+
+;; Resolve owner by NFT address
+;; This method demonstrates the interface but requires off-chain data
+;; In production, use an indexer to call get_nft_data() on the NFT contract
+;; Returns: (owner_address, is_valid, collection_address, index)
+(slice, int, slice, int) resolve_owner_with_validation(slice nft_address, slice collection_addr, slice owner_addr, int index, int is_initialized) method_id {
+    ;; Validate collection
+    int is_whitelisted = is_whitelisted_collection?(collection_addr);
+
+    ;; Validate NFT is initialized (not burned)
+    int is_valid = is_initialized & is_whitelisted;
+
+    return (owner_addr, is_valid, collection_addr, index);
+}
+
+;; Validate NFT as account
+;; Parameters: nft_address, collection_address, is_initialized
+;; Returns: bool (true if valid account NFT)
+int is_valid_account_nft(slice collection_addr, int is_initialized) method_id {
+    ;; Check if NFT belongs to whitelisted collection
+    int is_whitelisted = is_whitelisted_collection?(collection_addr);
+
+    ;; Check if NFT is initialized (not burned)
+    if (~ is_initialized) {
+        return 0;
+    }
+
+    if (~ is_whitelisted) {
+        return 0;
+    }
+
+    ;; Additional validation could check Payment Hub for restrictions
+    ;; This requires Payment Hub to be deployed (Issue #3)
+
+    return -1;  ;; true
+}
+
+;; Get account state flags
+;; Returns: (has_active_collateral, is_restricted, is_merchant)
+;; Note: Actual flags are stored in Payment Hub, this is a read interface
+(int, int, int) get_account_flags(slice nft_address) method_id {
+    ;; In production, this would query Payment Hub contract
+    ;; For now, return default values
+
+    int has_active_collateral = 0;
+    int is_restricted = 0;
+    int is_merchant = 0;
+
+    return (has_active_collateral, is_restricted, is_merchant);
+}
+
+;; Check if collection is whitelisted
+int is_whitelisted_collection(slice collection_addr) method_id {
+    return is_whitelisted_collection?(collection_addr);
+}
+
+;; Get whitelisted collection addresses
+(slice, slice) get_whitelisted_collections() method_id {
+    return (get_collection_7777(), get_collection_8888());
+}
+
+;; Get Payment Hub address
+slice get_payment_hub() method_id {
+    return load_data();
+}
+
+;; ==================== MESSAGE HANDLERS ====================
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    ;; This contract is read-only and stateless
+    ;; It does not accept any messages or funds
+    ;; All operations are performed via get methods
+
+    ;; Parse message
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    ;; Bounce all incoming messages
+    if (flags & 1) {
+        return ();  ;; Ignore bounced messages
+    }
+
+    slice sender_addr = cs~load_msg_addr();
+
+    ;; Reject all messages (read-only contract)
+    throw(0xffff);  ;; Access denied
+}
+
+;; ==================== INITIALIZATION ====================
+
+() recv_deploy(slice in_msg_body) impure {
+    ;; Initialize with null payment hub
+    save_data(begin_cell().store_uint(0, 2).end_cell().begin_parse());  ;; addr_none
+}
