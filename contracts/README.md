@@ -7,7 +7,8 @@ This directory contains the smart contract implementations for the Tonbankcard P
 ```
 contracts/
 ├── payments/           # Payment infrastructure contracts
-│   └── payment-hub.fc  # Core payment routing and account binding
+│   ├── payment-hub.fc    # Core payment routing and account binding
+│   └── PaymentHub.tact   # Tact implementation (Issue #6)
 ├── token/              # TBC jetton (external, deployed)
 ├── nft-cards/          # NFT card collections (external, deployed)
 └── lending/            # Future: Lending and collateral contracts
@@ -32,6 +33,21 @@ contracts/
 
 **Documentation**: [docs/contracts/payment-hub.md](../docs/contracts/payment-hub.md)
 **Tests**: [tests/payments/payment-hub.test.md](../tests/payments/payment-hub.test.md)
+
+### Payment Hub (Tact Implementation) - Issue #6
+
+**Status**: ✅ Implemented (Tact version)
+**File**: `payments/PaymentHub.tact`
+**Purpose**: Internal TBC transfers between NFT accounts
+
+Features:
+- Zero-fee internal transfers
+- Account state management (ACTIVE, FROZEN, COLLATERAL_LOCKED, CLOSED)
+- Ownership verification
+- Atomic balance updates
+- Comprehensive validation and security
+
+See [payments/README.md](./payments/README.md) for detailed documentation.
 
 ## External Contracts (Already Deployed)
 
@@ -85,9 +101,17 @@ npx blueprint build
 See individual test plans in `tests/` directory:
 - [tests/payments/payment-hub.test.md](../tests/payments/payment-hub.test.md)
 
-Actual test implementation would use TON Sandbox:
+For Tact contracts, use Blueprint testing framework with TON Sandbox:
+
 ```bash
+# Run all tests
 npx blueprint test
+
+# Run specific test file
+npx blueprint test PaymentHub.spec.ts
+
+# Run with coverage
+npx blueprint test --coverage
 ```
 
 ### Deployment
@@ -105,6 +129,14 @@ Deployment steps:
 4. Test all operations
 5. Security audit
 6. Mainnet deployment (after approval)
+
+```bash
+# Deploy contract
+npx blueprint run
+
+# Verify deployment
+npx blueprint verify
+```
 
 ## Security Guidelines
 
@@ -156,6 +188,24 @@ int get_something() method_id {
 }
 ```
 
+### Tact Conventions
+
+```tact
+// Use clear, descriptive names
+const ERROR_INSUFFICIENT_BALANCE: Int = 101;
+
+// Document complex logic
+// Atomic balance update - debit source, credit destination
+from_account.balance = from_account.balance - amount;
+to_account.balance = to_account.balance + amount;
+
+// Use require for validation
+require(amount > 0, "Amount must be positive");
+
+// Emit events for all state changes
+emit(InternalTransferEvent{...}.toCell());
+```
+
 ### Documentation Requirements
 
 Each contract file must include:
@@ -201,6 +251,36 @@ Before deploying any contract:
 - [ ] Emergency procedures documented
 - [ ] Mainnet deployment approved
 
+## Architecture Principles
+
+### Contract Dependencies
+
+```
+PaymentHub (Issue #6)
+  ├── Depends on: NFT Account Resolver (Issue #4)
+  └── Depends on: Account State Machine (Issue #5)
+
+Future Contracts:
+  ├── Account Locks (Issue 3.4) → depends on PaymentHub
+  ├── Merchant Payments (Issue 3.5) → depends on PaymentHub
+  └── Lending Adapters → depends on Account State Machine
+```
+
+### Gas Optimization Best Practices
+
+1. **Minimize Storage**: Use maps efficiently, avoid duplicate storage
+2. **Batch Operations**: Group multiple operations when possible
+3. **Early Returns**: Fail fast on validation errors
+4. **Efficient Types**: Use appropriate integer sizes (uint8, uint32, etc.)
+
+### Gas Costs (Estimated)
+
+| Operation | Gas Cost | Notes |
+|-----------|----------|-------|
+| Internal Transfer | ~0.01 TON | Includes validation and state updates |
+| Account State Query | ~0.005 TON | Read-only getter |
+| Account Initialization | ~0.01 TON | One-time setup |
+
 ## Future Contracts
 
 ### Planned Implementations
@@ -209,6 +289,8 @@ Before deploying any contract:
 - [ ] Lending adapter contracts
 - [ ] Merchant escrow contract
 - [ ] Payment channel contracts
+- [ ] Account Locks (Issue 3.4)
+- [ ] Merchant Payments (Issue 3.5)
 
 **Phase 3**:
 - [ ] Multi-sig card contracts
@@ -222,11 +304,30 @@ Before deploying any contract:
 
 ## References
 
+### TON Development
+
 - [TON Smart Contract Documentation](https://docs.ton.org/develop/smart-contracts/)
 - [FunC Language Reference](https://docs.ton.org/develop/func/overview)
+- [Tact Language](https://docs.tact-lang.org/)
+- [Blueprint Framework](https://github.com/ton-community/blueprint)
+- [TON Sandbox](https://github.com/ton-org/sandbox)
+
+### Tonbankcard Protocol
+
+- [Architecture Documentation](../docs/architecture.md)
+- [Existing Contracts](../docs/existing-contracts.md)
+- [Contributing Guidelines](../CONTRIBUTING.md)
+
+### Security Resources
+
+- [TON Security Best Practices](https://docs.ton.org/v3/documentation/smart-contracts/security/things-to-focus)
+- [Tact Security Guide](https://docs.tact-lang.org/book/security)
+- [OWASP Smart Contract Top 10](https://owasp.org/www-project-smart-contract-top-10/)
+
+### Standards
+
 - [TON Jetton Standard](https://github.com/ton-blockchain/jetton-contract)
 - [TON NFT Standard](https://github.com/ton-blockchain/nft-contract)
-- [Blueprint Framework](https://github.com/ton-community/blueprint)
 
 ## Contributing
 
@@ -239,7 +340,11 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines.
 - Update documentation with code
 - Security review required
 
+## License
+
+MIT License - See LICENSE file for details
+
 ---
 
-**Last Updated**: 26.12.2025
+**Last Updated**: 27.12.2025
 **Maintainer**: Tonbankcard Protocol Team
