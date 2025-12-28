@@ -68,6 +68,26 @@ User receives funds
 
 **API Documentation**: [NOWPayments API](https://documenter.getpostman.com/view/7907941/S1a32n38)
 
+### 3. CoinRabbit (Lending Adapter - Issue 6.2)
+
+**Purpose**: Non-custodial coordination layer for external crypto lending
+
+**Design Principles** (CRITICAL):
+- **DOES NOT** issue loans
+- **DOES NOT** custody collateral
+- **DOES NOT** enforce repayments
+- **DOES NOT** liquidate assets
+- **DOES NOT** track debt
+- Only provides identity resolution and lender metadata
+
+**Supported Features**:
+- NFT-based borrower identity resolution
+- Read-only collateral signal verification
+- Standardized metadata for lenders
+- Optional UX deep-links
+
+**Documentation**: [Lending Adapter Documentation](../../docs/lending-adapter.md)
+
 ## Installation
 
 ```bash
@@ -201,6 +221,80 @@ app.post('/webhook', async (req, res) => {
 });
 ```
 
+### CoinRabbit Lending Adapter
+
+#### Resolving Borrower Identity
+
+```typescript
+import { createCoinRabbitAdapter } from './adapters';
+
+// Initialize adapter
+const coinRabbit = createCoinRabbitAdapter({
+  affiliateId: 'your-affiliate-id',  // Optional
+  chainId: 1,                         // TON mainnet
+});
+
+// Resolve borrower identity from NFT Account ID
+const identity = await coinRabbit.resolveBorrowerIdentity('7777001');
+console.log(`Valid: ${identity.isValid}`);
+console.log(`Collection: ${identity.collectionAddress}`);
+```
+
+#### Creating a Loan Intent
+
+```typescript
+// Create loan intent (user-initiated only)
+const intent = await coinRabbit.createLoanIntent({
+  nftAccountId: '7777001',
+  collateralSignalId: 'signal_abc123',  // From Issue 6.1
+  requestedAmount: '5000',               // Informational only
+  requestedCurrency: 'USDT',
+  targetLender: 'coinrabbit',
+});
+
+console.log(`Intent ID: ${intent.intentId}`);
+console.log(`Lender URL: ${intent.lenderUrl}`);
+
+// Verification data for lender (includes disclaimer)
+console.log(`Chain ID: ${intent.verificationData.chainId}`);
+console.log(`Disclaimer: ${intent.verificationData.disclaimer}`);
+```
+
+#### Verifying Collateral Signal (Read-Only)
+
+```typescript
+// Lenders can verify collateral signals on-chain
+const verification = await coinRabbit.verifyCollateralSignal({
+  signalId: 'signal_abc123',
+  nftAccountId: '7777001',
+});
+
+console.log(`Valid: ${verification.isValid}`);
+console.log(`Ownership verified: ${verification.ownershipVerified}`);
+// NOTE: Protocol makes NO guarantees - lender must verify on-chain
+```
+
+#### Tracking Loan References (Off-Chain)
+
+```typescript
+// Create off-chain reference for tracking
+const reference = coinRabbit.createLoanReference(
+  intent.intentId,
+  '7777001',
+  undefined,  // External loan ID (when available)
+  'signal_abc123'
+);
+
+// Update when lender confirms (informational only)
+const updated = coinRabbit.updateLoanReferenceStatus(
+  reference,
+  'active',
+  { externalLoanId: 'coinrabbit_loan_xyz' }
+);
+
+// NOTE: Status is purely for UX - protocol does NOT enforce
+```
+
 ## Data Model
 
 ### ExternalTransaction
@@ -319,6 +413,12 @@ node examples/adapters/changenow-example.js
 
 # NOWPayments example
 node examples/adapters/nowpayments-example.js
+
+# CoinRabbit lending adapter example
+ts-node examples/adapters/coinrabbit-example.ts
+
+# CoinRabbit tests
+ts-node experiments/adapters/test-coinrabbit.ts
 ```
 
 ## Acceptance Criteria
