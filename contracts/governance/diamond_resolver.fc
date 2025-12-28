@@ -1,0 +1,261 @@
+;; TBC Diamonds Ownership Resolver (Governance Helper)
+;; Purpose: Read-only helper for querying TBC Diamonds NFT ownership
+;; Security: Stateless, no fund custody, no execution capability
+;; Governance: Advisory signals only, no protocol control
+;; Standard: TEP-62 compliant NFT ownership resolution
+
+#include "stdlib.fc";
+
+;; ==================== CONSTANTS ====================
+
+;; TBC Diamonds collection address (to be set after deployment)
+;; This is a placeholder - actual address will be stored in contract data
+;; Collection has 222 NFTs total (index 0-221)
+const int TOTAL_DIAMONDS = 222;
+
+;; ==================== STORAGE ====================
+
+;; Storage structure:
+;; diamonds_collection_address - Address of TBC Diamonds NFT collection
+(slice) load_data() inline {
+    slice ds = get_data().begin_parse();
+    return (ds~load_msg_addr());  ;; diamonds_collection_address
+}
+
+() save_data(slice diamonds_collection_address) impure inline {
+    set_data(begin_cell()
+        .store_slice(diamonds_collection_address)
+        .end_cell());
+}
+
+;; ==================== HELPER FUNCTIONS ====================
+
+;; Get TBC Diamonds collection address
+slice get_diamonds_collection() inline {
+    return load_data();
+}
+
+;; Calculate NFT item address from collection and index
+;; This is a standard TON NFT address derivation
+;; Note: Actual implementation depends on NFT collection contract
+;; This is a simplified version for illustration
+slice calculate_nft_address(slice collection_addr, int nft_index) inline {
+    ;; In production, this would use the exact NFT collection's
+    ;; get_nft_address_by_index method or similar
+    ;; For now, return a placeholder that indicates this needs
+    ;; off-chain resolution via the NFT collection contract
+
+    ;; This is intentionally simplified - actual NFT address calculation
+    ;; requires calling the collection contract's get method
+    return collection_addr;  ;; Placeholder
+}
+
+;; ==================== GET METHODS (READ-ONLY) ====================
+
+;; Get TBC Diamonds collection address
+;; Returns: collection address
+slice get_collection_address() method_id {
+    return get_diamonds_collection();
+}
+
+;; Get total number of TBC Diamonds
+;; Returns: 222 (fixed supply)
+int get_total_supply() method_id {
+    return TOTAL_DIAMONDS;
+}
+
+;; Resolve NFT ownership for a specific Diamond index
+;; This is a helper method - actual ownership must be queried
+;; from the NFT contract itself using get_nft_data()
+;;
+;; Parameters:
+;;   diamond_index - Index of the Diamond NFT (0-221)
+;;
+;; Returns: (nft_address, needs_off_chain_query)
+;; Note: Actual owner must be resolved off-chain by calling
+;; the NFT item contract's get_nft_data() method
+(slice, int) resolve_diamond_address(int diamond_index) method_id {
+    ;; Validate index range
+    throw_unless(400, (diamond_index >= 0) & (diamond_index < TOTAL_DIAMONDS));
+
+    slice collection = get_diamonds_collection();
+
+    ;; Validate collection address is set
+    int is_null = collection.preload_uint(2) == 0;  ;; addr_none = 0b00
+    throw_if(401, is_null);  ;; Collection not configured
+
+    ;; Return collection address and flag indicating off-chain query needed
+    ;; In production, this would calculate the exact NFT item address
+    ;; For governance purposes, off-chain indexer queries are acceptable
+    return (collection, -1);  ;; -1 = true (needs off-chain query)
+}
+
+;; Validate that an address is the TBC Diamonds collection
+;; Parameters:
+;;   collection_addr - Address to validate
+;; Returns: bool (true if matches TBC Diamonds collection)
+int is_diamonds_collection(slice collection_addr) method_id {
+    slice diamonds = get_diamonds_collection();
+    return equal_slices(collection_addr, diamonds);
+}
+
+;; Get governance metadata
+;; Returns: (total_supply, collection_address, governance_type)
+;; governance_type: 0 = advisory/signaling only (no execution)
+(int, slice, int) get_governance_metadata() method_id {
+    return (
+        TOTAL_DIAMONDS,              ;; total_supply = 222
+        get_diamonds_collection(),   ;; collection_address
+        0                            ;; governance_type = 0 (advisory only)
+    );
+}
+
+;; Verify proposal voting power for a list of NFT indices
+;; This helper validates that a set of Diamond NFTs exists
+;; Actual ownership must be verified off-chain
+;;
+;; Parameters:
+;;   nft_indices - Tuple of Diamond indices
+;; Returns: (is_valid_range, total_voting_power)
+;; Note: Does NOT verify ownership, only validates indices
+(int, int) verify_voting_power_range(tuple nft_indices) method_id {
+    int len = nft_indices.tlen();
+    int i = 0;
+    int total_power = 0;
+
+    while (i < len) {
+        int idx = nft_indices.at(i);
+
+        ;; Validate index is in valid range
+        if ((idx < 0) | (idx >= TOTAL_DIAMONDS)) {
+            return (0, 0);  ;; Invalid range
+        }
+
+        total_power += 1;  ;; Each Diamond = 1 vote
+        i += 1;
+    }
+
+    return (-1, total_power);  ;; -1 = true (valid range)
+}
+
+;; Get quorum requirement for a proposal
+;; Parameters:
+;;   quorum_percentage - Percentage required (e.g., 10 = 10%)
+;; Returns: minimum number of votes needed for quorum
+int get_quorum_requirement(int quorum_percentage) method_id {
+    throw_unless(402, (quorum_percentage > 0) & (quorum_percentage <= 100));
+
+    ;; Calculate quorum: (TOTAL_DIAMONDS * quorum_percentage) / 100
+    ;; 222 Diamonds * 10% = 22.2 -> round up to 23
+    int quorum = (TOTAL_DIAMONDS * quorum_percentage + 99) / 100;  ;; Round up
+
+    return quorum;
+}
+
+;; Calculate voting outcome
+;; Parameters:
+;;   votes_for - Number of votes in favor
+;;   votes_against - Number of votes against
+;;   votes_abstain - Number of abstentions
+;;   quorum_percentage - Required quorum (e.g., 10 = 10%)
+;;
+;; Returns: (quorum_met, proposal_passed, for_percentage)
+;; Note: Simple majority (>50% of votes cast, excluding abstentions)
+(int, int, int) calculate_vote_outcome(
+    int votes_for,
+    int votes_against,
+    int votes_abstain,
+    int quorum_percentage
+) method_id {
+    ;; Validate inputs
+    throw_unless(403, votes_for >= 0);
+    throw_unless(403, votes_against >= 0);
+    throw_unless(403, votes_abstain >= 0);
+
+    int total_votes_cast = votes_for + votes_against + votes_abstain;
+    throw_unless(404, total_votes_cast <= TOTAL_DIAMONDS);  ;; Cannot exceed supply
+
+    ;; Check quorum
+    int quorum_required = get_quorum_requirement(quorum_percentage);
+    int quorum_met = total_votes_cast >= quorum_required;
+
+    ;; Calculate outcome (simple majority of non-abstain votes)
+    int decisive_votes = votes_for + votes_against;
+    int proposal_passed = 0;
+
+    if (decisive_votes > 0) {
+        ;; Proposal passes if votes_for > votes_against
+        proposal_passed = votes_for > votes_against;
+    }
+
+    ;; Calculate for_percentage (for displaying results)
+    int for_percentage = 0;
+    if (decisive_votes > 0) {
+        for_percentage = (votes_for * 100) / decisive_votes;
+    }
+
+    return (quorum_met, proposal_passed, for_percentage);
+}
+
+;; ==================== MESSAGE HANDLERS ====================
+
+;; This contract is READ-ONLY and STATELESS
+;; It does NOT accept any messages or funds
+;; All operations are performed via get methods only
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    ;; Parse message
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    ;; Ignore bounced messages
+    if (flags & 1) {
+        return ();
+    }
+
+    ;; Reject ALL incoming messages (read-only contract)
+    ;; This contract has no state changes and no operations
+    ;; All functionality is via get methods
+    throw(0xffff);  ;; Access denied - read-only contract
+}
+
+;; ==================== INITIALIZATION ====================
+
+;; Initialize contract with TBC Diamonds collection address
+;; This should be called once during deployment
+() recv_deploy(slice in_msg_body) impure {
+    ;; Accept message if collection address is provided
+    ;; Otherwise initialize with addr_none (to be set later)
+
+    if (in_msg_body.slice_bits() >= 267) {  ;; MsgAddress = 3-267 bits
+        slice collection_addr = in_msg_body~load_msg_addr();
+        save_data(collection_addr);
+    } else {
+        ;; Initialize with addr_none
+        save_data(begin_cell().store_uint(0, 2).end_cell().begin_parse());
+    }
+}
+
+;; ==================== GOVERNANCE SAFETY NOTES ====================
+
+;; CRITICAL: This contract provides INFORMATION ONLY
+;;
+;; What this contract DOES:
+;; ✅ Validates Diamond NFT indices
+;; ✅ Calculates quorum and voting outcomes
+;; ✅ Provides governance metadata
+;;
+;; What this contract DOES NOT DO:
+;; ❌ Execute governance decisions
+;; ❌ Control protocol contracts
+;; ❌ Custody funds
+;; ❌ Transfer NFTs
+;; ❌ Modify protocol state
+;; ❌ Enforce voting outcomes
+;;
+;; GOVERNANCE IS ADVISORY ONLY
+;; All voting outcomes are NON-BINDING
+;; This contract cannot and will not execute protocol actions
+;;
+;; If governance can break the protocol, the protocol is badly designed.
+;; TONBANKCARD is designed so governance CANNOT break it.
