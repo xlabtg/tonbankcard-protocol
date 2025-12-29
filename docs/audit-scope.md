@@ -780,7 +780,345 @@ tests/
 
 ---
 
+## Appendix E: Contracts Under Audit (Detailed Reference)
+
+This appendix provides **explicit code → scope mapping** for auditors. Each contract lists key functions, invariants covered, and specific line references.
+
+### E.1 MerchantPaymentHub
+
+| Property | Value |
+|----------|-------|
+| **File** | `contracts/MerchantPaymentHub.tact` |
+| **Lines** | 287 |
+| **Language** | Tact |
+| **Priority** | 🔴 CRITICAL |
+
+**Key Functions & Line References:**
+
+| Function | Lines | Description | Invariants |
+|----------|-------|-------------|------------|
+| `receive(MerchantPaymentRequest)` | 64-86 | Main payment entry point | I1, I2, I4 |
+| `validateAndExecutePayment()` | 89-145 | Core payment validation | I1, I2, I3, I5, I6 |
+| `checkOwnership()` | 90-96 | NFT ownership verification | I1, I2 |
+| `checkLockState()` | 116-119 | Lock enforcement | I6 |
+| `executeTransfer()` | 134-135, 178-187 | Atomic balance update | I4, I5 |
+
+**Storage Variables (lines 47-50):**
+- `account_states: map<Address, Int>` - NFT address → state
+- `account_balances: map<Address, Int>` - NFT address → TBC balance
+- `account_locks: map<Address, LockState>` - NFT address → lock flags
+- `nft_owners: map<Address, Address>` - NFT address → owner address
+
+---
+
+### E.2 PaymentHub
+
+| Property | Value |
+|----------|-------|
+| **File** | `contracts/payments/PaymentHub.tact` |
+| **Lines** | 355 |
+| **Language** | Tact |
+| **Priority** | 🔴 CRITICAL |
+
+**Key Functions & Line References:**
+
+| Function | Lines | Description | Invariants |
+|----------|-------|-------------|------------|
+| `receive(TransferInternalRequest)` | 121-155 | Internal transfer entry | I1, I4 |
+| `executeTransfer()` | 196-202 | Atomic balance updates | I4, I5 |
+| `validateOwnership()` | 164 | NFT ownership check | I1, I2 |
+| `reentrancyGuard()` | 149-150 | Reentrancy protection | I4 |
+
+**Storage Variables (lines 113-118):**
+- `accounts: map<Address, AccountState>` - NFT address → account state
+- `transferLock: Bool` - Reentrancy guard flag
+- `deployer: Address` - Deployer address (test-only)
+
+---
+
+### E.3 NFT Account Resolver
+
+| Property | Value |
+|----------|-------|
+| **File (FunC)** | `contracts/nft-resolver/nft_account_resolver.fc` |
+| **File (Tact)** | `contracts/nft-resolver/nft_account_resolver.tact` |
+| **Lines** | 149 (FunC) + 121 (Tact) = 270 total |
+| **Language** | FunC + Tact |
+| **Priority** | 🔴 CRITICAL |
+
+**Key Functions & Line References (FunC):**
+
+| Function | Lines | Description | Invariants |
+|----------|-------|-------------|------------|
+| `resolve_owner()` | 61-69 | Get current NFT owner | I2 |
+| `validate_nft_collection()` | 45-58 | Check NFT is from valid collection | I2 |
+| `get_account_info()` | 72-89 | Retrieve account metadata | I2 |
+
+---
+
+### E.4 Account State Machine
+
+| Property | Value |
+|----------|-------|
+| **File** | `contracts/payment-hub/account-state.tact` |
+| **Lines** | 285 |
+| **Language** | Tact |
+| **Priority** | 🔴 CRITICAL |
+
+**State Machine:**
+```
+ACTIVE (0) ─────→ FROZEN (1)         [Risk Authority]
+    │
+    ├───────────→ COLLATERAL_LOCKED (2) [Lending Adapter]
+    │
+    └───────────→ CLOSED (3)         [User only - terminal]
+```
+
+**Key Functions:**
+
+| Function | Description | Invariants |
+|----------|-------------|------------|
+| `getAccountState()` | Returns balance and state | - |
+| `getBalance()` | Returns TBC balance | I5 |
+| `canSend()` | Check if account can send | I6 |
+| `canReceive()` | Check if account can receive | I6 |
+
+---
+
+### E.5 Account Locks
+
+| Property | Value |
+|----------|-------|
+| **File** | `contracts/payments/account-locks.fc` |
+| **Lines** | 269 |
+| **Language** | FunC |
+| **Priority** | 🟠 HIGH |
+
+**Key Functions & Line References:**
+
+| Function | Lines | Description | Invariants |
+|----------|-------|-------------|------------|
+| `get_account_lock_state()` | 94-98 | Get lock flags | I6 |
+| `get_can_send()` | 100-110 | Check if send allowed | I6 |
+| `get_can_receive()` | 94-98 | Always returns true | I6 |
+| `set_fraud_lock()` | 160-180 | Risk Authority sets fraud lock | I3, I6 |
+| `clear_fraud_lock()` | 182-200 | Risk Authority clears fraud lock | I3, I6 |
+| `set_collateral_lock()` | 202-217 | Lending Adapter sets collateral lock | I3, I6 |
+
+**Authorization (lines 36-43):**
+- `risk_authority` - Can set/clear FRAUD_LOCK
+- `lending_adapter` - Can set/clear COLLATERAL_LOCK
+- Neither can move funds (I3)
+
+---
+
+### E.6 Type Definitions
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `contracts/types/AccountState.tact` | 40 | Account state struct |
+| `contracts/types/LockState.tact` | 34 | Lock state struct |
+
+### E.7 Interfaces
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `contracts/interfaces/IAccountStateMachine.tact` | 24 | Account state interface |
+| `contracts/interfaces/IAccountLocks.tact` | 21 | Lock interface |
+| `contracts/interfaces/INFTResolver.tact` | 13 | NFT resolver interface |
+
+---
+
+### E.8 Total Lines Under Audit
+
+| Component | Lines | Priority |
+|-----------|-------|----------|
+| MerchantPaymentHub.tact | 287 | 🔴 CRITICAL |
+| PaymentHub.tact | 355 | 🔴 CRITICAL |
+| account-locks.fc | 269 | 🟠 HIGH |
+| nft_account_resolver.fc | 149 | 🔴 CRITICAL |
+| nft_account_resolver.tact | 121 | 🔴 CRITICAL |
+| account-state.tact | 285 | 🔴 CRITICAL |
+| Type definitions | 74 | 🟡 MEDIUM |
+| Interfaces | 58 | 🟡 MEDIUM |
+| **TOTAL** | **1,598** | - |
+
+---
+
+## Appendix F: Indexer Trust Model
+
+This appendix defines the trust model for the off-chain indexer component.
+
+### F.1 Indexer Overview
+
+The off-chain indexer is a **read-only** component that:
+- Subscribes to on-chain events
+- Maintains a queryable cache of account states
+- Provides API access to historical data
+- **CANNOT** modify on-chain state
+
+### F.2 What Is Indexed
+
+| Event/Data | Source | Update Frequency |
+|------------|--------|------------------|
+| `MerchantPayment` events | MerchantPaymentHub | Per block |
+| `InternalTransferEvent` events | PaymentHub | Per block |
+| `AccountLocked` events | account-locks.fc | Per block |
+| `AccountUnlocked` events | account-locks.fc | Per block |
+| Account balances (via getters) | PaymentHub, MerchantPaymentHub | On-demand |
+| Account states (via getters) | Account State Machine | On-demand |
+| NFT ownership | NFT contracts | On-demand |
+
+### F.3 What Is Authoritative (and What Is Not)
+
+**⚠️ CRITICAL: Nothing from the indexer is authoritative.**
+
+| Data Source | Authoritative? | Notes |
+|-------------|----------------|-------|
+| On-chain state (balances, locks) | ✅ **YES** | Single source of truth |
+| On-chain events | ✅ **YES** | Immutable history |
+| Indexer cache (balances) | ❌ **NO** | May lag behind chain |
+| Indexer cache (events) | ❌ **NO** | May miss blocks during reorgs |
+| Backend API responses | ❌ **NO** | Derived from indexer |
+| External adapter confirmations | ❌ **NO** | Untrusted third parties |
+
+**Rule:** All fund-affecting decisions MUST be made on-chain with current state, never based on indexer data.
+
+### F.4 Fault Tolerance & Reorg Handling
+
+| Scenario | Handling | Impact |
+|----------|----------|--------|
+| **Indexer downtime** | Backend returns stale data or errors | UX degradation, no fund risk |
+| **Block reorg (< 5 blocks)** | Re-index affected blocks | Temporary inconsistency |
+| **Block reorg (> 5 blocks)** | Full re-sync from checkpoint | Extended inconsistency |
+| **Indexer data corruption** | Full re-sync from genesis | Recovery time |
+| **Network partition** | Indexer falls behind | Stale data |
+
+**Reorg Detection:**
+- Compare block hashes at each height
+- If mismatch detected, roll back and re-index
+- Configurable reorg depth tolerance (default: 10 blocks)
+
+### F.5 Indexer Security Properties
+
+1. **Read-Only**: Indexer has no private keys, cannot sign transactions
+2. **Non-Authoritative**: All displayed data is cached, may be stale
+3. **Graceful Degradation**: Indexer failure does not prevent on-chain operations
+4. **No Fund Custody**: Indexer never holds or controls user funds
+5. **Public Data Only**: Indexes publicly available on-chain events
+
+### F.6 API Trust Levels
+
+| API Endpoint | Data Source | Trust Level | Use Case |
+|--------------|-------------|-------------|----------|
+| `GET /balance/:nft` | Indexer cache | ⚠️ LOW | Display only |
+| `GET /history/:nft` | Indexed events | ⚠️ LOW | Display only |
+| `GET /lock-status/:nft` | Indexer cache | ⚠️ LOW | Display only |
+| On-chain getter | Blockchain | ✅ HIGH | Transaction validation |
+
+**Best Practice:** Always verify critical data on-chain before executing transactions.
+
+---
+
+## Appendix G: Pre-Audit Freeze Checklist
+
+This appendix defines the formal code freeze criteria for the security audit.
+
+### G.1 Code Freeze Status
+
+| Property | Value |
+|----------|-------|
+| **Freeze Date** | 2025-12-29 |
+| **Freeze Commit** | `4027b9d` (Merge main into issue-22 branch) |
+| **Branch** | `main` (after PR merge) |
+| **Status** | 🔒 FROZEN |
+
+### G.2 Frozen Contracts
+
+| Contract | File | Status |
+|----------|------|--------|
+| MerchantPaymentHub | `contracts/MerchantPaymentHub.tact` | 🔒 FROZEN |
+| PaymentHub | `contracts/payments/PaymentHub.tact` | 🔒 FROZEN |
+| NFT Account Resolver (FunC) | `contracts/nft-resolver/nft_account_resolver.fc` | 🔒 FROZEN |
+| NFT Account Resolver (Tact) | `contracts/nft-resolver/nft_account_resolver.tact` | 🔒 FROZEN |
+| Account State Machine | `contracts/payment-hub/account-state.tact` | 🔒 FROZEN |
+| Account Locks | `contracts/payments/account-locks.fc` | 🔒 FROZEN |
+| Type Definitions | `contracts/types/*.tact` | 🔒 FROZEN |
+| Interfaces | `contracts/interfaces/*.tact` | 🔒 FROZEN |
+
+### G.3 Compiler & Toolchain Versions
+
+| Tool | Version | Notes |
+|------|---------|-------|
+| **Tact Compiler** | Latest stable | Verify with `tact --version` |
+| **FunC Compiler** | TON Labs release | Part of TON toolchain |
+| **TON SDK** | Latest stable | For deployment scripts |
+| **Node.js** | 18+ LTS | Test execution |
+| **TypeScript** | 5.x | Test compilation |
+
+> ⚠️ **Note:** Exact compiler versions should be captured at deployment time and recorded in the audit report.
+
+### G.4 Target Network
+
+| Property | Value |
+|----------|-------|
+| **Primary Target** | TON Mainnet |
+| **Testing Networks** | TON Testnet |
+| **Deployment Status** | Not yet deployed (audit first) |
+
+### G.5 Freeze Rules
+
+**Prohibited During Freeze:**
+- ❌ Any changes to in-scope contract logic
+- ❌ Adding or removing functions
+- ❌ Changing state variables or storage layout
+- ❌ Modifying error codes or message structures
+- ❌ "Quick fixes" for audit findings
+
+**Permitted During Freeze:**
+- ✅ Documentation updates (non-code)
+- ✅ Test additions (non-invasive, test files only)
+- ✅ README and comment updates (no logic changes)
+- ✅ CI/CD configuration changes
+
+### G.6 Freeze Verification
+
+To verify code freeze integrity:
+
+```bash
+# Get freeze commit hash
+git rev-parse HEAD
+
+# Compare with expected freeze commit
+# Expected: 4027b9d (or later main branch commit after PR merge)
+
+# Verify no uncommitted changes to contracts
+git status contracts/
+
+# Check contract file hashes
+sha256sum contracts/MerchantPaymentHub.tact
+sha256sum contracts/payments/PaymentHub.tact
+sha256sum contracts/payments/account-locks.fc
+sha256sum contracts/nft-resolver/nft_account_resolver.fc
+sha256sum contracts/nft-resolver/nft_account_resolver.tact
+sha256sum contracts/payment-hub/account-state.tact
+```
+
+### G.7 Post-Audit Unfreeze Procedure
+
+After audit completion:
+
+1. Create new branch for remediation
+2. Apply fixes for Critical/High findings
+3. Submit fixed code for re-audit
+4. Receive final audit report
+5. Update freeze commit to final audited version
+6. Deploy to testnet for final verification
+7. Deploy to mainnet
+
+---
+
 **Document Status**: Audit Preparation
-**Last Updated**: 2025-12-27
+**Last Updated**: 2025-12-29
 **Maintainers**: Tonbankcard Protocol Team
-**Audit Version**: 1.0
+**Audit Version**: 1.1
