@@ -8,6 +8,22 @@ A lightweight, **non-custodial** SDK for integrating TONBANKCARD payments into w
 
 ---
 
+## ⚠️ CRITICAL: SDK Trust Model
+
+> **SDK responses must NEVER be trusted without on-chain verification.**
+
+This SDK is a **thin wrapper** that provides convenience methods. It is NOT a source of truth.
+
+| Source | Trust Level | Use Case |
+|--------|-------------|----------|
+| SDK responses | ❌ **Never trust** | Convenience only |
+| API responses | ❌ **Never trust** | Invoice storage only |
+| Blockchain | ✅ **Authoritative** | All payment verification |
+
+**Always verify settlements on-chain before granting access or delivering goods.**
+
+---
+
 ## 🔐 Security Guarantees
 
 This SDK is **NON-CUSTODIAL** by design:
@@ -356,6 +372,80 @@ Run with coverage:
 ```bash
 npm run test:coverage
 ```
+
+---
+
+## 🔄 SDK ↔ API Compatibility
+
+This SDK is designed to be **forward-compatible** with the Merchant API (Issue 5.1).
+
+### Compatibility Matrix
+
+| SDK Version | API Version | Status | Notes |
+|-------------|-------------|--------|-------|
+| 0.1.x | 1.0.x | ✅ Compatible | Initial release |
+| 0.1.x | 1.1.x | ⚠️ Partial | New API features not exposed |
+| 0.2.x | 1.1.x | ✅ Compatible | Full feature support |
+
+### Breaking Changes Policy
+
+- **Major SDK versions** (1.0 → 2.0) may break API compatibility
+- **Minor SDK versions** (1.0 → 1.1) are backward-compatible
+- **Patch SDK versions** (1.0.0 → 1.0.1) are bug fixes only
+
+### Version Checking
+
+Check SDK version at runtime:
+
+```typescript
+import { VERSION } from '@tonbankcard/merchant-sdk';
+console.log(`SDK Version: ${VERSION}`);
+```
+
+---
+
+## ⚠️ Error Handling
+
+This SDK is a **thin wrapper** and propagates errors from underlying sources with minimal transformation.
+
+### Error Types
+
+| Source | Error Handling | SDK Behavior |
+|--------|----------------|--------------|
+| Network errors | Raw propagation | Wraps in `Error` with context |
+| API errors | Raw propagation | Passes HTTP status + message |
+| Blockchain errors | Raw propagation | Passes TON client errors |
+| Validation errors | SDK-generated | Throws with descriptive message |
+
+### Error Handling Best Practices
+
+```typescript
+try {
+  const status = await sdk.getInvoiceStatus(invoiceId);
+} catch (error) {
+  if (error.message.includes('API error')) {
+    // API endpoint issue - verify on-chain directly
+    console.log('API unavailable, checking blockchain directly');
+  } else if (error.message.includes('not found')) {
+    // Invoice doesn't exist
+    console.log('Invoice not found');
+  } else {
+    // Network or other error
+    console.error('Error:', error.message);
+  }
+}
+```
+
+### Why Thin Wrapper?
+
+The SDK intentionally does NOT normalize or abstract errors because:
+
+1. **Transparency**: Developers see the actual error source
+2. **No hidden behavior**: Errors are not silently swallowed
+3. **Debugging**: Stack traces point to actual failure points
+4. **Non-custodial**: SDK makes no assumptions about error handling strategy
+
+**Remember**: Always verify payment status on-chain, regardless of SDK errors.
 
 ---
 
