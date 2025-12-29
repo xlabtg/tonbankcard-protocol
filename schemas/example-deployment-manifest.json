@@ -1,0 +1,93 @@
+{
+  "$schema": "https://tonbankcard.org/schemas/deployment-manifest-v1.json",
+  "protocolVersion": "1.0.0",
+  "deployment": {
+    "network": "mainnet",
+    "networkId": -239,
+    "timestamp": "2025-01-15T12:00:00Z",
+    "deployer": "EQC7VpEHw2DA9hxkdx_WXv9NSkb_v_KVQMY2Le4a4Fk9DUqQ"
+  },
+  "source": {
+    "repository": "https://github.com/xlabtg/tonbankcard-protocol",
+    "commit": "abc123def456789012345678901234567890abcd",
+    "branch": "main",
+    "tag": "v1.0.0"
+  },
+  "compiler": {
+    "tact": "1.0.0",
+    "func": "0.4.4",
+    "fift": "0.4.4",
+    "node": "20.10.0",
+    "npm": "10.2.3"
+  },
+  "contracts": [
+    {
+      "name": "PaymentHub",
+      "address": "EQA1234567890abcdefghijklmnopqrstuvwxyz123456789AB",
+      "codeHash": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "initDataHash": "sha256:fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
+      "sourceFile": "contracts/payments/PaymentHub.tact",
+      "invariants": [
+        "I1-non-custodial",
+        "I2-nft-authority",
+        "I3-no-admin-control",
+        "I4-atomic-transfers",
+        "I5-ledger-conservation"
+      ]
+    },
+    {
+      "name": "MerchantPaymentHub",
+      "address": "EQB9876543210zyxwvutsrqponmlkjihgfedcba987654321ZY",
+      "codeHash": "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+      "initDataHash": "sha256:0987654321fedcba0987654321fedcba0987654321fedcba0987654321fedcba",
+      "sourceFile": "contracts/MerchantPaymentHub.tact",
+      "invariants": [
+        "I1-non-custodial",
+        "I2-nft-authority",
+        "I3-no-admin-control",
+        "I4-atomic-transfers",
+        "I5-ledger-conservation",
+        "I6-lock-not-confiscation"
+      ]
+    },
+    {
+      "name": "NFTAccountResolver",
+      "address": "EQC1111111111111111111111111111111111111111111111AA",
+      "codeHash": "sha256:111111111111111111111111111111111111111111111111111111111111111",
+      "sourceFile": "contracts/nft-resolver/nft_account_resolver.tact",
+      "invariants": [
+        "I2-nft-authority",
+        "I7-adapter-isolation"
+      ]
+    }
+  ],
+  "verification": {
+    "bytecodeVerified": true,
+    "sourceAvailable": true,
+    "auditReports": [
+      "https://example.com/tonbankcard-audit-v1.pdf"
+    ],
+    "verificationTools": [
+      "ton-verifier",
+      "tonscan"
+    ]
+  },
+  "immutability": {
+    "upgradeProhibited": true,
+    "noProxyPatterns": true,
+    "noAdminControl": true,
+    "noSelfDestruct": true
+  },
+  "dependencies": [
+    {
+      "name": "TBC Jetton Master",
+      "address": "EQD_TBC_JETTON_MASTER_ADDRESS_HERE_1234567890abcdef",
+      "version": "1.0.0"
+    },
+    {
+      "name": "NFT Collection 7777",
+      "address": "EQD_NFT_COLLECTION_7777_ADDRESS_1234567890abcdefghij"
+    }
+  ],
+  "notes": "Initial mainnet deployment of TONBANKCARD Protocol v1.0.0. All contracts verified and audited."
+}
