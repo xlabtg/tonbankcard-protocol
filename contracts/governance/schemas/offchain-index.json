@@ -1,0 +1,352 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TONBANKCARD Governance Transparency Index Schema",
+  "description": "Schema for off-chain indexing of governance transparency data. All data must mirror on-chain truth and is explicitly non-authoritative.",
+  "version": "1.0.0",
+  "definitions": {
+    "ProposalSummary": {
+      "type": "object",
+      "description": "Privacy-preserving proposal record. Does NOT include voter addresses or individual votes.",
+      "properties": {
+        "proposal_id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unique proposal identifier"
+        },
+        "proposal_hash": {
+          "type": "string",
+          "pattern": "^0x[a-fA-F0-9]{64}$",
+          "description": "SHA-256 hash of proposal content (not content itself)"
+        },
+        "category": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Proposal category (0=ROADMAP_SIGNAL, 1=INTEGRATION_RECOMMENDATION, 2=DOCUMENTATION_UPDATE, 3=RISK_DISCLOSURE, 4=DEPRECATION_NOTICE, 5=ECOSYSTEM_GRANT_SIGNAL)"
+        },
+        "category_name": {
+          "type": "string",
+          "enum": [
+            "ROADMAP_SIGNAL",
+            "INTEGRATION_RECOMMENDATION",
+            "DOCUMENTATION_UPDATE",
+            "RISK_DISCLOSURE",
+            "DEPRECATION_NOTICE",
+            "ECOSYSTEM_GRANT_SIGNAL"
+          ],
+          "description": "Human-readable category name"
+        },
+        "voting_window_start": {
+          "type": "integer",
+          "description": "Start of voting period (Unix timestamp)"
+        },
+        "voting_window_end": {
+          "type": "integer",
+          "description": "End of voting period (Unix timestamp)"
+        },
+        "outcome": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Proposal outcome (0=PENDING, 1=ACCEPTED, 2=REJECTED, 3=NO_QUORUM)"
+        },
+        "outcome_name": {
+          "type": "string",
+          "enum": ["PENDING", "ACCEPTED", "REJECTED", "NO_QUORUM"],
+          "description": "Human-readable outcome name"
+        },
+        "indexed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this record was indexed"
+        },
+        "source_tx_hash": {
+          "type": "string",
+          "description": "On-chain transaction hash for verification"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "proposal_hash",
+        "category",
+        "voting_window_start",
+        "voting_window_end",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "VotingSummary": {
+      "type": "object",
+      "description": "Aggregated voting data. PRIVACY: Does NOT expose who voted or how they voted.",
+      "properties": {
+        "proposal_id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Reference to proposal"
+        },
+        "total_votes_cast": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 222,
+          "description": "Aggregate vote count only (max 222 TBC Diamond NFTs)"
+        },
+        "quorum_threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 222,
+          "description": "Minimum votes required for quorum"
+        },
+        "quorum_met": {
+          "type": "boolean",
+          "description": "Whether quorum was achieved"
+        },
+        "passed": {
+          "type": "boolean",
+          "description": "Whether proposal passed (quorum + majority)"
+        },
+        "indexed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this record was indexed"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "total_votes_cast",
+        "quorum_threshold",
+        "quorum_met",
+        "passed"
+      ],
+      "additionalProperties": false
+    },
+    "AssetSnapshot": {
+      "type": "object",
+      "description": "Governance asset snapshot for verification",
+      "properties": {
+        "total_supply": {
+          "type": "integer",
+          "const": 222,
+          "description": "Fixed supply of TBC Diamond NFTs"
+        },
+        "snapshot_block_height": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Block height at snapshot time"
+        },
+        "snapshot_hash": {
+          "type": "string",
+          "pattern": "^0x[a-fA-F0-9]{64}$",
+          "description": "Hash for external verification"
+        },
+        "indexed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this record was indexed"
+        }
+      },
+      "required": ["total_supply", "snapshot_block_height", "snapshot_hash"],
+      "additionalProperties": false
+    },
+    "GovernanceStats": {
+      "type": "object",
+      "description": "Aggregate governance statistics",
+      "properties": {
+        "total_proposals": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total proposals submitted"
+        },
+        "proposals_accepted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of accepted proposals"
+        },
+        "proposals_rejected": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of rejected proposals"
+        },
+        "proposals_no_quorum": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of proposals that failed quorum"
+        },
+        "proposals_pending": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of active proposals"
+        },
+        "calculated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When statistics were calculated"
+        }
+      },
+      "required": [
+        "total_proposals",
+        "proposals_accepted",
+        "proposals_rejected",
+        "proposals_no_quorum",
+        "proposals_pending"
+      ],
+      "additionalProperties": false
+    },
+    "CategoryStats": {
+      "type": "object",
+      "description": "Per-category proposal statistics",
+      "properties": {
+        "category": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Category ID"
+        },
+        "category_name": {
+          "type": "string",
+          "enum": [
+            "ROADMAP_SIGNAL",
+            "INTEGRATION_RECOMMENDATION",
+            "DOCUMENTATION_UPDATE",
+            "RISK_DISCLOSURE",
+            "DEPRECATION_NOTICE",
+            "ECOSYSTEM_GRANT_SIGNAL"
+          ],
+          "description": "Human-readable category name"
+        },
+        "proposal_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of proposals in category"
+        }
+      },
+      "required": ["category", "proposal_count"],
+      "additionalProperties": false
+    },
+    "IndexerEvent": {
+      "type": "object",
+      "description": "Event from on-chain for indexing",
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "enum": [
+            "ProposalRecorded",
+            "VotingResultRecorded",
+            "SnapshotRecorded"
+          ],
+          "description": "Type of governance event"
+        },
+        "block_height": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Block where event occurred"
+        },
+        "tx_hash": {
+          "type": "string",
+          "description": "Transaction hash"
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Event timestamp (Unix)"
+        },
+        "payload": {
+          "type": "object",
+          "description": "Event-specific data"
+        }
+      },
+      "required": ["event_type", "block_height", "tx_hash", "timestamp"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Index metadata",
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Schema version"
+        },
+        "chain": {
+          "type": "string",
+          "const": "TON",
+          "description": "Blockchain network"
+        },
+        "contract_address": {
+          "type": "string",
+          "description": "TransparencyRegistry contract address"
+        },
+        "last_indexed_block": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Last block processed by indexer"
+        },
+        "last_indexed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When index was last updated"
+        },
+        "disclaimer": {
+          "type": "string",
+          "const": "This data is non-authoritative. Verify all data on-chain. Governance outcomes are advisory only.",
+          "description": "Required disclaimer"
+        }
+      },
+      "required": ["version", "chain", "contract_address", "disclaimer"],
+      "additionalProperties": false
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ProposalSummary"
+      },
+      "description": "Indexed proposals"
+    },
+    "voting_summaries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/VotingSummary"
+      },
+      "description": "Aggregated voting data"
+    },
+    "snapshots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/AssetSnapshot"
+      },
+      "description": "Historical snapshots"
+    },
+    "stats": {
+      "$ref": "#/definitions/GovernanceStats",
+      "description": "Current aggregate statistics"
+    },
+    "category_stats": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CategoryStats"
+      },
+      "description": "Per-category statistics"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/IndexerEvent"
+      },
+      "description": "Raw indexed events"
+    }
+  },
+  "required": ["metadata", "proposals", "voting_summaries", "stats"],
+  "additionalProperties": false,
+  "_privacy_notice": {
+    "description": "PRIVACY REQUIREMENTS",
+    "forbidden_fields": [
+      "wallet_addresses",
+      "nft_holder_identities",
+      "individual_votes",
+      "vote_timestamps",
+      "delegation_graphs"
+    ],
+    "note": "This schema intentionally excludes any fields that could expose voter identity or individual voting behavior."
+  },
+  "_disclaimer": "This schema defines data that is explicitly non-authoritative. All data must mirror on-chain truth. Governance outcomes are advisory only. TONBANKCARD protocol behavior is immutable and non-custodial."
+}
