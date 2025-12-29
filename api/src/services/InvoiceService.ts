@@ -44,11 +44,31 @@ import {
 } from '../utils/helpers';
 
 /**
- * In-memory invoice storage (for reference implementation)
- * In production, replace with database (PostgreSQL, MongoDB, etc.)
+ * ⚠️ PRODUCTION WARNING: In-memory storage MUST NOT be used in production.
+ *
+ * This reference implementation uses in-memory storage which:
+ * - Loses all data on server restart
+ * - Does not support horizontal scaling
+ * - Has no durability guarantees
+ *
+ * For production, replace with:
+ * - PostgreSQL or MongoDB for invoice storage
+ * - Redis for idempotency keys (with TTL)
  */
 const invoiceStore = new Map<string, Invoice>();
-const idempotencyStore = new Map<string, string>(); // idempotency key -> invoice_id
+
+/**
+ * ⚠️ PRODUCTION WARNING: Idempotency store needs TTL in production.
+ *
+ * In production, use Redis with automatic TTL expiration:
+ * - Set TTL = invoice expiration time (e.g., 24 hours)
+ * - This prevents unbounded memory growth
+ * - Enables idempotency across server restarts
+ */
+const idempotencyStore = new Map<string, { invoiceId: string; expiresAt: number }>();
+
+/** Default TTL for idempotency keys (24 hours in milliseconds) */
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Invoice Service
@@ -82,22 +102,30 @@ export class InvoiceService {
     //   );
     // }
 
-    // Check idempotency
+    // Check idempotency (with TTL support)
     const idempotencyKey = generateIdempotencyKey(request);
-    const existingInvoiceId = idempotencyStore.get(idempotencyKey);
+    const existingEntry = idempotencyStore.get(idempotencyKey);
 
-    if (existingInvoiceId) {
-      const existingInvoice = invoiceStore.get(existingInvoiceId);
+    if (existingEntry) {
+      const now = Date.now();
 
-      // Return existing invoice if not expired
-      if (existingInvoice && !isExpired(existingInvoice.expires_at)) {
-        return existingInvoice;
-      }
-
-      // Clean up expired invoice
-      if (existingInvoice) {
+      // Check if idempotency key has expired (TTL)
+      if (existingEntry.expiresAt < now) {
+        // TTL expired, clean up and allow new invoice creation
         idempotencyStore.delete(idempotencyKey);
-        invoiceStore.delete(existingInvoiceId);
+      } else {
+        const existingInvoice = invoiceStore.get(existingEntry.invoiceId);
+
+        // Return existing invoice if not expired
+        if (existingInvoice && !isExpired(existingInvoice.expires_at)) {
+          return existingInvoice;
+        }
+
+        // Clean up expired invoice
+        if (existingInvoice) {
+          idempotencyStore.delete(idempotencyKey);
+          invoiceStore.delete(existingEntry.invoiceId);
+        }
       }
     }
 
@@ -129,7 +157,15 @@ export class InvoiceService {
 
     // Store invoice
     invoiceStore.set(invoiceId, invoice);
-    idempotencyStore.set(idempotencyKey, invoiceId);
+
+    // Store idempotency key with TTL
+    // TTL is set to the invoice expiration time, ensuring idempotency
+    // is maintained for the lifetime of the invoice
+    const expiresAt = new Date(invoice.expires_at).getTime();
+    idempotencyStore.set(idempotencyKey, {
+      invoiceId,
+      expiresAt: Math.max(expiresAt, Date.now() + IDEMPOTENCY_TTL_MS),
+    });
 
     return invoice;
   }
@@ -328,16 +364,20 @@ export class InvoiceService {
    * event is detected.
    *
    * @param event - MerchantPayment event from blockchain
+   * @param currentBlockNumber - Current block number for confirmation calculation
    */
-  async processSettlementEvent(event: {
-    payer_nft: string;
-    merchant_nft: string;
-    amount_tbc: string;
-    payload_hash: string;
-    block_number: number;
-    tx_hash: string;
-    timestamp: number;
-  }): Promise<void> {
+  async processSettlementEvent(
+    event: {
+      payer_nft: string;
+      merchant_nft: string;
+      amount_tbc: string;
+      payload_hash: string;
+      block_number: number;
+      tx_hash: string;
+      timestamp: number;
+    },
+    currentBlockNumber?: number
+  ): Promise<void> {
     // Find matching invoice by payload_hash
     // The payload should contain the invoice_id, allowing us to match events to invoices
 
@@ -366,6 +406,15 @@ export class InvoiceService {
         });
 
         if (expectedHash === event.payload_hash) {
+          // Calculate confirmations if current block is provided
+          const confirmations = currentBlockNumber
+            ? currentBlockNumber - event.block_number
+            : undefined;
+
+          const isFinal = confirmations !== undefined
+            ? confirmations >= 6 // CONSTANTS.MIN_CONFIRMATIONS
+            : undefined;
+
           // Settlement matched!
           const settlement: Settlement = {
             payer_nft: event.payer_nft,
@@ -377,6 +426,8 @@ export class InvoiceService {
             payload_hash: event.payload_hash,
             on_chain_verified: true,
             verification_url: generateExplorerUrl(event.tx_hash),
+            confirmations,
+            is_final: isFinal,
           };
 
           invoice.status = 'settled';
@@ -390,14 +441,27 @@ export class InvoiceService {
   }
 
   /**
-   * Clean up expired invoices (periodic maintenance task)
+   * Clean up expired invoices and idempotency keys (periodic maintenance task)
    *
    * Should be called periodically (e.g., every hour) to remove expired invoices
    * and free up memory/storage.
+   *
+   * In production with Redis, idempotency keys would auto-expire via TTL.
    */
-  async cleanupExpiredInvoices(): Promise<number> {
-    let cleanedCount = 0;
+  async cleanupExpiredInvoices(): Promise<{ invoicesCleaned: number; idempotencyKeysCleaned: number }> {
+    let invoicesCleaned = 0;
+    let idempotencyKeysCleaned = 0;
+    const now = Date.now();
 
+    // Clean up expired idempotency keys (TTL-based)
+    for (const [key, entry] of idempotencyStore.entries()) {
+      if (entry.expiresAt < now) {
+        idempotencyStore.delete(key);
+        idempotencyKeysCleaned++;
+      }
+    }
+
+    // Clean up expired invoices
     for (const [invoiceId, invoice] of invoiceStore.entries()) {
       if (isExpired(invoice.expires_at) && invoice.status === 'pending') {
         invoice.status = 'expired';
@@ -407,27 +471,29 @@ export class InvoiceService {
       // Remove invoices that have been expired for >7 days
       if (invoice.status === 'expired') {
         const expiryDate = new Date(invoice.expires_at);
-        const now = new Date();
-        const daysSinceExpiry = (now.getTime() - expiryDate.getTime()) / (1000 * 60 * 60 * 24);
+        const daysSinceExpiry = (now - expiryDate.getTime()) / (1000 * 60 * 60 * 24);
 
         if (daysSinceExpiry > 7) {
           invoiceStore.delete(invoiceId);
 
-          // Clean up idempotency store
+          // Clean up idempotency store (belt-and-suspenders with TTL)
           const idempotencyKey = generateIdempotencyKey({
             merchant_nft: invoice.merchant_nft,
             amount_tbc: invoice.amount_tbc,
             currency: invoice.currency,
             metadata: invoice.metadata,
           });
-          idempotencyStore.delete(idempotencyKey);
+          if (idempotencyStore.has(idempotencyKey)) {
+            idempotencyStore.delete(idempotencyKey);
+            idempotencyKeysCleaned++;
+          }
 
-          cleanedCount++;
+          invoicesCleaned++;
         }
       }
     }
 
-    return cleanedCount;
+    return { invoicesCleaned, idempotencyKeysCleaned };
   }
 }
 

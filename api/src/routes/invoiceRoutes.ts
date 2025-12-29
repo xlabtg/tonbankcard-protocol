@@ -16,7 +16,36 @@
 import { Request, Response, NextFunction } from 'express';
 import { invoiceService } from '../services/InvoiceService';
 import { ValidationError } from '../utils/validation';
-import { ErrorCode, ErrorResponse } from '../types/invoice';
+import {
+  ErrorCode,
+  ErrorResponse,
+  ApiKey,
+  ApiKeyPermission,
+  RateLimitBucket,
+} from '../types/invoice';
+
+/**
+ * ⚠️ PRODUCTION WARNING: In-memory stores MUST NOT be used in production.
+ *
+ * For production, use:
+ * - Redis for rate limiting (with automatic TTL expiration)
+ * - PostgreSQL/MongoDB for API key storage
+ */
+
+/** Rate limit buckets per API key + endpoint (in-memory, for reference) */
+const rateLimitBuckets = new Map<string, RateLimitBucket>();
+
+/** API key store (in-memory, for reference only) */
+const apiKeyStore = new Map<string, ApiKey>();
+
+/**
+ * Default rate limits per endpoint (requests per minute)
+ */
+const DEFAULT_RATE_LIMITS = {
+  'invoice:create': 100,
+  'invoice:read': 1000,
+  'invoice:status': 500,
+} as const;
 
 /**
  * Error response helper
@@ -138,27 +167,187 @@ export async function getInvoiceStatus(req: Request, res: Response): Promise<Res
 }
 
 /**
- * Authentication middleware (stub)
+ * Check if API key has required permission (scoping)
  *
- * In production, this would validate API keys against a database
+ * @param apiKey - API key to check
+ * @param requiredPermission - Required permission
+ * @returns true if permitted, false otherwise
+ */
+function hasPermission(apiKey: ApiKey, requiredPermission: ApiKeyPermission): boolean {
+  return apiKey.permissions.includes(requiredPermission);
+}
+
+/**
+ * Check rate limit for API key + endpoint
+ *
+ * Uses token bucket algorithm with per-key limits.
+ * In production, use Redis for distributed rate limiting.
+ *
+ * @param apiKeyId - API key identifier
+ * @param endpoint - Endpoint permission being accessed
+ * @param limit - Requests per minute limit
+ * @returns Object with allowed status and retry info
+ */
+function checkRateLimit(
+  apiKeyId: string,
+  endpoint: ApiKeyPermission,
+  limit: number
+): { allowed: boolean; retryAfter?: number; remaining: number } {
+  const bucketKey = `${apiKeyId}:${endpoint}`;
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute
+
+  let bucket = rateLimitBuckets.get(bucketKey);
+
+  if (!bucket) {
+    // Initialize new bucket
+    bucket = {
+      tokens: limit,
+      max_tokens: limit,
+      last_refill: now,
+      refill_at: now + windowMs,
+    };
+    rateLimitBuckets.set(bucketKey, bucket);
+  }
+
+  // Refill tokens based on time elapsed
+  const elapsed = now - bucket.last_refill;
+  const refillAmount = (elapsed / windowMs) * limit;
+
+  bucket.tokens = Math.min(bucket.max_tokens, bucket.tokens + refillAmount);
+  bucket.last_refill = now;
+
+  if (bucket.tokens < 1) {
+    // Rate limit exceeded
+    const retryAfter = Math.ceil((1 - bucket.tokens) * (windowMs / limit) / 1000);
+    return {
+      allowed: false,
+      retryAfter,
+      remaining: 0,
+    };
+  }
+
+  // Consume token
+  bucket.tokens -= 1;
+  bucket.refill_at = now + windowMs;
+
+  return {
+    allowed: true,
+    remaining: Math.floor(bucket.tokens),
+  };
+}
+
+/**
+ * Authentication middleware with permission scoping
+ *
+ * Validates API key and checks:
+ * 1. Key exists and is valid
+ * 2. Key has required permission
+ * 3. Key is not expired
+ * 4. Rate limit not exceeded
+ *
+ * @param requiredPermission - Permission required for this endpoint
+ */
+export function authenticateWithPermission(requiredPermission: ApiKeyPermission) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const apiKeyValue = extractApiKey(req);
+
+      // In production, lookup API key in database by hash
+      // const apiKey = await apiKeyService.findByKeyHash(hashApiKey(apiKeyValue));
+      //
+      // For reference implementation, we use a stub that accepts any key
+      // and creates a temporary entry with full permissions
+      let apiKey = apiKeyStore.get(apiKeyValue);
+
+      if (!apiKey) {
+        // Stub: Create temporary API key entry for reference implementation
+        // In production, this would throw INVALID_API_KEY error
+        apiKey = {
+          key_id: `key_${apiKeyValue.substring(0, 8)}`,
+          key_hash: apiKeyValue, // Stub: not actually hashed
+          merchant_nft: '', // Would be set from database
+          permissions: ['invoice:create', 'invoice:read', 'invoice:status'],
+          rate_limits: {
+            invoice_create_rpm: DEFAULT_RATE_LIMITS['invoice:create'],
+            invoice_read_rpm: DEFAULT_RATE_LIMITS['invoice:read'],
+            invoice_status_rpm: DEFAULT_RATE_LIMITS['invoice:status'],
+          },
+          created_at: new Date().toISOString(),
+          expires_at: null,
+          last_used_at: null,
+          is_active: true,
+        };
+        apiKeyStore.set(apiKeyValue, apiKey);
+      }
+
+      // Check if key is active
+      if (!apiKey.is_active) {
+        throw new ValidationError(ErrorCode.INVALID_API_KEY, 'API key is deactivated');
+      }
+
+      // Check if key is expired
+      if (apiKey.expires_at && new Date(apiKey.expires_at) < new Date()) {
+        throw new ValidationError(ErrorCode.INVALID_API_KEY, 'API key has expired');
+      }
+
+      // Check permission (scoping)
+      if (!hasPermission(apiKey, requiredPermission)) {
+        throw new ValidationError(
+          ErrorCode.UNAUTHORIZED_MERCHANT,
+          `API key does not have permission: ${requiredPermission}`,
+          { required_permission: requiredPermission }
+        );
+      }
+
+      // Check rate limit (per-key)
+      const rateLimit = apiKey.rate_limits[
+        requiredPermission.replace(':', '_') as keyof typeof apiKey.rate_limits
+      ] || DEFAULT_RATE_LIMITS[requiredPermission];
+
+      const rateLimitResult = checkRateLimit(apiKey.key_id, requiredPermission, rateLimit);
+
+      if (!rateLimitResult.allowed) {
+        res.setHeader('Retry-After', rateLimitResult.retryAfter!.toString());
+        res.setHeader('X-RateLimit-Limit', rateLimit.toString());
+        res.setHeader('X-RateLimit-Remaining', '0');
+
+        throw new ValidationError(
+          ErrorCode.RATE_LIMIT_EXCEEDED,
+          'Rate limit exceeded',
+          {
+            retryAfter: rateLimitResult.retryAfter,
+            limit: rateLimit,
+            window: 60,
+          }
+        );
+      }
+
+      // Set rate limit headers
+      res.setHeader('X-RateLimit-Limit', rateLimit.toString());
+      res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
+
+      // Update last used timestamp
+      apiKey.last_used_at = new Date().toISOString();
+      apiKeyStore.set(apiKeyValue, apiKey);
+
+      // Store API key info in request for later use
+      (req as any).apiKey = apiKey;
+
+      next();
+    } catch (error) {
+      sendErrorResponse(res, error as Error);
+    }
+  };
+}
+
+/**
+ * Authentication middleware (legacy, uses full permissions)
+ *
+ * @deprecated Use authenticateWithPermission for scoped access
  */
 export function authenticateApiKey(req: Request, res: Response, next: NextFunction): void {
-  try {
-    const apiKey = extractApiKey(req);
-
-    // TODO: Validate API key against database
-    // const isValid = await apiKeyService.validateKey(apiKey);
-    // if (!isValid) {
-    //   throw new ValidationError(ErrorCode.INVALID_API_KEY, 'Invalid API key');
-    // }
-
-    // Store merchant info in request for later use
-    // req.merchant = await merchantService.getMerchantByApiKey(apiKey);
-
-    next();
-  } catch (error) {
-    sendErrorResponse(res, error as Error);
-  }
+  authenticateWithPermission('invoice:create')(req, res, next);
 }
 
 /**
@@ -221,16 +410,19 @@ export const corsOptions = {
  * ```
  */
 export function setupInvoiceRoutes(app: any): void {
-  // Public endpoint (no auth required)
+  // Public endpoint (no auth required, but rate limited by IP)
   app.get('/v1/invoice/:invoice_id', rateLimitMiddleware, getInvoice);
 
-  // Protected endpoints (auth required)
-  app.post('/v1/invoice/create', rateLimitMiddleware, authenticateApiKey, createInvoice);
+  // Protected endpoints with scoped permissions and per-key rate limiting
+  app.post(
+    '/v1/invoice/create',
+    authenticateWithPermission('invoice:create'),
+    createInvoice
+  );
 
   app.get(
     '/v1/invoice/:invoice_id/status',
-    rateLimitMiddleware,
-    authenticateApiKey,
+    authenticateWithPermission('invoice:status'),
     getInvoiceStatus
   );
 

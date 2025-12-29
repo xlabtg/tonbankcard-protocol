@@ -455,9 +455,141 @@ function validateRequestTimestamp(timestamp: string): void {
 }
 ```
 
+### Nonce Policy
+
+> **Note**: The Merchant API uses **deterministic idempotency** based on request content hash,
+> rather than explicit client-provided nonces. This design choice is intentional.
+
+**Why Deterministic Idempotency Instead of Nonces:**
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Client Nonce** | Client controls uniqueness | Requires nonce storage, tracking, client complexity |
+| **Deterministic Hash** | Automatic, no client burden | Same request = same invoice (by design) |
+
+**How Idempotency Works:**
+
+1. **Request Hash**: SHA-256 hash of `(merchant_nft, amount_tbc, metadata)`
+2. **TTL**: Idempotency is valid for the invoice lifetime (default 24 hours)
+3. **Same Input = Same Output**: Identical requests return the same invoice ID
+
+```typescript
+// Idempotency key generation
+function generateIdempotencyKey(request: CreateInvoiceRequest): string {
+  const data = {
+    merchant_nft: request.merchant_nft,
+    amount_tbc: request.amount_tbc,
+    metadata: request.metadata || {},
+  };
+
+  const jsonString = JSON.stringify(data, Object.keys(data).sort());
+  return crypto.createHash('sha256').update(jsonString).digest('hex');
+}
+```
+
+**If You Need Unique Invoices for Identical Orders:**
+
+Add a unique identifier to the metadata:
+
+```typescript
+// Option 1: Use order ID
+const invoice = await api.createInvoice({
+  merchant_nft: 'EQ...',
+  amount_tbc: '1000000000',
+  metadata: {
+    order_id: 'ORDER-12345', // Unique per order
+    description: 'Product purchase',
+  },
+});
+
+// Option 2: Use timestamp or nonce in metadata
+const invoice = await api.createInvoice({
+  merchant_nft: 'EQ...',
+  amount_tbc: '1000000000',
+  metadata: {
+    nonce: crypto.randomUUID(), // Client-generated nonce
+    description: 'Product purchase',
+  },
+});
+```
+
+**Idempotency Key TTL:**
+
+- Keys expire with the invoice (default: 24 hours)
+- After expiration, the same request will create a new invoice
+- In production, use Redis with automatic TTL expiration
+
 ---
 
 ## 7. Settlement Verification
+
+> **⚠️ Critical Consideration: Block Finality**
+>
+> The API reads on-chain events but **does not prove finality** by default.
+> In blockchain systems, a transaction can be reverted if a block reorganization (reorg) occurs.
+>
+> **For high-value transactions, merchants MUST verify finality independently.**
+
+### Block Finality on TON
+
+TON uses a **Byzantine Fault Tolerant (BFT)** consensus mechanism where:
+
+1. **Masterchain Finality**: ~3-5 seconds (validators sign block)
+2. **Practical Finality**: 1 block confirmation is typically sufficient
+3. **Conservative Finality**: Wait for 6+ confirmations for high-value transactions
+
+**Finality Verification in the API:**
+
+```typescript
+interface Settlement {
+  // ... existing fields ...
+
+  /** Block number where payment was settled */
+  block_number: number;
+
+  /** Number of confirmations at the time of API response */
+  confirmations: number;
+
+  /** Whether the block is considered final */
+  is_final: boolean;
+
+  /** Minimum confirmations required for finality */
+  required_confirmations: number;
+}
+```
+
+**Confirmation Thresholds:**
+
+| Transaction Value | Required Confirmations | Wait Time (approx) |
+|-------------------|------------------------|-------------------|
+| < 1,000 TBC | 1 confirmation | ~5 seconds |
+| 1,000 - 10,000 TBC | 3 confirmations | ~15 seconds |
+| > 10,000 TBC | 6 confirmations | ~30 seconds |
+| Mission-critical | 12+ confirmations | ~60 seconds |
+
+**Production Implementation:**
+
+```typescript
+async function verifySettlementFinality(
+  settlement: Settlement,
+  minConfirmations: number = CONSTANTS.MIN_CONFIRMATIONS
+): Promise<{ isFinal: boolean; confirmations: number }> {
+  const latestBlock = await tonClient.getLatestBlock();
+  const confirmations = latestBlock - settlement.block_number;
+
+  return {
+    isFinal: confirmations >= minConfirmations,
+    confirmations,
+  };
+}
+```
+
+**Merchant Best Practices for Finality:**
+
+1. **Low-value goods**: Accept with 1 confirmation
+2. **Digital goods**: Accept with 3 confirmations
+3. **High-value goods**: Wait for 6+ confirmations
+4. **Irreversible actions**: Wait for 12+ confirmations or verify masterchain signature
 
 ### On-Chain Verification Process
 

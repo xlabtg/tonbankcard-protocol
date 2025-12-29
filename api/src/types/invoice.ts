@@ -56,6 +56,27 @@ export interface Settlement {
 
   /** Blockchain explorer link */
   verification_url: string;
+
+  /**
+   * Number of block confirmations at the time of API response.
+   * Higher confirmations = higher confidence in finality.
+   *
+   * Recommended thresholds:
+   * - 1 confirmation: Low-value transactions
+   * - 3 confirmations: Standard transactions
+   * - 6 confirmations: High-value transactions (default MIN_CONFIRMATIONS)
+   * - 12+ confirmations: Mission-critical transactions
+   */
+  confirmations?: number;
+
+  /**
+   * Whether the settlement is considered final based on confirmation count.
+   * True if confirmations >= CONSTANTS.MIN_CONFIRMATIONS (default: 6)
+   *
+   * Note: For high-value transactions, merchants should verify finality
+   * independently using their own TON node or trusted RPC provider.
+   */
+  is_final?: boolean;
 }
 
 /**
@@ -212,4 +233,78 @@ export const CONSTANTS = {
 
   /** Minimum confirmations for settlement */
   MIN_CONFIRMATIONS: 6,
+
+  /** Default idempotency key TTL (24 hours in milliseconds) */
+  IDEMPOTENCY_TTL_MS: 24 * 60 * 60 * 1000,
 } as const;
+
+/**
+ * API Key Permissions
+ *
+ * Scoped permissions for API keys:
+ * - invoice:create - Create new invoices
+ * - invoice:read - Read invoice details (public endpoint, but tracked)
+ * - invoice:status - Check settlement status
+ *
+ * Default: All permissions granted for new keys
+ */
+export type ApiKeyPermission = 'invoice:create' | 'invoice:read' | 'invoice:status';
+
+/**
+ * API Key with scoping and rate limits
+ *
+ * In production, this would be stored in a database with the key_hash (SHA-256 + salt).
+ * The actual API key is never stored, only the hash.
+ */
+export interface ApiKey {
+  /** Unique key identifier (public, can be logged) */
+  key_id: string;
+
+  /** Hash of the API key (SHA-256 with salt) */
+  key_hash: string;
+
+  /** Authorized merchant NFT address */
+  merchant_nft: string;
+
+  /** Scoped permissions */
+  permissions: ApiKeyPermission[];
+
+  /** Per-key rate limits */
+  rate_limits: {
+    /** Requests per minute for invoice:create */
+    invoice_create_rpm: number;
+    /** Requests per minute for invoice:read */
+    invoice_read_rpm: number;
+    /** Requests per minute for invoice:status */
+    invoice_status_rpm: number;
+  };
+
+  /** Creation timestamp (ISO 8601) */
+  created_at: string;
+
+  /** Expiration timestamp (ISO 8601), null = never expires */
+  expires_at: string | null;
+
+  /** Last used timestamp (ISO 8601), null = never used */
+  last_used_at: string | null;
+
+  /** Whether the key is active */
+  is_active: boolean;
+}
+
+/**
+ * Rate limit bucket (token bucket algorithm)
+ */
+export interface RateLimitBucket {
+  /** Current token count */
+  tokens: number;
+
+  /** Maximum tokens */
+  max_tokens: number;
+
+  /** Last refill timestamp */
+  last_refill: number;
+
+  /** Next refill timestamp */
+  refill_at: number;
+}

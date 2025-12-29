@@ -6,6 +6,25 @@ This directory contains the reference implementation of the Tonbankcard Merchant
 
 ---
 
+> **⚠️ PRODUCTION WARNING**
+>
+> **This implementation MUST NOT be used in production without persistent storage.**
+>
+> The reference implementation uses **in-memory storage** for invoices and idempotency keys.
+> This means:
+> - All data is lost on server restart
+> - No horizontal scaling (each instance has its own store)
+> - No durability guarantees
+>
+> For production use, replace the in-memory stores with:
+> - **PostgreSQL** or **MongoDB** for invoice storage
+> - **Redis** for rate limiting and idempotency key storage
+> - **A blockchain indexer** for settlement verification
+>
+> See [Deployment](#deployment) for the complete production checklist.
+
+---
+
 ## Table of Contents
 
 1. [Overview](#overview)
