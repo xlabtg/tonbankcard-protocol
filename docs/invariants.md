@@ -1,552 +1,462 @@
-# Tonbankcard Protocol Invariants & Guarantees
+# TONBANKCARD Protocol — Formal Invariants & Guarantees
 
-## Overview
+**Document Type:** Security Foundation
+**Status:** Formal Specification
+**Issue Reference:** [#18 - Issue 4.1 Formal Invariants & Protocol Guarantees](https://github.com/xlabtg/tonbankcard-protocol/issues/18)
+**Last Updated:** 2025-12-27
 
-This document defines the **formal invariants** and **protocol guarantees** that MUST hold true at all times in the Tonbankcard protocol. These invariants form the foundation of security, correctness, and user trust.
+---
 
-**Issue Reference**: [#22 - Audit Readiness Checklist & Scope Definition](https://github.com/xlabtg/tonbankcard-protocol/issues/22)
+## Purpose
 
-**Related**: [Issue 4.1 - Formal Invariants & Protocol Guarantees](https://github.com/xlabtg/tonbankcard-protocol/issues/20)
+This document defines the **core invariants and guarantees** of the TONBANKCARD protocol. These invariants are non-negotiable rules that must always hold true across all smart contracts, adapters, and future extensions.
+
+These invariants form the basis for:
+- Security audits
+- Formal verification
+- Governance decisions
+- Ecosystem integrations
+
+**Any violation of these invariants represents a critical security vulnerability.**
 
 ---
 
 ## Core Protocol Invariants
 
-### I1: Non-Custodial Guarantee
+### I1 — Non-Custodial Ownership
 
-**Statement**: The protocol NEVER takes custody of user funds.
+**Statement:**
+> At no point may the protocol take custody of user funds, move funds without explicit user-initiated transactions, or override NFT ownership.
 
-**Formal Definition**:
+**Formal Definition:**
 ```
-∀ user_nft ∈ NFT_Accounts:
-  balance(user_nft) is controlled exclusively by owner(user_nft)
-  ∧ ∄ admin_function that can withdraw(balance(user_nft)) without user_signature
+∀ transaction T, ∀ user U:
+  IF T transfers funds from U's account
+  THEN T MUST be signed by U (the NFT owner)
+  AND T MUST be initiated by U
+  AND no protocol admin/operator can initiate T on behalf of U
 ```
 
-**Enforcement**:
-- ✅ No admin withdrawal functions in smart contracts
-- ✅ All transfers require NFT owner signature
-- ✅ Protocol cannot force transfers
-- ✅ No emergency admin fund access
+**Guaranteed Properties:**
+- The owner of the NFT account is the sole authority over the associated on-chain balance
+- No smart contract can move funds without the NFT owner's explicit signature
+- No backend service can initiate fund transfers
+- No external adapter can trigger fund movement
 
-**Violation Consequences**: Complete protocol trust failure
+**Implementation Requirements:**
+1. All transfer functions MUST verify `msg.sender == NFT_owner`
+2. No admin override functions are permitted
+3. No proxy delegation to third parties for fund movement
+4. Backend services are read-only
 
-**Test Coverage**: See `MerchantPaymentHub.spec.ts`, `MerchantPaymentLocks.spec.ts`
+**Contract Mapping:**
+- `PaymentHub.tact`: Verifies ownership in `TransferInternalRequest` handler (line 164)
+- `MerchantPaymentHub.tact`: Validates payer ownership before settlement (lines 90-96)
+- `account-locks.fc`: Lock mechanisms do not move funds, only restrict operations
+
+**Test Coverage:**
+- `tests/invariants/I1-non-custodial-ownership.spec.ts`
+- Negative test: Attempt transfer from non-owner account
+- Negative test: Admin attempting to move user funds
 
 ---
 
-### I2: NFT Ownership = Account Authority
+### I2 — NFT = Account Authority
 
-**Statement**: NFT ownership is the ONLY authority for account operations.
+**Statement:**
+> Each NFT represents exactly one account. Account control is transferred only via NFT transfer. No secondary ownership mechanisms are allowed.
 
-**Formal Definition**:
+**Formal Definition:**
 ```
-∀ operation ∈ {send, withdraw, transfer}:
-  authorized(operation, account) ⟺ msg.sender == owner(account.nft)
+∀ NFT n, ∀ account a:
+  account_authority(a) = NFT_owner(n)
+  AND ∀ time t1, t2 where t2 > t1:
+    IF NFT_owner(n, t1) ≠ NFT_owner(n, t2)
+    THEN account_authority(a, t2) = NFT_owner(n, t2)
 ```
 
-**Enforcement**:
-- ✅ Ownership checked at transaction execution time
-- ✅ No cached ownership assumptions
-- ✅ No alternative authentication paths
-- ✅ No admin override mechanisms
+**Guaranteed Properties:**
+- NFT ownership is the single source of truth for account authority
+- Account control transfers atomically with NFT ownership transfer
+- No separate "authorized users" or "delegates" with fund control
+- No multi-signature override without multi-sig NFT ownership
 
-**Edge Cases**:
-- NFT transfer during pending transaction: Ownership verified atomically per call
-- Multiple operations in same block: Each checks current owner independently
+**Implementation Requirements:**
+1. Always query current NFT owner on-chain before operations
+2. No cached ownership records for fund control decisions
+3. NFT transfer automatically updates account authority
+4. No separate authorization layer
 
-**Test Coverage**: See `NFTAccountResolver.spec.ts`
+**Contract Mapping:**
+- `PaymentHub.tact`: Uses `owner` field from `AccountState` (line 36)
+- `MerchantPaymentHub.tact`: Stores and validates NFT owners (lines 42, 90-96)
+- `nft_account_resolver.fc`: Resolves NFT ownership as authority source (lines 61-69)
+
+**Test Coverage:**
+- `tests/invariants/I2-nft-account-authority.spec.ts`
+- Test: NFT transfer updates account authority
+- Negative test: Previous owner cannot transact after NFT transfer
 
 ---
 
-### I3: Balance Conservation
+### I3 — No Admin Fund Control
 
-**Statement**: The sum of all account balances equals total TBC supply in Payment Hub scope.
+**Statement:**
+> The protocol must not contain admin withdrawals, emergency drains, privileged fund movement, or hidden upgrade paths.
 
-**Formal Definition**:
+**Formal Definition:**
 ```
-∑(balance(nft) for all nft ∈ NFT_Accounts) = constant
-
-∀ internal_transfer(from, to, amount):
-  balance(from)_before - amount = balance(from)_after
-  ∧ balance(to)_before + amount = balance(to)_after
-  ∧ total_supply_before = total_supply_after
+∀ role R in [admin, deployer, operator, risk_authority, lending_adapter]:
+  ∀ account A:
+    R CANNOT initiate fund transfer from A
+    R CANNOT withdraw from A
+    R CANNOT modify balance(A) except through user-initiated transfers
+    R CANNOT upgrade contracts to bypass these restrictions
 ```
 
-**Enforcement**:
-- ✅ Atomic debit and credit operations
-- ✅ No TBC minting in transfer logic
-- ✅ No TBC burning in transfer logic
-- ✅ Transaction reverts if balance insufficient
+**Guaranteed Properties:**
+- No role other than the NFT owner can initiate fund transfers
+- Admin roles (deployer, risk authority, lending adapter) can only set flags/states
+- No emergency withdrawal functions exist
+- No upgradeable proxies that could bypass these rules
+- Development/testing admin functions MUST be removed before production
 
-**Violation Detection**:
-- Audit check: Sum all account balances and verify against expected total
-- Test: Mock multiple transfers and verify conservation
+**Implementation Requirements:**
+1. Admin roles limited to non-financial operations:
+   - Risk authority: Set/clear fraud locks only
+   - Lending adapter: Set/clear collateral locks only
+   - Deployer: Initialize accounts (testing only, must be removed)
+2. No `onlyAdmin` functions that move funds
+3. No upgradeable proxy patterns
+4. All contracts are immutable after deployment
 
-**Test Coverage**: See `MerchantPaymentHub.spec.ts`, `MerchantPaymentEdgeCases.spec.ts`
+**Contract Mapping:**
+- `PaymentHub.tact`: `deployer` can only `InitializeAccount` (testing only, lines 229-240)
+- `account-locks.fc`: Risk authority sets locks, NOT moves funds (lines 160-217)
+- `MerchantPaymentHub.tact`: Admin setup functions are test-only (lines 223-245)
+
+**Test Coverage:**
+- `tests/invariants/I3-no-admin-fund-control.spec.ts`
+- Negative test: Admin cannot withdraw user funds
+- Negative test: Risk authority cannot move funds
+- Negative test: Deployer cannot drain account balances
+- Code audit: Verify no admin override in fund transfer paths
 
 ---
 
-### I4: Atomic Transfer Execution
+### I4 — Atomic Transfers
 
-**Statement**: All transfers are atomic - either fully executed or fully reverted.
+**Statement:**
+> All internal transfers must be atomic, fully settled or reverted, and free from intermediate states.
 
-**Formal Definition**:
+**Formal Definition:**
 ```
-∀ transfer(from, to, amount):
-  (balance(from)_after = balance(from)_before - amount
-   ∧ balance(to)_after = balance(to)_before + amount)
-  ∨ (balance(from)_after = balance(from)_before
-   ∧ balance(to)_after = balance(to)_before)
+∀ transfer T from account A to account B with amount X:
+  EITHER:
+    (balance(A) = balance(A)_before - X) AND
+    (balance(B) = balance(B)_before + X) AND
+    (T.status = SUCCESS)
+  OR:
+    (balance(A) = balance(A)_before) AND
+    (balance(B) = balance(B)_before) AND
+    (T.status = REVERTED)
 ```
 
-**Enforcement**:
-- ✅ TON blockchain atomicity guarantees
-- ✅ No partial state updates
-- ✅ Explicit error handling with reverts
-- ✅ No debit without credit
+**Guaranteed Properties:**
+- A transfer either completes fully or does not occur at all
+- No partial balance updates
+- No intermediate states where funds are "in flight"
+- Reentrancy protection ensures atomicity
 
-**Edge Cases**:
-- Transaction runs out of gas: All state reverted
-- Validation fails mid-execution: All state reverted
-- Receiver contract throws: All state reverted (in future external integrations)
+**Implementation Requirements:**
+1. Use transaction revert on any validation failure
+2. Update both sender and receiver balances in same transaction
+3. Implement reentrancy guards
+4. No asynchronous balance updates
 
-**Test Coverage**: See `MerchantPaymentEdgeCases.spec.ts`
+**Contract Mapping:**
+- `PaymentHub.tact`: Atomic balance update (lines 196-202), reentrancy guard (lines 121, 149-150)
+- `MerchantPaymentHub.tact`: Atomic debit/credit (lines 134-135)
+
+**Test Coverage:**
+- `tests/invariants/I4-atomic-transfers.spec.ts`
+- Test: Successful transfer updates both balances atomically
+- Test: Failed transfer leaves both balances unchanged
+- Test: Reentrancy attempt is blocked
 
 ---
 
-### I5: Lock Enforcement
+### I5 — Ledger Conservation
 
-**Statement**: Locked accounts CANNOT send TBC but CAN receive TBC.
+**Statement:**
+> Internal ledger operations must satisfy: Σ(balances before) = Σ(balances after), except for protocol-defined fees (if any) or explicitly defined mint/burn logic.
 
-**Formal Definition**:
+**Formal Definition:**
 ```
-∀ account ∈ NFT_Accounts:
-  (fraud_locked(account) ∨ collateral_locked(account))
-  ⟹ can_send(account) = false
-  ∧ can_receive(account) = true
+∀ transaction T:
+  Σ(all_balances_after(T)) = Σ(all_balances_before(T)) - fees(T) - burns(T) + mints(T)
+
+WHERE:
+  fees(T) = 0 for internal TBC transfers (zero-fee guarantee)
+  burns(T) = 0 (no burn mechanism in current protocol)
+  mints(T) = 0 (no mint mechanism in payment hub)
 ```
 
-**Lock Types**:
-1. **FRAUD_LOCK**: Prevents sending due to fraud investigation
-2. **COLLATERAL_LOCK**: Prevents sending while used as collateral
+**Guaranteed Properties:**
+- Total TBC in the system is conserved during transfers
+- No funds can be created or destroyed during transfers
+- Internal transfers have zero fees
+- Balance sum is an invariant across all operations
 
-**Enforcement**:
-- ✅ Lock check before all SEND operations
-- ✅ Locks enforced at protocol level, not application level
-- ✅ No alternative transfer paths bypass locks
-- ✅ Receiving is always allowed
+**Implementation Requirements:**
+1. Every debit MUST have a corresponding credit of equal amount
+2. No rounding errors or precision loss
+3. No hidden fees deducted from transfers
+4. Explicit tracking of any future fee mechanisms
 
-**Edge Cases**:
-- Multiple locks active: Account locked if ANY lock is active
-- NFT transferred with lock: Lock persists with NFT address
-- Lock set during pending transfer: Transfer fails atomically
+**Contract Mapping:**
+- `PaymentHub.tact`: Direct balance arithmetic (lines 197-198)
+- `MerchantPaymentHub.tact`: Symmetric debit/credit (lines 178-187)
 
-**Test Coverage**: See `MerchantPaymentLocks.spec.ts`, `contracts/payments/tests/account-locks.spec.fc`
+**Test Coverage:**
+- `tests/invariants/I5-ledger-conservation.spec.ts`
+- Test: Sum of balances unchanged after transfer
+- Test: Multiple concurrent transfers preserve total supply
+- Test: Self-transfer does not create/destroy funds
 
 ---
 
-### I6: Account State Transitions
+### I6 — Lock ≠ Confiscation
 
-**Statement**: Account states transition according to strict rules.
+**Statement:**
+> Account locks prevent outgoing transfers, do NOT seize or move funds, and are reversible.
 
-**Formal Definition**:
+**Formal Definition:**
 ```
-State ∈ {ACTIVE, FROZEN, COLLATERAL_LOCKED, CLOSED}
-
-ACTIVE → {FROZEN, COLLATERAL_LOCKED, CLOSED}  // Valid
-FROZEN → {ACTIVE}                             // DAO only (future)
-COLLATERAL_LOCKED → {ACTIVE}                  // Lending adapter only (future)
-CLOSED → {}                                   // No transitions
-```
-
-**Operational Constraints**:
-```
-state(account) = ACTIVE ⟹ can_send(account) ∧ can_receive(account)
-state(account) = FROZEN ⟹ ¬can_send(account) ∧ can_receive(account)
-state(account) = COLLATERAL_LOCKED ⟹ ¬can_send(account) ∧ can_receive(account)
-state(account) = CLOSED ⟹ ¬can_send(account) ∧ ¬can_receive(account)
+∀ account A, ∀ lock L in [FRAUD_LOCK, COLLATERAL_LOCK]:
+  IF is_locked(A, L) THEN:
+    can_send(A) = FALSE
+    can_receive(A) = TRUE
+    balance(A) = unchanged
+    owner(A) = unchanged
+    ∃ authorized_role R: R can clear_lock(A, L)
 ```
 
-**Enforcement**:
-- ✅ State checked before SEND operations
-- ✅ Invalid transitions rejected
-- ✅ Authorization required for state changes
-- ✅ CLOSED state is terminal
+**Guaranteed Properties:**
+- Locks restrict actions, not ownership
+- Locked accounts can still receive funds
+- Locks do not transfer or freeze funds to protocol custody
+- All locks are reversible by appropriate authority
+- Lock operations emit auditable events
 
-**Test Coverage**: See `MerchantPaymentHub.spec.ts`
+**Implementation Requirements:**
+1. Lock operations MUST NOT modify account balances
+2. Receiving operations MUST remain functional when locked
+3. Lock state is stored separately from balance/ownership
+4. Lock/unlock operations emit events for transparency
+
+**Contract Mapping:**
+- `account-locks.fc`: Lock operations don't touch balances (lines 100-110, 160-217)
+- `account-locks.fc`: `can_receive()` always returns true (lines 94-98)
+- `MerchantPaymentHub.tact`: Checks locks before send, not receive (lines 116-119)
+
+**Test Coverage:**
+- `tests/invariants/I6-lock-not-confiscation.spec.ts`
+- Test: Fraud lock prevents sending, allows receiving
+- Test: Collateral lock prevents sending, allows receiving
+- Test: Lock does not change balance
+- Test: Lock can be reversed by authorized party
+- Negative test: Lock cannot seize funds
 
 ---
 
-### I7: No Phantom Balances
+### I7 — External Adapter Isolation
 
-**Statement**: Accounts cannot have negative balances or balances exceeding actual TBC holdings.
+**Statement:**
+> External providers cannot trigger transfers, cannot bypass protocol rules, and can only interact through explicit user actions.
 
-**Formal Definition**:
+**Formal Definition:**
 ```
-∀ account ∈ NFT_Accounts:
-  balance(account) ≥ 0
-  ∧ balance(account) ≤ actual_tbc_holdings(account)
+∀ external_adapter E in [ChangeNOW, NOWPayments, CoinRabbit, TONCO]:
+  ∀ protocol_operation O:
+    E CANNOT directly invoke O
+    E CANNOT bypass validation rules of O
+    IF E participates in O THEN:
+      O MUST be initiated by user U
+      O MUST follow all invariants I1-I6
 ```
 
-**Enforcement**:
-- ✅ Unsigned integer types prevent negative balances
-- ✅ Insufficient balance check before debit
-- ✅ Overflow protection in arithmetic
-- ✅ No unchecked balance manipulation
+**Guaranteed Properties:**
+- External providers have no direct smart contract access
+- All external interactions are mediated by user wallets
+- Backend APIs orchestrate but don't execute transfers
+- External adapters are read-only from protocol perspective
 
-**Violation Detection**:
-- Attempt withdrawal with insufficient balance → Transaction reverts
-- Integer overflow attempt → TVM built-in protection
+**Implementation Requirements:**
+1. No external adapter addresses in smart contract authorization
+2. Backend services orchestrate user-signed transactions only
+3. External adapters interact with user wallets, not protocol contracts
+4. DEX interactions are user-initiated swaps
 
-**Test Coverage**: See `MerchantPaymentHub.spec.ts` (insufficient balance tests)
+**Contract Mapping:**
+- `account-locks.fc`: Only `risk_authority` and `lending_adapter` have special roles, and they cannot move funds
+- No external adapter addresses in Payment Hub contracts
+- All transfers require NFT owner signature
+
+**Test Coverage:**
+- `tests/invariants/I7-external-adapter-isolation.spec.ts`
+- Test: External services cannot initiate transfers
+- Test: All transfers require valid user signature
+- Architectural review: No external adapter privileged access
 
 ---
 
-### I8: Merchant Payment Authorization
+## Invariant Violation Response
 
-**Statement**: Only the payer can authorize payments to merchants.
+If any invariant is violated (detected through testing, audit, or production monitoring):
 
-**Formal Definition**:
-```
-∀ payMerchant(payer_nft, merchant_nft, amount):
-  msg.sender = owner(payer_nft)
-  ∧ amount > 0
-  ∧ balance(payer_nft) ≥ amount
-```
-
-**Enforcement**:
-- ✅ Ownership verification required
-- ✅ No merchant pull payments without authorization
-- ✅ No admin-initiated transfers
-- ✅ Positive amount validation
-
-**Merchant Protection**:
-- Merchants CANNOT withdraw from user accounts
-- Merchants can only receive user-initiated payments
-- Payment amounts are user-specified
-
-**Test Coverage**: See `MerchantPaymentHub.spec.ts`, `MerchantPaymentDynamic.spec.ts`
+1. **CRITICAL SEVERITY**: All invariant violations are critical
+2. **IMMEDIATE HALT**: Affected operations must be stopped
+3. **INCIDENT RESPONSE**: Follow security incident protocol
+4. **ROOT CAUSE ANALYSIS**: Full investigation required
+5. **FIX VERIFICATION**: Must demonstrate invariant restoration
+6. **AUDIT REVIEW**: Security audit of fix before deployment
 
 ---
 
-### I9: Invoice Uniqueness (Dynamic Payments)
+## Audit Checklist
 
-**Statement**: Each invoice can only be paid once per unique identifier.
+For auditors reviewing the TONBANKCARD protocol:
 
-**Formal Definition**:
-```
-∀ invoice_id ∈ Invoices:
-  ∃! payment_event where payload_hash(payment) = hash(invoice_id)
-```
+### I1 — Non-Custodial Ownership
+- [ ] All fund transfers verify NFT ownership
+- [ ] No admin override for fund movement
+- [ ] Backend services are read-only
+- [ ] No custody mechanisms exist
 
-**Enforcement**:
-- ✅ Unique payload hash per payment
-- ✅ Event emission includes payload hash
-- ✅ Off-chain indexing prevents duplicates
-- ⚠️ On-chain replay prevention not yet implemented (future enhancement)
+### I2 — NFT = Account Authority
+- [ ] NFT ownership is queried on-chain for each operation
+- [ ] No cached ownership for authorization
+- [ ] No secondary authorization mechanisms
+- [ ] Account control transfers with NFT
 
-**Current Implementation**:
-- Invoice uniqueness enforced by merchant backend
-- On-chain contract emits events with payload hash for indexing
-- Future: On-chain nonce or invoice ID tracking
+### I3 — No Admin Fund Control
+- [ ] No admin withdrawal functions
+- [ ] Admin roles limited to non-financial operations
+- [ ] No upgradeable proxies
+- [ ] Test-only admin functions documented for removal
 
-**Test Coverage**: See `MerchantPaymentDynamic.spec.ts`
+### I4 — Atomic Transfers
+- [ ] Balance updates are atomic
+- [ ] Reentrancy protection implemented
+- [ ] No intermediate states
+- [ ] Failed transfers fully revert
 
----
+### I5 — Ledger Conservation
+- [ ] Every debit has equal credit
+- [ ] No hidden fees
+- [ ] Total balance sum is preserved
+- [ ] No rounding errors
 
-### I10: External Adapter Isolation
+### I6 — Lock ≠ Confiscation
+- [ ] Locks don't modify balances
+- [ ] Locked accounts can receive
+- [ ] Locks are reversible
+- [ ] Lock events are emitted
 
-**Statement**: External adapters (ChangeNOW, NOWPayments) CANNOT move funds without user authorization.
-
-**Formal Definition**:
-```
-∀ adapter ∈ {ChangeNOW, NOWPayments, CoinRabbit}:
-  adapter.can_initiate_transfer() = false
-  ∧ adapter.signals ≠ authoritative
-```
-
-**Enforcement**:
-- ✅ Adapters are off-chain integration points
-- ✅ Adapters provide quotes and routing only
-- ✅ User signs all on-chain transactions
-- ✅ No adapter callback authorization
-
-**Trust Boundaries**:
-- Adapters trusted for: Quote accuracy, service availability
-- Adapters NOT trusted for: Fund custody, transfer execution
-- On-chain confirmation required for all settlements
-
-**Integration Pattern**:
-```
-User → Frontend → Backend API → Adapter (quote)
-                           ↓
-User → TON Connect → Sign Transaction → Blockchain
-```
-
-**Test Coverage**: Not directly tested (integration boundary)
+### I7 — External Adapter Isolation
+- [ ] No external adapter direct contract access
+- [ ] All operations user-initiated
+- [ ] No bypass mechanisms
+- [ ] Backend is orchestration-only
 
 ---
 
-### I11: Reentrancy Safety
+## Invariant-to-Contract Mapping
 
-**Statement**: Contracts are safe from reentrancy attacks.
-
-**Formal Definition**:
-```
-∀ function f with state_mutation:
-  all_state_changes_before(external_calls)
-  ∧ no_recursive_invocation_possible
-```
-
-**Enforcement**:
-- ✅ TON's actor model prevents reentrancy by design
-- ✅ No callbacks during critical sections
-- ✅ State finalized before external calls
-- ✅ Explicit execution order
-
-**TON-Specific Protection**:
-- Messages processed sequentially
-- No synchronous callbacks
-- State committed per transaction
-
-**Test Coverage**: Implicit in TON architecture
+| Invariant | PaymentHub.tact | MerchantPaymentHub.tact | account-locks.fc | nft_account_resolver.fc |
+|-----------|----------------|------------------------|------------------|------------------------|
+| **I1: Non-Custodial** | Lines 164 (owner check) | Lines 90-96 (owner validation) | N/A (no fund control) | Lines 61-69 (ownership) |
+| **I2: NFT Authority** | Line 36 (owner field) | Lines 42, 90-96 | N/A | Lines 61-69 |
+| **I3: No Admin Control** | Lines 229-240 (test only) | Lines 223-245 (test only) | Lines 160-217 (lock only) | N/A |
+| **I4: Atomic** | Lines 149-150, 196-202 | Lines 134-135 | N/A | N/A |
+| **I5: Conservation** | Lines 197-198 | Lines 178-187 | N/A | N/A |
+| **I6: Lock ≠ Confiscate** | N/A | Lines 116-119 | Lines 94-98, 100-110 | N/A |
+| **I7: Adapter Isolation** | Entire contract | Entire contract | Lines 36-43 (no external) | N/A |
 
 ---
 
-### I12: Immutable Core Logic
+## Test Suite Summary
 
-**Statement**: Core protocol contracts are immutable after deployment.
+Comprehensive test coverage for all invariants:
 
-**Formal Definition**:
-```
-∀ core_contract ∈ {PaymentHub, NFTResolver, AccountStateMachine, AccountLocks}:
-  ∄ upgrade_function
-  ∧ ∄ admin_logic_override
-```
+### Unit Tests
+- `tests/invariants/I1-non-custodial-ownership.spec.ts`
+- `tests/invariants/I2-nft-account-authority.spec.ts`
+- `tests/invariants/I3-no-admin-fund-control.spec.ts`
+- `tests/invariants/I4-atomic-transfers.spec.ts`
+- `tests/invariants/I5-ledger-conservation.spec.ts`
+- `tests/invariants/I6-lock-not-confiscation.spec.ts`
+- `tests/invariants/I7-external-adapter-isolation.spec.ts`
 
-**Enforcement**:
-- ✅ No upgradeable proxy patterns
-- ✅ No admin setters for critical logic
-- ✅ Code is final at deployment
-- ✅ Bug fixes require new deployments
-
-**Rationale**: Immutability prevents:
-- Admin takeover
-- Rug pulls
-- Logic manipulation
-- Trust erosion
-
-**Exceptions**:
-- Configuration parameters may be adjustable (e.g., authority addresses)
-- Peripheral adapters may be upgradeable with governance
-- Core fund custody logic is always immutable
+### Negative Tests (Attempted Violations)
+Each invariant test file includes negative test cases that attempt to violate the invariant and verify the violation is prevented.
 
 ---
 
-## Operational Invariants
+## Governance & Protocol Evolution
 
-### O1: Gas Efficiency
+### Invariant Changes
+These invariants are **foundational** to the protocol. Any future Issue, PR, or governance proposal that violates them must:
 
-**Statement**: All operations complete within reasonable gas limits.
+1. **Explicitly declare the violation** in the Issue/PR description
+2. **Undergo protocol-level review** by security team
+3. **Receive explicit governance approval** (future DAO mechanism)
+4. **Update this document** with the new invariant definition
+5. **Pass full audit** before deployment
 
-**Expected Gas Costs**:
-- Internal Transfer: ~0.01 TON
-- Merchant Payment: ~0.01 TON
-- Account State Query: ~0.005 TON
-- Lock Check: ~0.005 TON
+### Acceptable Changes
+Changes that **do not** violate invariants and are acceptable without governance:
+- Additional validation rules (more restrictive)
+- New lock types (following I6 pattern)
+- Performance optimizations (preserving semantics)
+- Additional getter functions (read-only)
+- Event additions (non-state-changing)
 
-**Enforcement**:
-- Minimize storage operations
-- Optimize data structures
-- Early failure on validation errors
-- No unbounded loops
-
----
-
-### O2: Event Emission Completeness
-
-**Statement**: All state mutations emit corresponding events.
-
-**Events**:
-- `MerchantPayment`: Emitted on successful merchant payment
-- `InternalTransferEvent`: Emitted on internal transfer (future)
-- `AccountLocked`: Emitted when lock is set
-- `AccountUnlocked`: Emitted when lock is cleared
-
-**Purpose**:
-- Off-chain indexing
-- Transaction history
-- Audit trails
-- Real-time monitoring
-
-**Enforcement**:
-- ✅ Emit event after successful state change
-- ✅ Include all relevant data in event
-- ✅ Deterministic event ordering
-
----
-
-### O3: Read-Only Getters
-
-**Statement**: All getter methods are side-effect-free.
-
-**Formal Definition**:
-```
-∀ getter ∈ {getBalance, getAccountState, getLockState, canSend, canReceive}:
-  state_before_getter = state_after_getter
-```
-
-**Enforcement**:
-- ✅ Getters marked as view/read-only
-- ✅ No state mutations in getters
-- ✅ No external calls in getters
-- ✅ Deterministic return values
-
----
-
-## Security Invariants
-
-### S1: Authorization Hierarchy
-
-**Statement**: Each operation has clear authorization requirements.
-
-**Authorization Levels**:
-1. **User Operations**: Require NFT ownership
-   - Internal transfers
-   - Merchant payments
-   - Withdrawals
-
-2. **Authority Operations**: Require designated authority
-   - Risk Authority: Fraud lock management
-   - Lending Adapter: Collateral lock management
-   - DAO: State unlocking (future)
-
-3. **Public Operations**: No authorization required
-   - Balance queries
-   - State queries
-   - Lock status queries
-
-**Enforcement**:
-- ✅ Explicit authorization checks
-- ✅ No privilege escalation paths
-- ✅ Clear error messages for unauthorized access
-
----
-
-### S2: Input Validation
-
-**Statement**: All inputs are validated before processing.
-
-**Validation Rules**:
-- Amount > 0 for all transfers
-- Valid NFT addresses (non-zero, correct format)
-- Sufficient balance before debit
-- Valid state transitions
-- Authorized sender
-
-**Enforcement**:
-- ✅ Require statements for critical checks
-- ✅ Early failure on invalid input
-- ✅ Explicit error codes
-- ✅ No silent failures
-
----
-
-### S3: Overflow Protection
-
-**Statement**: All arithmetic operations are overflow-safe.
-
-**Enforcement**:
-- ✅ TON TVM built-in overflow protection
-- ✅ Tact language overflow checks
-- ✅ Appropriate integer types (uint128 for balances)
-- ✅ Checked arithmetic operations
-
-**Test Cases**:
-- Maximum balance value
-- Addition overflow attempts
-- Subtraction underflow attempts
-
----
-
-## Invariant Verification
-
-### Automated Testing
-
-Each invariant should have:
-1. **Unit Tests**: Test individual invariant in isolation
-2. **Integration Tests**: Test invariant across contract interactions
-3. **Adversarial Tests**: Attempt to violate invariant
-4. **Edge Case Tests**: Test boundary conditions
-
-### Manual Audit Checklist
-
-Auditors should verify:
-- [ ] Non-custodial guarantee (I1) - No admin fund access
-- [ ] Ownership authority (I2) - Proper authorization checks
-- [ ] Balance conservation (I3) - No TBC creation/destruction
-- [ ] Atomic execution (I4) - All-or-nothing transfers
-- [ ] Lock enforcement (I5) - Locks prevent sending
-- [ ] State transitions (I6) - Valid state machine
-- [ ] No phantom balances (I7) - Balance integrity
-- [ ] Merchant authorization (I8) - User-initiated only
-- [ ] Invoice uniqueness (I9) - No replay attacks
-- [ ] Adapter isolation (I10) - No unauthorized access
-- [ ] Reentrancy safety (I11) - Protected against reentrancy
-- [ ] Immutability (I12) - No upgrade paths
-
-### Formal Verification (Future)
-
-Recommended formal verification targets:
-1. Balance conservation proof
-2. Atomic transfer correctness
-3. State machine validity
-4. Authorization soundness
-
----
-
-## Invariant Violations
-
-### Detection
-
-Invariant violations can be detected through:
-1. **Automated Tests**: Unit and integration tests
-2. **Runtime Assertions**: On-chain require statements
-3. **Off-chain Monitoring**: Indexer sanity checks
-4. **Audit Reviews**: Manual code inspection
-5. **Bug Bounty**: Community-driven testing
-
-### Response
-
-If an invariant is violated:
-1. **Immediate**: Identify affected contracts and scope
-2. **Containment**: Document violation and impact
-3. **Resolution**: Patch via new contract deployment
-4. **Migration**: User-initiated migration to fixed contract
-5. **Post-Mortem**: Root cause analysis and prevention
-
-### Known Limitations
-
-Current implementation limitations:
-- **Invoice Replay**: On-chain replay prevention not yet implemented (enforced off-chain)
-- **DAO Unlocking**: FROZEN → ACTIVE transition not yet implemented
-- **Lending Adapter**: COLLATERAL_LOCKED → ACTIVE transition not yet implemented
-- **NFT Ownership Integration**: Ownership checks in some contracts are documented but not fully enforced
+### Prohibited Changes
+Changes that **always** violate invariants and are prohibited:
+- Admin fund withdrawal mechanisms
+- Custody of user funds
+- Non-atomic transfers
+- Hidden fees or balance manipulation
+- NFT ownership bypass mechanisms
+- Irreversible confiscation locks
 
 ---
 
 ## References
 
-- [Issue #22 - Audit Readiness](https://github.com/xlabtg/tonbankcard-protocol/issues/22)
-- [Issue #20 - Threat Model](https://github.com/xlabtg/tonbankcard-protocol/issues/20)
-- [Architecture Documentation](./architecture.md)
-- [Contract README](../contracts/README.md)
-- [Contributing Guidelines](../CONTRIBUTING.md)
+- **Architecture**: [docs/architecture.md](./architecture.md)
+- **Payment Hub**: [contracts/payments/README.md](../contracts/payments/README.md)
+- **Account Locks**: [contracts/payments/ACCOUNT_LOCKS.md](../contracts/payments/ACCOUNT_LOCKS.md)
+- **Contributing**: [CONTRIBUTING.md](../CONTRIBUTING.md)
+- **Issue #18**: [Formal Invariants & Protocol Guarantees](https://github.com/xlabtg/tonbankcard-protocol/issues/18)
 
 ---
 
-**Document Status**: Audit Preparation
-**Last Updated**: 2025-12-27
-**Maintainers**: Tonbankcard Protocol Team
-**Audit Version**: 1.0
+## Document Maintenance
+
+**Responsibility**: Protocol Security Team
+**Review Frequency**: Before each major release
+**Update Triggers**:
+- New smart contract deployment
+- Protocol architecture changes
+- Security audit findings
+- Governance decisions
+
+**Version History**:
+- v1.0 (2025-12-27): Initial formal specification (Issue #18)
+
+---
+
+**Built on TON. Secured by Invariants. Owned by Users.**

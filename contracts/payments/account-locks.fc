@@ -5,6 +5,14 @@
 ;; - Block fraudulent accounts (FRAUD_LOCK)
 ;; - Lock collateralized accounts (COLLATERAL_LOCK)
 ;; - Maintain non-custodial architecture (locks are flags, not custody)
+;;
+;; PROTOCOL INVARIANTS (see docs/invariants.md):
+;; - I3 (No Admin Control): risk_authority and lending_adapter can ONLY set locks, NOT move funds
+;; - I6 (Lock ≠ Confiscation): Locks restrict sending, NOT ownership or balance
+;;   * can_send() returns 0 when locked (lines 83-92)
+;;   * can_receive() ALWAYS returns 1 (lines 94-98)
+;;   * Lock operations do NOT modify balances (lines 100-110)
+;; - I7 (Adapter Isolation): External adapters cannot bypass protocol rules
 
 #include "stdlib.fc";
 
@@ -92,12 +100,13 @@ int can_send(slice nft_address) method_id {
 }
 
 ;; Check if account can receive TBC
-;; Always returns 1 (receiving is always allowed)
+;; INVARIANT I6: Always returns 1 (receiving is ALWAYS allowed, locks don't confiscate)
 int can_receive(slice nft_address) method_id {
-    return 1;  ;; RECEIVE operations are always allowed
+    return 1;  ;; INVARIANT I6: RECEIVE operations are always allowed even when locked
 }
 
 ;; Set lock state for an NFT account
+;; INVARIANT I6: This function ONLY sets lock flags, does NOT modify balances or ownership
 () set_lock(cell lock_dict, slice nft_address, int fraud_locked, int collateral_locked) impure inline {
     int key = slice_hash(nft_address);
 
@@ -158,7 +167,7 @@ int can_receive(slice nft_address) method_id {
 
     ;; Set FRAUD_LOCK
     if (op == op::set_fraud_lock) {
-        ;; Only risk authority can set fraud lock
+        ;; INVARIANT I3: Only risk authority can set fraud lock (no fund control)
         throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
 
         slice nft_address = in_msg_body~load_msg_addr();
