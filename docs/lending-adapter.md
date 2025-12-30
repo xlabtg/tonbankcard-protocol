@@ -39,6 +39,8 @@ The adapter is **intentionally weak by design**. It:
 └─────────────────────────────────────────────────────────┘
 ```
 
+> **Note:** For complete protocol guarantees and non-guarantees, see [External Integration Guarantees](./integrations/external-guarantees.md).
+
 ## Identity Model
 
 ### Borrower Identity
@@ -296,6 +298,7 @@ Optional parameters:
 - [Issue 6.1 — Collateral Signal Contract](../contracts/README.md)
 - [NFT Account Resolver](./contracts/nft-account-resolver.md)
 - [Protocol Architecture](./architecture.md)
+- [External Integration Guarantees](./integrations/external-guarantees.md)
 - [CoinRabbit Website](https://coinrabbit.io/)
 - [Contributing Guidelines](../CONTRIBUTING.md)
 
