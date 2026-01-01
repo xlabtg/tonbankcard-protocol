@@ -33,6 +33,10 @@ contracts/
 ├── payment-hub/            # Payment hub with account state (Issue #5)
 │   ├── account-state.tact
 │   └── README.md
+├── governance/             # Governance contracts (Issue #38)
+│   ├── ProposalRegistry.tact      # Non-executable proposal registry
+│   ├── SnapshotVerifier.tact      # Voter eligibility verification
+│   └── README.md           # Governance contracts documentation
 ├── token/                  # TBC jetton (external, deployed)
 ├── nft-cards/              # NFT card collections (external, deployed)
 └── lending/                # Future: Lending and collateral contracts
@@ -165,6 +169,36 @@ See [payments/README.md](./payments/README.md) for detailed documentation.
 **Purpose**: Account state management
 
 **Documentation**: [payment-hub/README.md](./payment-hub/README.md)
+
+### Governance Proposal Registry - Issue #38
+
+**Status**: ✅ Implemented (Tact)
+**Files**: `governance/ProposalRegistry.tact`, `governance/SnapshotVerifier.tact`
+**Purpose**: Non-executable governance proposal registry
+
+Main contract for TBC Diamonds NFT governance (222 total supply).
+
+> **IMPORTANT**: This registry is **purely advisory**. It cannot trigger contract calls, execute changes, or enforce outcomes.
+
+**Features:**
+- Proposal submission (requires TBC Diamond NFT ownership)
+- Voting (1 NFT = 1 vote)
+- Proposal finalization
+- Snapshot-based voter eligibility
+- 6 fixed proposal categories (no custom categories)
+- Append-only, immutable records
+
+**Proposal Categories:**
+- ROADMAP_SIGNAL
+- INTEGRATION_RECOMMENDATION
+- DOCUMENTATION_UPDATE
+- RISK_DISCLOSURE
+- DEPRECATION_NOTICE
+- ECOSYSTEM_GRANT_SIGNAL
+
+**Documentation**: [governance/README.md](./governance/README.md)
+**Process Documentation**: [docs/governance-process.md](../docs/governance-process.md)
+**Tests**: [tests/governance/](../tests/governance/)
 
 ## Account States
 
