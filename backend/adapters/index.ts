@@ -15,3 +15,6 @@ export { ChangeNOWAdapter, createChangeNOWAdapter } from './changenow';
 
 // NOWPayments adapter
 export { NOWPaymentsAdapter, createNOWPaymentsAdapter } from './nowpayments';
+
+// CoinRabbit lending adapter (Issue 6.2)
+export { CoinRabbitAdapter, createCoinRabbitAdapter } from './coinrabbit';

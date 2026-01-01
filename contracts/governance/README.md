@@ -1,10 +1,10 @@
-# Governance Contracts (Issue #38)
+# Governance Contracts
 
 ## Overview
 
-This directory contains the **non-executable governance** contracts for the Tonbankcard Protocol. These contracts implement a public proposal registry and snapshot verification system for the TBC Diamonds NFT governance.
+This directory contains the **non-executable governance** contracts for the Tonbankcard Protocol. These contracts implement a public proposal registry, snapshot verification, and helper utilities for the TBC Diamonds NFT governance system.
 
-> **IMPORTANT**: These contracts are **purely advisory**. They record governance intent and voting outcomes but have **no ability to execute protocol changes**.
+> **CRITICAL**: These contracts provide **information only**. They have **NO execution capability**, **NO fund custody**, and **NO protocol control**.
 
 ## Core Principle
 
@@ -12,11 +12,21 @@ This directory contains the **non-executable governance** contracts for the Tonb
 Governance may SIGNAL, but never ACT.
 ```
 
+All governance contracts follow these principles:
+
+1. **Advisory Only**: No binding execution
+2. **Non-Custodial**: No fund custody
+3. **Read-Only State Impact**: No changes to protocol state
+4. **Transparent**: All logic is open source
+5. **Minimal**: Simplest possible implementation
+
 ## Contracts
 
 ### ProposalRegistry.tact
 
 The main governance contract that manages proposals and voting.
+
+**Purpose**: Public proposal registry for recording governance intent and voting outcomes.
 
 **Features:**
 - Submit proposals (requires TBC Diamond NFT ownership)
@@ -47,6 +57,8 @@ The main governance contract that manages proposals and voting.
 
 Verifies NFT ownership at snapshot time for voting eligibility.
 
+**Purpose**: Snapshot-based eligibility verification for fair voting.
+
 **Features:**
 - Register ownership snapshots at voting start
 - Verify voter eligibility
@@ -60,6 +72,46 @@ Verifies NFT ownership at snapshot time for voting eligibility.
 | `getSnapshot(proposal_id)` | Get snapshot metadata |
 | `hasSnapshot(proposal_id)` | Check if snapshot exists |
 | `getEligibleCount(proposal_id)` | Get number of eligible voters |
+
+### diamond_resolver.fc
+
+**Purpose**: Read-only helper for TBC Diamonds NFT ownership resolution and vote counting.
+
+**Type**: Stateless, informational contract
+
+**Functions**:
+- Query TBC Diamonds collection metadata
+- Validate Diamond NFT indices
+- Calculate quorum requirements
+- Compute voting outcomes
+- Provide governance helper methods
+
+**What It DOES**:
+- Validates Diamond NFT indices (0-221)
+- Calculates quorum and vote tallies
+- Returns governance metadata
+- Performs read-only computations
+
+**What It DOES NOT Do**:
+- Execute governance decisions
+- Control protocol contracts
+- Custody funds or NFTs
+- Transfer assets
+- Modify protocol state
+- Enforce voting outcomes
+
+## Security Properties
+
+| Property | Status |
+|----------|--------|
+| Fund Custody | None |
+| Execution Capability | None |
+| Protocol Control | None |
+| State Modification | None |
+| Admin Keys | None |
+| Upgrade Proxies | None |
+
+**Risk Level**: **MINIMAL** (read-only, stateless, non-custodial)
 
 ## Proposal Categories
 
@@ -148,6 +200,42 @@ The contracts enforce:
 - Override security measures
 - Enforce voting outcomes
 
+## Usage
+
+### Off-Chain (Snapshot Scripts)
+
+Primary usage is via off-chain snapshot utilities:
+
+```bash
+# Create voter snapshot
+npm run governance:snapshot
+
+# Verify snapshot
+npm run governance:verify-snapshot snapshot_12345678.json
+```
+
+See `scripts/governance/` for snapshot utilities.
+
+### On-Chain (Get Methods)
+
+Read-only queries from other contracts or off-chain tools:
+
+```func
+;; Get governance metadata
+(int total_supply, slice collection, int type) = resolver.get_governance_metadata();
+
+;; Calculate quorum
+int quorum = resolver.get_quorum_requirement(10);  ;; 10% quorum
+
+;; Calculate vote outcome
+(int quorum_met, int passed, int for_pct) = resolver.calculate_vote_outcome(
+    votes_for,
+    votes_against,
+    votes_abstain,
+    10  ;; 10% quorum requirement
+);
+```
+
 ## Integration
 
 ### Submitting a Proposal
@@ -221,6 +309,7 @@ Tests are located in `tests/governance/`:
 
 - `ProposalRegistry.spec.ts` - Proposal submission and management
 - `SnapshotVerifier.spec.ts` - Snapshot verification
+- `DiamondGovernance.spec.ts` - Diamond resolver tests
 
 Run tests:
 ```bash
@@ -230,8 +319,27 @@ npx blueprint test tests/governance/
 ## Documentation
 
 - [Governance Process](../../docs/governance-process.md) - Full governance documentation
-- [Issue #38](https://github.com/xlabtg/tonbankcard-protocol/issues/38) - Implementation issue
+- [DAO Governance](../../docs/dao-governance.md) - Complete DAO governance framework
+- [Development Governance](../../docs/governance.md) - Development workflow
+- [Issue #38](https://github.com/xlabtg/tonbankcard-protocol/issues/38) - Proposal Registry implementation
 - [Issue #36](https://github.com/xlabtg/tonbankcard-protocol/issues/36) - TBC Diamonds DAO
+
+## Contributing
+
+All changes to governance contracts require:
+
+1. **Issue Creation**: Describe proposed change
+2. **Security Review**: Governance changes are security-sensitive
+3. **Community Discussion**: Governance affects all stakeholders
+4. **Tests**: Comprehensive test coverage required
+5. **Documentation**: Update this README and governance docs
+
+**Never Add**:
+- Execution capabilities
+- Fund custody
+- Protocol control
+- State modification
+- Admin privileges
 
 ## Legal Disclaimer
 
@@ -242,6 +350,12 @@ This governance system:
 3. Does **NOT** represent investment or financial advice
 4. Is for **coordination purposes only**
 5. Outcomes are **advisory signals**, not enforceable decisions
+
+---
+
+**Remember**: If governance can break the protocol, the protocol is badly designed.
+
+TONBANKCARD is designed so governance **cannot** break it.
 
 ---
 
