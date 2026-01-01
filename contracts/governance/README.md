@@ -2,11 +2,15 @@
 
 ## Overview
 
-This directory contains the **non-executable governance** contracts for the Tonbankcard Protocol. These contracts implement a public proposal registry, snapshot verification, and helper utilities for the TBC Diamonds NFT governance system.
+This directory contains the **non-executable governance** contracts for the Tonbankcard Protocol. These contracts implement a public proposal registry, transparency layer, snapshot verification, and helper utilities for the TBC Diamonds NFT governance system.
 
 > **CRITICAL**: These contracts provide **information only**. They have **NO execution capability**, **NO fund custody**, and **NO protocol control**.
 
-## Core Principle
+### Core Principle
+
+> **Governance must be observable, not actionable.**
+
+Transparency exists to **build trust**, not to **exercise power**.
 
 ```
 Governance may SIGNAL, but never ACT.
@@ -21,6 +25,34 @@ All governance contracts follow these principles:
 5. **Minimal**: Simplest possible implementation
 
 ## Contracts
+
+### TransparencyRegistry.tact (Issue #40)
+
+**Status**: Implemented
+**File**: `TransparencyRegistry.tact`
+**Purpose**: Read-only transparency layer for governance activity
+
+The TransparencyRegistry provides public, immutable, read-only access to governance data without exposing private information or granting any execution power.
+
+**Features:**
+- Proposal archive (ID, hash, category, window, outcome)
+- Voting summaries (aggregated only, no individual votes)
+- Governance asset snapshots (TBC Diamond NFT supply)
+- Historical record keeping
+- Event emission for off-chain indexing
+
+**Privacy Guarantees:**
+- No wallet addresses exposed
+- No NFT holder identities exposed
+- No vote timestamps exposed
+- No individual vote choices exposed
+- No delegation graphs exposed
+
+**Security Properties:**
+- Zero protocol authority
+- No mutable state (append-only records)
+- No admin functions
+- Cannot influence voting or execute outcomes
 
 ### ProposalRegistry.tact
 
@@ -100,6 +132,23 @@ Verifies NFT ownership at snapshot time for voting eligibility.
 - Modify protocol state
 - Enforce voting outcomes
 
+## Directory Structure
+
+```
+contracts/governance/
+├── README.md                              # This file
+├── TransparencyRegistry.tact              # Transparency layer contract (Issue #40)
+├── ProposalRegistry.tact                  # Proposal registry (Issue #38)
+├── SnapshotVerifier.tact                  # Snapshot verifier (Issue #38)
+├── diamond_resolver.fc                    # Diamond NFT resolver
+├── types/
+│   └── TransparencyTypes.tact             # Data structures and constants
+├── interfaces/
+│   └── ITransparencyRegistry.tact         # Read-only interface
+└── schemas/
+    └── offchain-index.json                # Off-chain indexing schema
+```
+
 ## Security Properties
 
 | Property | Status |
@@ -112,6 +161,49 @@ Verifies NFT ownership at snapshot time for voting eligibility.
 | Upgrade Proxies | None |
 
 **Risk Level**: **MINIMAL** (read-only, stateless, non-custodial)
+
+## Data Structures
+
+### ProposalSummary (TransparencyRegistry)
+
+Privacy-preserving proposal record:
+
+```tact
+struct ProposalSummary {
+    proposal_id: Int as uint64;
+    proposal_hash: Int as uint256;
+    category: Int as uint8;
+    voting_window_start: Int as uint32;
+    voting_window_end: Int as uint32;
+    outcome: Int as uint8;
+}
+```
+
+### VotingSummary (TransparencyRegistry)
+
+Aggregated voting data (no individual voter information):
+
+```tact
+struct VotingSummary {
+    proposal_id: Int as uint64;
+    total_votes_cast: Int as uint16;
+    quorum_threshold: Int as uint16;
+    quorum_met: Bool;
+    passed: Bool;
+}
+```
+
+### AssetSnapshot (TransparencyRegistry)
+
+Governance asset snapshot:
+
+```tact
+struct AssetSnapshot {
+    total_supply: Int as uint16;           // Fixed: 222
+    snapshot_block_height: Int as uint64;
+    snapshot_hash: Int as uint256;
+}
+```
 
 ## Proposal Categories
 
@@ -127,6 +219,23 @@ The registry supports exactly 6 fixed categories:
 | 5 | ECOSYSTEM_GRANT_SIGNAL | Support for ecosystem grants |
 
 **No custom categories are allowed.**
+
+## Proposal States
+
+| Status | Code | Description |
+|--------|------|-------------|
+| PENDING/ACTIVE | 0 | Voting in progress |
+| ACCEPTED | 1 | Majority FOR, quorum met |
+| REJECTED | 2 | Majority AGAINST, quorum met |
+| NO_QUORUM | 3 | Quorum not met |
+
+## Vote Types
+
+| Vote | Code | Description |
+|------|------|-------------|
+| FOR | 0 | Support the proposal |
+| AGAINST | 1 | Oppose the proposal |
+| ABSTAIN | 2 | Neither support nor oppose |
 
 ## Proposal Lifecycle
 
@@ -149,23 +258,6 @@ The registry supports exactly 6 fixed categories:
    └── Outcome is immutable
 ```
 
-## Proposal States
-
-| Status | Code | Description |
-|--------|------|-------------|
-| ACTIVE | 0 | Voting is open |
-| ACCEPTED | 1 | Majority FOR, quorum met |
-| REJECTED | 2 | Majority AGAINST, quorum met |
-| NO_QUORUM | 3 | Quorum not met |
-
-## Vote Types
-
-| Vote | Code | Description |
-|------|------|-------------|
-| FOR | 0 | Support the proposal |
-| AGAINST | 1 | Oppose the proposal |
-| ABSTAIN | 2 | Neither support nor oppose |
-
 ## Configuration
 
 ### Default Values
@@ -181,6 +273,61 @@ The registry supports exactly 6 fixed categories:
 - **No Delegation**: By design
 - **No Fractionalization**: Each NFT = exactly 1 vote
 
+## View Functions
+
+### Transparency Registry View Functions
+
+#### Proposal Archive
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `getProposalSummary(id)` | `ProposalSummary?` | Get proposal by ID |
+| `getProposalCount()` | `Int` | Total proposals |
+| `getProposalsByCategory(cat)` | `Int` | Count by category |
+| `getProposalOutcome(id)` | `Int` | Outcome status |
+
+#### Voting Summary
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `getVotingSummary(id)` | `VotingSummary?` | Aggregated voting data |
+| `getQuorumThreshold()` | `Int` | Minimum votes required |
+| `getTotalVotesCast(id)` | `Int` | Vote count for proposal |
+
+#### Governance Assets
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `getGovernanceAssetSnapshot()` | `AssetSnapshot` | Current snapshot |
+| `getTotalGovernanceSupply()` | `Int` | Fixed: 222 |
+| `getLatestSnapshotBlock()` | `Int` | Snapshot block height |
+| `getSnapshotHash()` | `Int` | Verification hash |
+
+#### Statistics
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `getGovernanceStats()` | `GovernanceStats` | Aggregate statistics |
+| `getCategoryStats(cat)` | `CategoryStats` | Per-category stats |
+
+## Events
+
+### TransparencyRegistry Events
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `ProposalRecorded` | id, category, timestamp | New proposal logged |
+| `VotingResultRecorded` | id, outcome, votes, timestamp | Vote result logged |
+| `SnapshotRecorded` | block, hash, timestamp | Snapshot updated |
+
+### ProposalRegistry Events
+
+| Event | Description |
+|-------|-------------|
+| `ProposalSubmitted` | Emitted when a new proposal is registered |
+| `VoteCast` | Emitted when a vote is cast (NFT ID not included for privacy) |
+| `ProposalFinalized` | Emitted when a proposal is finalized with final outcome |
+
 ## Security Constraints
 
 The contracts enforce:
@@ -191,14 +338,28 @@ The contracts enforce:
 4. **No Execution Engine**: Cannot trigger any contract calls
 5. **Privacy-Preserving**: Voter NFT IDs not exposed in events
 
-## What These Contracts CANNOT Do
+### What These Contracts CANNOT Do
 
+- **Cannot execute proposals**: Outcomes are advisory only
+- **Cannot modify protocol**: Zero protocol authority
+- **Cannot move funds**: No fund access
+- **Cannot identify voters**: Privacy preserved
+- **Cannot censor proposals**: Append-only records
 - Execute protocol changes
 - Modify smart contracts
 - Control user funds
 - Freeze accounts
 - Override security measures
 - Enforce voting outcomes
+
+### Attack Surface
+
+| Vector | Mitigation |
+|--------|------------|
+| Data tampering | Append-only, no updates |
+| Privacy leak | Aggregated data only |
+| Execution attack | No execution capability |
+| Admin abuse | No admin functions |
 
 ## Usage
 
@@ -234,6 +395,26 @@ int quorum = resolver.get_quorum_requirement(10);  ;; 10% quorum
     votes_abstain,
     10  ;; 10% quorum requirement
 );
+```
+
+### Transparency Registry Usage Example
+
+```typescript
+// Query proposal data
+const summary = await transparency.getProposalSummary(12n);
+console.log(`Proposal #${summary.proposal_id}`);
+console.log(`Category: ${summary.category}`);
+console.log(`Outcome: ${summary.outcome}`);
+
+// Query voting results (aggregated only)
+const voting = await transparency.getVotingSummary(12n);
+console.log(`Votes: ${voting.total_votes_cast} / 222`);
+console.log(`Quorum met: ${voting.quorum_met}`);
+
+// Query governance stats
+const stats = await transparency.getGovernanceStats();
+console.log(`Total proposals: ${stats.total_proposals}`);
+console.log(`Accepted: ${stats.proposals_accepted}`);
 ```
 
 ## Integration
@@ -292,21 +473,11 @@ await registry.send(
 );
 ```
 
-## Events
-
-### ProposalSubmitted
-Emitted when a new proposal is registered.
-
-### VoteCast
-Emitted when a vote is cast (NFT ID not included for privacy).
-
-### ProposalFinalized
-Emitted when a proposal is finalized with final outcome.
-
 ## Testing
 
 Tests are located in `tests/governance/`:
 
+- `TransparencyRegistry.spec.ts` - Transparency layer tests (Issue #40)
 - `ProposalRegistry.spec.ts` - Proposal submission and management
 - `SnapshotVerifier.spec.ts` - Snapshot verification
 - `DiamondGovernance.spec.ts` - Diamond resolver tests
@@ -318,11 +489,10 @@ npx blueprint test tests/governance/
 
 ## Documentation
 
+- [Governance Transparency](../../docs/governance-transparency.md) - Transparency layer docs (Issue #40)
 - [Governance Process](../../docs/governance-process.md) - Full governance documentation
 - [DAO Governance](../../docs/dao-governance.md) - Complete DAO governance framework
 - [Development Governance](../../docs/governance.md) - Development workflow
-- [Issue #38](https://github.com/xlabtg/tonbankcard-protocol/issues/38) - Proposal Registry implementation
-- [Issue #36](https://github.com/xlabtg/tonbankcard-protocol/issues/36) - TBC Diamonds DAO
 
 ## Contributing
 
@@ -359,5 +529,6 @@ TONBANKCARD is designed so governance **cannot** break it.
 
 ---
 
-**Status**: Issue #38 Implementation
+**Status**: Implementation
+**Last Updated**: 2026-01-01
 **Maintainers**: Tonbankcard Protocol Team
