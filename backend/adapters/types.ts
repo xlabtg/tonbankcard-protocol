@@ -16,7 +16,7 @@
 /**
  * Supported external payment/exchange providers
  */
-export type ExternalProvider = 'ChangeNOW' | 'NOWPayments';
+export type ExternalProvider = 'ChangeNOW' | 'NOWPayments' | 'CoinRabbit';
 
 /**
  * Transaction status lifecycle
@@ -324,4 +324,299 @@ export interface ProviderError {
 
   /** Provider name */
   provider: ExternalProvider;
+}
+
+// =============================================================================
+// LENDING ADAPTER TYPES (Issue 6.2 - CoinRabbit Integration)
+// =============================================================================
+
+/**
+ * ⚠️ CRITICAL DESIGN PRINCIPLES FOR LENDING ADAPTER
+ *
+ * The Lending Adapter is intentionally WEAK by design:
+ * - DOES NOT issue loans
+ * - DOES NOT custody collateral
+ * - DOES NOT enforce repayments
+ * - DOES NOT liquidate assets
+ * - DOES NOT track debt
+ * - DOES NOT give lender any protocol-level authority
+ *
+ * It serves purely as a COORDINATION and SIGNALING layer.
+ * Lending happens OUTSIDE the protocol.
+ */
+
+/**
+ * Borrower identity based on NFT account ownership
+ *
+ * In TONBANKCARD, identity is determined by NFT ownership, NOT wallet address.
+ * This enables account abstraction where the same identity persists
+ * even if the underlying wallet changes.
+ */
+export interface BorrowerIdentity {
+  /** NFT Account ID (e.g., '7777001', '8888042') - PRIMARY identifier */
+  nftAccountId: string;
+
+  /** NFT collection address for validation */
+  collectionAddress: string;
+
+  /** Current owner wallet address (informational only, may change) */
+  currentOwnerAddress?: string;
+
+  /** Whether the NFT account is valid (from whitelisted collection, not burned) */
+  isValid: boolean;
+
+  /** Timestamp when identity was resolved */
+  resolvedAt: Date;
+}
+
+/**
+ * Read-only collateral signal information
+ *
+ * This represents a snapshot of collateral signal data from Issue 6.1.
+ * The adapter can only READ this information, never modify it.
+ */
+export interface CollateralSignalInfo {
+  /** Unique collateral signal ID (from Issue 6.1 contract) */
+  signalId: string;
+
+  /** NFT Account ID that created the signal */
+  nftAccountId: string;
+
+  /** Asset type being signaled as collateral */
+  assetType: string;
+
+  /** Amount being signaled (for display purposes only) */
+  signalAmount: string;
+
+  /** Whether the signal is currently active */
+  isActive: boolean;
+
+  /** On-chain timestamp when signal was created */
+  createdAt: Date;
+
+  /** On-chain timestamp when signal expires (if applicable) */
+  expiresAt?: Date;
+
+  /** TON blockchain transaction hash of the signal creation */
+  signalTxHash?: string;
+}
+
+/**
+ * Loan intent request from borrower
+ *
+ * This represents the borrower's INTENT to request a loan.
+ * The protocol does not process or fulfill this - it only
+ * provides standardized metadata for external lenders.
+ */
+export interface LoanIntentRequest {
+  /** NFT Account ID of the borrower */
+  nftAccountId: string;
+
+  /** Collateral signal ID (from Issue 6.1) */
+  collateralSignalId?: string;
+
+  /** Requested loan amount (informational only) */
+  requestedAmount?: string;
+
+  /** Requested loan currency (informational only) */
+  requestedCurrency?: string;
+
+  /** External lender identifier (e.g., 'coinrabbit') */
+  targetLender: string;
+
+  /** Optional callback URL for lender */
+  callbackUrl?: string;
+
+  /** Optional user-provided metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Loan intent response with lender deep-link
+ *
+ * This provides standardized metadata and optional UX deep-links
+ * for the borrower to proceed with the external lender.
+ */
+export interface LoanIntentResponse {
+  /** Unique intent ID for tracking */
+  intentId: string;
+
+  /** Resolved borrower identity */
+  borrowerIdentity: BorrowerIdentity;
+
+  /** Collateral signal info (if collateral was signaled) */
+  collateralInfo?: CollateralSignalInfo;
+
+  /** Deep-link URL to external lender (user-facing) */
+  lenderUrl?: string;
+
+  /** Timestamp when intent was created */
+  createdAt: Date;
+
+  /** Intent expiration time */
+  expiresAt: Date;
+
+  /**
+   * Verification data that lender can use to verify on-chain
+   * This contains READ-ONLY references, not proofs or guarantees
+   */
+  verificationData: LenderVerificationData;
+}
+
+/**
+ * Read-only verification data for external lenders
+ *
+ * ⚠️ CRITICAL: This data is for VERIFICATION only.
+ * The protocol makes NO guarantees about:
+ * - Collateral availability
+ * - Balance sufficiency
+ * - Repayment ability
+ *
+ * Lenders must perform their own due diligence.
+ */
+export interface LenderVerificationData {
+  /** NFT Account ID to verify */
+  nftAccountId: string;
+
+  /** NFT collection address for on-chain verification */
+  collectionAddress: string;
+
+  /** NFT item index within collection */
+  nftIndex?: number;
+
+  /** Collateral signal ID for on-chain verification (if applicable) */
+  collateralSignalId?: string;
+
+  /** Smart contract address to query for collateral signal verification */
+  collateralContractAddress?: string;
+
+  /** Chain ID (TON mainnet = 1, testnet = 2) */
+  chainId: number;
+
+  /** Protocol version for compatibility */
+  protocolVersion: string;
+
+  /**
+   * ⚠️ DISCLAIMER: Protocol does not guarantee any of this data.
+   * Lender must verify on-chain independently.
+   */
+  disclaimer: string;
+}
+
+/**
+ * Off-chain loan reference record
+ *
+ * This is a READ-ONLY record linking an external loan to an NFT account.
+ * The protocol does NOT track debt, enforce repayment, or manage the loan.
+ */
+export interface LoanReference {
+  /** Unique reference ID */
+  referenceId: string;
+
+  /** External provider (CoinRabbit) */
+  provider: 'CoinRabbit';
+
+  /** External lender's loan ID */
+  externalLoanId?: string;
+
+  /** NFT Account ID associated with the loan */
+  nftAccountId: string;
+
+  /** Collateral signal ID (if applicable) */
+  collateralSignalId?: string;
+
+  /** Loan intent ID that initiated this */
+  intentId: string;
+
+  /** When the reference was created */
+  createdAt: Date;
+
+  /** Last update timestamp */
+  updatedAt: Date;
+
+  /**
+   * Reference status (for tracking purposes only)
+   * The protocol does NOT enforce or act on this status
+   */
+  status: LoanReferenceStatus;
+
+  /** Additional metadata from lender */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Loan reference status
+ *
+ * ⚠️ NOTE: This is purely for TRACKING and UX purposes.
+ * The protocol does NOT:
+ * - Enforce loan status
+ * - Take action based on status
+ * - Guarantee status accuracy
+ */
+export type LoanReferenceStatus =
+  | 'pending'     // Intent created, waiting for lender
+  | 'active'      // Lender confirmed loan is active
+  | 'completed'   // Loan marked as repaid by lender
+  | 'cancelled'   // Intent/loan was cancelled
+  | 'unknown';    // Status unknown (lender not responding)
+
+/**
+ * Configuration for CoinRabbit lending adapter
+ */
+export interface CoinRabbitConfig {
+  /** Partner API key for CoinRabbit (if available) */
+  apiKey?: string;
+
+  /** Base URL for CoinRabbit (defaults to https://coinrabbit.io) */
+  baseUrl?: string;
+
+  /** Partner affiliate ID for deep-links */
+  affiliateId?: string;
+
+  /** NFT Account Resolver contract address */
+  resolverContractAddress?: string;
+
+  /** Collateral Signal contract address (Issue 6.1) */
+  collateralContractAddress?: string;
+
+  /** Chain ID (1 = mainnet, 2 = testnet) */
+  chainId?: number;
+}
+
+/**
+ * Collateral verification request (read-only)
+ *
+ * Used by lenders to verify collateral signal on-chain.
+ */
+export interface CollateralVerificationRequest {
+  /** Collateral signal ID to verify */
+  signalId: string;
+
+  /** NFT Account ID that should own the signal */
+  nftAccountId: string;
+}
+
+/**
+ * Collateral verification response (read-only)
+ *
+ * ⚠️ This is a READ-ONLY snapshot. Protocol makes no guarantees.
+ */
+export interface CollateralVerificationResponse {
+  /** Whether signal exists and is active */
+  isValid: boolean;
+
+  /** Whether NFT account matches signal owner */
+  ownershipVerified: boolean;
+
+  /** Collateral signal details (if valid) */
+  signalInfo?: CollateralSignalInfo;
+
+  /** Block number at which verification was performed */
+  verifiedAtBlock?: number;
+
+  /** Timestamp of verification */
+  verifiedAt: Date;
+
+  /** Verification disclaimer */
+  disclaimer: string;
 }
