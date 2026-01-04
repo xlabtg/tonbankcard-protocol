@@ -36,6 +36,8 @@ This SDK is **NON-CUSTODIAL** by design:
 
 Any feature that violates these principles will be rejected.
 
+> **Note:** For complete protocol guarantees and non-guarantees, see [External Integration Guarantees](../docs/integrations/external-guarantees.md).
+
 ---
 
 ## 🎯 What This SDK Does
@@ -471,6 +473,7 @@ MIT License - see [LICENSE](LICENSE) file
 ## 🔗 Links
 
 - [Protocol Documentation](../docs/architecture.md)
+- [External Integration Guarantees](../docs/integrations/external-guarantees.md)
 - [Payment Hub Specification](../contracts/payments/README.md)
 - [Issue 5.1: Merchant API](https://github.com/xlabtg/tonbankcard-protocol/issues/24)
 - [Issue 5.2: Merchant SDK](https://github.com/xlabtg/tonbankcard-protocol/issues/26)

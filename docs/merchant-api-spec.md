@@ -99,6 +99,8 @@ Low Trust (External)
 └── External services
 ```
 
+> **Note:** For detailed protocol guarantees and non-guarantees, see [External Integration Guarantees](./integrations/external-guarantees.md).
+
 ---
 
 ## 4. Architecture
@@ -980,6 +982,7 @@ The following features are **out of scope** for v1.0.0 but may be considered for
 - **Issue #24**: [Merchant API (Non-Custodial Payment Orchestration)](https://github.com/xlabtg/tonbankcard-protocol/issues/24)
 - **Issue #8**: [Merchant Payments Settlement](https://github.com/xlabtg/tonbankcard-protocol/issues/8)
 - **Architecture**: [docs/architecture.md](./architecture.md)
+- **External Guarantees**: [docs/integrations/external-guarantees.md](./integrations/external-guarantees.md)
 - **Contributing**: [CONTRIBUTING.md](../CONTRIBUTING.md)
 - **TON Address Format**: https://docs.ton.org/learn/overviews/addresses
 - **TBC Token**: `EQBzKrzfB2fidoQgB4EpILOF5ISDgCX0rM86txh4M3a4Eygq`
