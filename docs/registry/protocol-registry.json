@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "registryVersion": "1.0.0",
+  "registryStatus": "ACTIVE",
+  "lastUpdated": "2025-01",
+  "purpose": "Public Protocol Registry (Read-Only, Verifiable, Canonical)",
+  "trustModel": {
+    "isInformationalOnly": true,
+    "introducesAuthority": false,
+    "isSourceOfExecutionTruth": false,
+    "blockchainIsSingleSourceOfTruth": true,
+    "statement": "This registry is a map, not the territory. Verify, do not trust."
+  },
+  "protocol": {
+    "name": "TONBANKCARD",
+    "description": "Non-custodial virtual bank protocol built on TON blockchain",
+    "canonicalRepository": "https://github.com/xlabtg/tonbankcard-protocol",
+    "documentation": {
+      "root": "docs/",
+      "architecture": "docs/architecture.md",
+      "invariants": "docs/invariants.md",
+      "threatModel": "docs/threat-model.md"
+    },
+    "principles": [
+      "User Sovereignty: No admin controls over user funds",
+      "On-Chain Truth: Blockchain as single source of truth",
+      "Maximum Decentralization: Immutable smart contracts",
+      "Transparency: All operations auditable on-chain"
+    ]
+  },
+  "version": {
+    "current": "v1.0.0",
+    "status": "ACTIVE",
+    "releaseDate": "2025-01",
+    "versioningPolicy": "docs/versioning-policy.md",
+    "notes": "Initial protocol release",
+    "semanticVersioning": {
+      "MAJOR": "Breaking changes, new security model, fundamental architecture changes",
+      "MINOR": "New features, additional contracts, non-breaking extensions",
+      "PATCH": "Documentation updates, tooling improvements, non-contract changes"
+    }
+  },
+  "deployments": {
+    "matrixReference": "docs/deployments/network-matrix.md",
+    "mainnet": {
+      "chainId": -239,
+      "networkName": "TON Mainnet",
+      "blockExplorer": "https://tonviewer.com",
+      "coreProtocol": [
+        {
+          "contractName": "TBC Token",
+          "contractAddress": "EQBzKrzfB2fidoQgB4EpILOF5ISDgCX0rM86txh4M3a4Eygq",
+          "purpose": "Internal settlement token for TONBANKCARD protocol",
+          "frozenStatus": "FROZEN",
+          "explorerLink": "https://tonviewer.com/EQBzKrzfB2fidoQgB4EpILOF5ISDgCX0rM86txh4M3a4Eygq?section=code"
+        },
+        {
+          "contractName": "NFT Account Collection (Series 7777)",
+          "contractAddress": "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le",
+          "purpose": "NFT cards representing account abstraction",
+          "frozenStatus": "FROZEN",
+          "explorerLink": "https://tonviewer.com/EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le?section=code"
+        },
+        {
+          "contractName": "NFT Account Collection (Series 8888)",
+          "contractAddress": "EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7",
+          "purpose": "NFT cards representing account abstraction",
+          "frozenStatus": "FROZEN",
+          "explorerLink": "https://tonviewer.com/EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7?section=code"
+        }
+      ],
+      "governance": [
+        {
+          "contractName": "TBC Diamonds",
+          "contractAddress": "EQAtTkI7c4iEJJr3oIdKWY3egjOoGPFu1ynj3a33nDqMF-aU",
+          "purpose": "Governance participation NFT collection (non-executive, non-custodial)",
+          "frozenStatus": "FROZEN",
+          "supply": 222,
+          "explorerLink": "https://tonviewer.com/EQAtTkI7c4iEJJr3oIdKWY3egjOoGPFu1ynj3a33nDqMF-aU?section=code"
+        }
+      ],
+      "externalInfrastructure": [
+        {
+          "contractName": "TBC/TON Liquidity Pool",
+          "contractAddress": "EQCUUQ4JkETDPTRLlNaMBx5vGFhMn0OC1184AfdnBKKaGK2M",
+          "purpose": "DEX liquidity pool for TBC/TON trading pair",
+          "provider": "TONCO DEX",
+          "frozenStatus": "NOT FROZEN",
+          "notes": "External integration, managed by TONCO DEX",
+          "explorerLink": "https://tonviewer.com/EQCUUQ4JkETDPTRLlNaMBx5vGFhMn0OC1184AfdnBKKaGK2M?section=code",
+          "appLink": "https://app.tonco.io/#/explore/pools/EQCUUQ4JkETDPTRLlNaMBx5vGFhMn0OC1184AfdnBKKaGK2M"
+        }
+      ]
+    },
+    "testnet": {
+      "chainId": -3,
+      "networkName": "TON Testnet",
+      "blockExplorer": "https://testnet.tonviewer.com",
+      "coreProtocol": [],
+      "governance": [],
+      "notes": "No testnet deployments registered"
+    },
+    "pending": [
+      {
+        "contractName": "Payment Hub",
+        "sourceFile": "contracts/payments/PaymentHub.tact",
+        "status": "Implemented, not deployed"
+      },
+      {
+        "contractName": "Merchant Payment Hub",
+        "sourceFile": "contracts/MerchantPaymentHub.tact",
+        "status": "Implemented, not deployed"
+      },
+      {
+        "contractName": "NFT Account Resolver",
+        "sourceFile": "contracts/nft-resolver/",
+        "status": "Implemented, not deployed"
+      },
+      {
+        "contractName": "Account State Machine",
+        "sourceFile": "contracts/payment-hub/account-state.tact",
+        "status": "Implemented, not deployed"
+      },
+      {
+        "contractName": "Collateral Signal Contract",
+        "sourceFile": "contracts/CollateralSignal.tact",
+        "status": "Implemented, not deployed"
+      }
+    ]
+  },
+  "governance": {
+    "version": "v1",
+    "status": "FROZEN",
+    "asset": {
+      "name": "TBC Diamonds",
+      "type": "NFT",
+      "supply": 222,
+      "supplyMutable": false,
+      "contractAddress": "EQAtTkI7c4iEJJr3oIdKWY3egjOoGPFu1ynj3a33nDqMF-aU"
+    },
+    "votingPower": "1 NFT = 1 vote",
+    "releaseNotes": "docs/governance/release-notes-v1.md",
+    "properties": {
+      "nonExecutive": true,
+      "nonCustodial": true,
+      "advisoryOnly": true,
+      "frozen": true
+    },
+    "powers": {
+      "can": [
+        "Submit proposals",
+        "Vote on proposals",
+        "Publish recommendations",
+        "Express social consensus",
+        "Request audits or reviews",
+        "Signal protocol direction"
+      ],
+      "cannot": [
+        "Execute transactions",
+        "Modify smart contracts",
+        "Pause or freeze the protocol",
+        "Control funds",
+        "Override protocol invariants",
+        "Force upgrades or migrations"
+      ]
+    }
+  },
+  "audit": {
+    "readinessStatus": "READY",
+    "scopeReference": "docs/audit-scope.md",
+    "freezeDate": "2025-12-29",
+    "freezeCommit": "4027b9d",
+    "freezeStatus": "FROZEN",
+    "externalAuditFirm": null,
+    "auditEngagement": "PENDING",
+    "contractsInScope": [
+      {
+        "name": "MerchantPaymentHub.tact",
+        "priority": "CRITICAL",
+        "status": "Frozen"
+      },
+      {
+        "name": "PaymentHub.tact",
+        "priority": "CRITICAL",
+        "status": "Frozen"
+      },
+      {
+        "name": "nft_account_resolver.fc",
+        "priority": "CRITICAL",
+        "status": "Frozen"
+      },
+      {
+        "name": "nft_account_resolver.tact",
+        "priority": "CRITICAL",
+        "status": "Frozen"
+      },
+      {
+        "name": "account-state.tact",
+        "priority": "CRITICAL",
+        "status": "Frozen"
+      },
+      {
+        "name": "account-locks.fc",
+        "priority": "HIGH",
+        "status": "Frozen"
+      },
+      {
+        "name": "Type definitions",
+        "priority": "MEDIUM",
+        "status": "Frozen"
+      },
+      {
+        "name": "Interfaces",
+        "priority": "MEDIUM",
+        "status": "Frozen"
+      }
+    ],
+    "checklist": {
+      "scopeDefined": true,
+      "contractsFrozen": true,
+      "invariantsDocumented": true,
+      "threatModelDocumented": true,
+      "testsComplete": true,
+      "auditFirmSelected": false,
+      "auditStarted": false,
+      "draftReportReceived": false,
+      "criticalFindingsResolved": false,
+      "finalReportPublished": false
+    },
+    "invariants": [
+      {
+        "id": "I1",
+        "name": "Non-Custodial Ownership",
+        "description": "Only NFT owners can authorize transactions"
+      },
+      {
+        "id": "I2",
+        "name": "NFT Ownership Finality",
+        "description": "Ownership checked at execution, not signing time"
+      },
+      {
+        "id": "I3",
+        "name": "No Admin Fund Control",
+        "description": "No admin/operator can move user funds"
+      },
+      {
+        "id": "I4",
+        "name": "Atomic Transfers",
+        "description": "All transfers are atomic (all-or-nothing)"
+      },
+      {
+        "id": "I5",
+        "name": "Balance Conservation",
+        "description": "Sum of all balances is constant"
+      },
+      {
+        "id": "I6",
+        "name": "Lock Enforcement",
+        "description": "Locks prevent sending, allow receiving"
+      }
+    ]
+  },
+  "integrations": {
+    "guaranteesReference": "docs/integrations/external-guarantees.md",
+    "merchantApi": {
+      "status": "SPECIFICATION",
+      "specification": "docs/merchant-api-spec.md",
+      "securityModel": "docs/merchant-api-security.md",
+      "implementation": "PENDING"
+    },
+    "sdk": {
+      "merchantSdk": {
+        "status": "SPECIFICATION",
+        "reference": "sdk/README.md"
+      },
+      "typescriptSdk": {
+        "status": "PLANNED"
+      }
+    },
+    "lendingAdapter": {
+      "status": "SPECIFICATION",
+      "specification": "docs/lending-adapter.md",
+      "implementation": "PENDING",
+      "externalPartner": "CoinRabbit"
+    },
+    "indexer": {
+      "status": "SPECIFICATION",
+      "architecture": "backend/indexer/docs/ARCHITECTURE.md",
+      "implementation": "PENDING",
+      "trustLevel": "Low-trust (read-only)"
+    },
+    "externalProviders": [
+      {
+        "name": "ChangeNOW",
+        "type": "Swap gateway",
+        "status": "PLANNED"
+      },
+      {
+        "name": "NOWPayments",
+        "type": "Payment processing",
+        "status": "PLANNED"
+      },
+      {
+        "name": "CoinRabbit",
+        "type": "Collateral lending",
+        "status": "PLANNED"
+      },
+      {
+        "name": "TONCO DEX",
+        "type": "Liquidity provider",
+        "status": "ACTIVE"
+      }
+    ],
+    "guarantees": [
+      "Non-Custodial Integrity: Protocol never custodies user funds",
+      "Protocol Immutability: Core contracts are immutable once frozen",
+      "Backward Compatibility: Existing interfaces remain stable",
+      "Deterministic Behavior: Contract logic is deterministic"
+    ],
+    "nonGuarantees": [
+      "Uptime of off-chain services",
+      "Availability of indexers",
+      "Price stability of TBC",
+      "Liquidity depth",
+      "Merchant solvency",
+      "Lending approval decisions",
+      "Governance outcomes"
+    ]
+  },
+  "immutabilityRules": {
+    "versionSnapshotRequired": true,
+    "historicalEntriesImmutable": true,
+    "correctionsAdditiveOnly": true,
+    "permittedActions": [
+      "Add new version entries",
+      "Add new deployment records",
+      "Correct errors (additive only, with notes)"
+    ],
+    "prohibitedActions": [
+      "Modify historical entries",
+      "Delete entries"
+    ]
+  },
+  "crossReferences": {
+    "networkDeploymentMatrix": "docs/deployments/network-matrix.md",
+    "versioningPolicy": "docs/versioning-policy.md",
+    "externalGuarantees": "docs/integrations/external-guarantees.md",
+    "governanceReleaseNotes": "docs/governance/release-notes-v1.md",
+    "auditScope": "docs/audit-scope.md",
+    "invariants": "docs/invariants.md",
+    "threatModel": "docs/threat-model.md",
+    "architecture": "docs/architecture.md"
+  },
+  "explicitNonGoals": [
+    "Act as a contract registry with authority",
+    "Introduce new trust assumptions",
+    "Imply custody or control",
+    "Auto-update from on-chain state",
+    "Replace independent verification"
+  ],
+  "versionHistory": [
+    {
+      "date": "2025-01",
+      "version": "v1.0.0",
+      "author": "TONBANKCARD Protocol",
+      "changeDescription": "Initial protocol registry publication"
+    }
+  ]
+}
