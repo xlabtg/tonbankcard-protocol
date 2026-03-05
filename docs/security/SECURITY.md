@@ -176,7 +176,7 @@ Auditors are expected to find and verify the following documented issues:
 | Test coverage | Defined in [docs/audit-scope.md](../audit-scope.md) |
 | External audit firm | Not yet selected |
 
-For the complete audit checklist, scope definitions, and auditor expectations, see [docs/audit-scope.md](../audit-scope.md).
+For the complete audit checklist, scope definitions, and auditor expectations, see [AUDIT_READINESS.md](AUDIT_READINESS.md) and [docs/audit-scope.md](../audit-scope.md).
 
 ---
 
@@ -211,7 +211,7 @@ When a vulnerability is confirmed:
 3. Governance formally declares the new version as recommended.
 4. Users receive migration guidance; migration is voluntary and user-initiated.
 
-For severity classifications, escalation paths, allowed/forbidden emergency actions, and post-mortem requirements, see [docs/governance/INCIDENT_RESPONSE.md](../governance/INCIDENT_RESPONSE.md).
+For security-specific incident types and key compromise procedures, see [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md). For full governance escalation, communication, and post-mortem requirements, see [docs/governance/INCIDENT_RESPONSE.md](../governance/INCIDENT_RESPONSE.md).
 
 ---
 
@@ -309,7 +309,9 @@ This framework does not:
 |----------|----------|---------|
 | Threat Model | [THREAT_MODEL.md](THREAT_MODEL.md) | Full threat analysis, adversary model, attack surface classification, mitigation mapping |
 | Key Management | [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md) | Key classification, storage requirements, rotation policy, compromise scenarios, prohibited practices |
-| Incident Response | [docs/governance/INCIDENT_RESPONSE.md](../governance/INCIDENT_RESPONSE.md) | Severity classification, governance escalation, allowed/forbidden actions, post-mortem requirements |
+| Incident Response | [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) | Security-focused incident classification, key compromise response, escalation paths |
+| Governance Incident Response | [docs/governance/INCIDENT_RESPONSE.md](../governance/INCIDENT_RESPONSE.md) | Full governance escalation, communication, post-mortem requirements |
+| Audit Readiness | [AUDIT_READINESS.md](AUDIT_READINESS.md) | Audit package location, contracts under audit, known limitations, auditor engagement |
 | Invariants | [docs/invariants.md](../invariants.md) | Formal invariant definitions and contract mappings |
 | Audit Scope | [docs/audit-scope.md](../audit-scope.md) | In-scope contracts, auditor expectations, test requirements, freeze policy |
 | Architecture | [docs/architecture.md](../architecture.md) | Protocol architecture and component responsibilities |
