@@ -177,7 +177,24 @@ over governance-driven intervention.
 
 ---
 
-## 10. Final Statement
+## 10. Security Framework Cross-Reference
+
+Governance v1 is explicitly **outside** the security trust boundary of the core protocol.
+
+The formal security architecture is defined independently of governance. Governance decisions cannot alter the security model.
+
+| Security Document | Purpose | Reference |
+|-------------------|---------|-----------|
+| **Formal Threat Model** | Adversary model, attack surface, trust boundaries | [docs/security/THREAT_MODEL.md](../security/THREAT_MODEL.md) |
+| **Key Management Framework** | Operational security, key rotation, compromise response | [docs/security/KEY_MANAGEMENT.md](../security/KEY_MANAGEMENT.md) |
+
+All protocol invariants defined in the security framework remain **unchanged and unenforceable by governance**.
+
+> Governance coordinates people. Security is enforced by code.
+
+---
+
+## 11. Final Statement
 
 TONBANKCARD Governance v1 is a **coordination layer, not a control layer**.
 

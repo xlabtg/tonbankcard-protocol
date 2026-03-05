@@ -408,17 +408,31 @@ Auditors MUST consult:
    - Maps invariants to contract code
    - Provides test verification methods
 
-2. **Threat Model**: `docs/threat-model.md`
+2. **Threat Model (Legacy)**: `docs/threat-model.md`
    - Identifies 11 threat classes
    - Maps threats to affected components
    - Documents mitigations and residual risks
 
-3. **Architecture**: `docs/architecture.md`
+3. **Formal Security Architecture & Threat Model**: `docs/security/THREAT_MODEL.md`
+   - Formal adversary model (7 attacker classes)
+   - Attack surface classification (4 main categories, ~20 specific attacks)
+   - Trust boundary definitions (5 trust levels)
+   - Full mitigation mapping
+   - Key compromise scenarios and blast radius analysis
+   - Audit checklist
+
+4. **Key Management Framework**: `docs/security/KEY_MANAGEMENT.md`
+   - Operational key management procedures
+   - Key classification (on-chain authority, governance, infrastructure)
+   - Rotation policy and compromise recovery
+   - Multi-sig requirements and prohibited practices
+
+5. **Architecture**: `docs/architecture.md`
    - High-level protocol design
    - Trust boundaries
    - Component responsibilities
 
-4. **Contract Documentation**: `contracts/README.md`
+6. **Contract Documentation**: `contracts/README.md`
    - Detailed contract specifications
    - Function documentation
    - Security considerations
@@ -740,7 +754,9 @@ tests/
 | Document | Purpose | Location |
 |----------|---------|----------|
 | **Invariants** | Formal protocol guarantees | `docs/invariants.md` |
-| **Threat Model** | Attack surface analysis | `docs/threat-model.md` |
+| **Threat Model (Legacy)** | Attack surface analysis | `docs/threat-model.md` |
+| **Security Threat Model (Formal)** | Full adversary model, attack surface, trust boundaries | `docs/security/THREAT_MODEL.md` |
+| **Key Management Framework** | Operational security & key management | `docs/security/KEY_MANAGEMENT.md` |
 | **Architecture** | High-level design | `docs/architecture.md` |
 | **Governance** | Development principles | `docs/governance.md` |
 | **Contributing** | Development rules | `CONTRIBUTING.md` |

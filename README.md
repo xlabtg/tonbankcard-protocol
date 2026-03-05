@@ -128,6 +128,13 @@ All development follows a strict **Issue → PR** workflow:
 
 ## Security
 
+### Security Framework
+
+TONBANKCARD implements a formally specified security architecture:
+
+- **Threat Model**: [docs/security/THREAT_MODEL.md](docs/security/THREAT_MODEL.md) — Full adversary model, attack surface classification, trust boundaries, and mitigation mapping
+- **Key Management**: [docs/security/KEY_MANAGEMENT.md](docs/security/KEY_MANAGEMENT.md) — Operational security, key classification, rotation policy, and compromise recovery procedures
+
 ### Non-Custodial Guarantees
 
 ✅ **Protocol DOES**:
@@ -140,6 +147,14 @@ All development follows a strict **Issue → PR** workflow:
 - Have admin withdrawal rights
 - Custody user funds
 - Include upgradeability proxies
+
+### Security Architecture Principles
+
+1. **Non-Custodial**: Protocol never takes custody of user funds
+2. **Immutable-First**: No upgrade proxies, no `set_code()`, no admin migration paths
+3. **Explicit Trust Boundaries**: Five formally defined trust levels
+4. **Minimal Admin Power**: No admin withdrawal, no emergency drain, no privileged transfer functions
+5. **Deterministic Settlement**: All fund operations are atomic, on-chain, and user-initiated
 
 ### Security Documentation
 
@@ -168,6 +183,9 @@ Please report security vulnerabilities privately. See [SECURITY.md](SECURITY.md)
 
 - **Protocol Docs**: [docs/architecture.md](docs/architecture.md)
 - **Existing Contracts**: [docs/existing-contracts.md](docs/existing-contracts.md)
+- **Protocol Registry**: [docs/registry/protocol-registry.md](docs/registry/protocol-registry.md)
+- **Security Threat Model**: [docs/security/THREAT_MODEL.md](docs/security/THREAT_MODEL.md)
+- **Key Management**: [docs/security/KEY_MANAGEMENT.md](docs/security/KEY_MANAGEMENT.md)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
 - **TON Documentation**: [docs.ton.org](https://docs.ton.org/)
 - **TONCO DEX**: [app.tonco.io](https://app.tonco.io/)
