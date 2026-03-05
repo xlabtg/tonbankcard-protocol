@@ -44,6 +44,8 @@ The registry answers, unambiguously:
 | **Architecture Reference** | [docs/architecture.md](../architecture.md) |
 | **Invariants Reference** | [docs/invariants.md](../invariants.md) |
 | **Threat Model Reference** | [docs/threat-model.md](../threat-model.md) |
+| **Security Framework** | [docs/security/THREAT_MODEL.md](../security/THREAT_MODEL.md) |
+| **Key Management** | [docs/security/KEY_MANAGEMENT.md](../security/KEY_MANAGEMENT.md) |
 
 ### Core Principles
 
@@ -167,7 +169,38 @@ Governance v1 holders **CANNOT**:
 
 ---
 
-## 5. Audit Status
+## 5. Security Framework
+
+| Property | Value |
+|----------|-------|
+| **Security Framework Status** | `FORMAL` |
+| **Threat Model** | [docs/security/THREAT_MODEL.md](../security/THREAT_MODEL.md) |
+| **Key Management** | [docs/security/KEY_MANAGEMENT.md](../security/KEY_MANAGEMENT.md) |
+| **Attack Surface Reference** | [docs/attack-surface-diagram.md](../attack-surface-diagram.md) |
+| **Merchant API Security** | [docs/merchant-api-security.md](../merchant-api-security.md) |
+
+### Security Architecture Summary
+
+TONBANKCARD implements a **non-custodial, immutable-first** security architecture:
+
+1. **Non-Custodial**: Protocol never holds user funds — all balances are in user-owned TBC jetton wallets
+2. **Immutable Contracts**: No upgrade proxies, no `set_code()`, no admin migration paths
+3. **Explicit Trust Boundaries**: Five formally defined trust levels (user, contract, off-chain, external, governance)
+4. **Minimal Admin Power**: No admin withdrawal, no emergency drain, no privileged transfer functions
+5. **Deterministic Settlement**: All fund operations are atomic, on-chain, and user-initiated
+
+### Key Management
+
+Formal operational security and key management procedures are defined in [docs/security/KEY_MANAGEMENT.md](../security/KEY_MANAGEMENT.md).
+
+Key classifications:
+- **On-Chain Authority**: Risk authority and lending adapter keys (hardware-backed, multi-sig required)
+- **Governance NFT Custody**: TBC Diamonds custody (cold storage, hardware wallet)
+- **Infrastructure**: Deployment and CI/CD keys (role-separated, least privilege)
+
+---
+
+## 6. Audit Status
 
 | Property | Value |
 |----------|-------|
@@ -317,6 +350,7 @@ TONBANKCARD does NOT guarantee:
 | Date | Version | Change Description |
 |------|---------|-------------------|
 | 2025-01 | v1.0.0 | Initial protocol registry publication |
+| 2026-03 | v1.0.1 | Added Security Framework cross-references (Issue 10.8) |
 
 ---
 
@@ -334,6 +368,8 @@ TONBANKCARD does NOT guarantee:
 | **Invariants** | Formal protocol guarantees | [docs/invariants.md](../invariants.md) |
 | **Threat Model** | Attack surface analysis | [docs/threat-model.md](../threat-model.md) |
 | **Architecture** | System architecture | [docs/architecture.md](../architecture.md) |
+| **Security Threat Model (Formal)** | Formal security architecture & threat model | [docs/security/THREAT_MODEL.md](../security/THREAT_MODEL.md) |
+| **Key Management Framework** | Operational security & key management | [docs/security/KEY_MANAGEMENT.md](../security/KEY_MANAGEMENT.md) |
 
 ---
 

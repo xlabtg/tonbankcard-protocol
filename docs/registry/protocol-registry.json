@@ -19,7 +19,11 @@
       "root": "docs/",
       "architecture": "docs/architecture.md",
       "invariants": "docs/invariants.md",
-      "threatModel": "docs/threat-model.md"
+      "threatModel": "docs/threat-model.md",
+      "securityFramework": {
+        "threatModel": "docs/security/THREAT_MODEL.md",
+        "keyManagement": "docs/security/KEY_MANAGEMENT.md"
+      }
     },
     "principles": [
       "User Sovereignty: No admin controls over user funds",
@@ -164,6 +168,26 @@
         "Force upgrades or migrations"
       ]
     }
+  },
+  "security": {
+    "frameworkStatus": "FORMAL",
+    "threatModel": "docs/security/THREAT_MODEL.md",
+    "keyManagement": "docs/security/KEY_MANAGEMENT.md",
+    "attackSurface": "docs/attack-surface-diagram.md",
+    "merchantApiSecurity": "docs/merchant-api-security.md",
+    "architecture": {
+      "nonCustodial": true,
+      "immutableContracts": true,
+      "noUpgradeProxies": true,
+      "noAdminWithdrawal": true,
+      "deterministicSettlement": true
+    },
+    "trustBoundaries": 5,
+    "keyClasses": [
+      "On-Chain Authority (risk authority, lending adapter)",
+      "Governance NFT Custody (TBC Diamonds)",
+      "Infrastructure (deployment, CI/CD)"
+    ]
   },
   "audit": {
     "readinessStatus": "READY",
@@ -349,7 +373,9 @@
     "auditScope": "docs/audit-scope.md",
     "invariants": "docs/invariants.md",
     "threatModel": "docs/threat-model.md",
-    "architecture": "docs/architecture.md"
+    "architecture": "docs/architecture.md",
+    "securityThreatModelFormal": "docs/security/THREAT_MODEL.md",
+    "keyManagementFramework": "docs/security/KEY_MANAGEMENT.md"
   },
   "explicitNonGoals": [
     "Act as a contract registry with authority",
@@ -364,6 +390,12 @@
       "version": "v1.0.0",
       "author": "TONBANKCARD Protocol",
       "changeDescription": "Initial protocol registry publication"
+    },
+    {
+      "date": "2026-03",
+      "version": "v1.0.1",
+      "author": "TONBANKCARD Protocol",
+      "changeDescription": "Added Security Framework cross-references (Issue 10.8)"
     }
   ]
 }

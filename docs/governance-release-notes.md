@@ -122,7 +122,18 @@ Governance v1 guarantees:
 * no custody paths
 * no protocol authority
 
-All protocol invariants defined in Security v1 remain **unchanged and unenforceable by governance**.
+All protocol invariants defined in the Security Framework remain **unchanged and unenforceable by governance**.
+
+### Security Framework Reference
+
+The formal security architecture is defined independently of governance in:
+
+| Document | Purpose |
+|----------|---------|
+| [docs/security/THREAT_MODEL.md](./security/THREAT_MODEL.md) | Formal adversary model, attack surface, trust boundaries, and mitigation mapping |
+| [docs/security/KEY_MANAGEMENT.md](./security/KEY_MANAGEMENT.md) | Operational key management, rotation policy, and compromise recovery |
+
+Governance decisions cannot modify, override, or weaken any security guarantee documented in these files.
 
 ---
 
