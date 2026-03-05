@@ -44,6 +44,7 @@ The registry answers, unambiguously:
 | **Architecture Reference** | [docs/architecture.md](../architecture.md) |
 | **Invariants Reference** | [docs/invariants.md](../invariants.md) |
 | **Threat Model Reference** | [docs/threat-model.md](../threat-model.md) |
+| **Security Framework** | [docs/security/SECURITY.md](../security/SECURITY.md) |
 
 ### Core Principles
 
@@ -334,6 +335,7 @@ TONBANKCARD does NOT guarantee:
 | **Invariants** | Formal protocol guarantees | [docs/invariants.md](../invariants.md) |
 | **Threat Model** | Attack surface analysis | [docs/threat-model.md](../threat-model.md) |
 | **Architecture** | System architecture | [docs/architecture.md](../architecture.md) |
+| **Security Framework** | Security documentation index | [docs/security/SECURITY.md](../security/SECURITY.md) |
 
 ---
 

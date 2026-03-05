@@ -2,7 +2,7 @@
 
 **Document Type:** Security Policy
 **Issue Reference:** [#66 — Issue 10.7 — Responsible Disclosure & Vulnerability Reporting Policy](https://github.com/xlabtg/tonbankcard-protocol/issues/66)
-**Status:** Proposed
+**Status:** Active
 **Last Updated:** 2026-03-05
 
 ---
@@ -18,17 +18,43 @@
 
 ---
 
+## Supported Versions
+
+| Version | Status | Security Support |
+|---------|--------|-----------------|
+| v1.0.x | Active | Supported |
+
+Earlier versions and pre-release deployments are not covered by this policy.
+
+---
+
 ## 1. Reporting Channels
 
 **DO NOT** disclose security vulnerabilities publicly. Public disclosure before a patch is available puts all users at risk.
 
-To report a vulnerability:
+The preferred channel is GitHub's private security advisory feature:
+
+1. Go to the [Security tab](https://github.com/xlabtg/tonbankcard-protocol/security) of this repository
+2. Click **"Report a vulnerability"**
+3. Provide a detailed description of the issue
+
+If you are unable to use GitHub's private advisory feature, report via email:
 
 - **Email:** security@tonbankcard.com
 - **Subject line format:** `[SECURITY] <brief description>`
 - Include a detailed description of the issue, reproduction steps, and potential impact
 
-If you do not receive an acknowledgement within 72 hours, send a follow-up to the same address referencing your original report.
+If you do not receive an acknowledgement within 72 hours, send a follow-up referencing your original report.
+
+### What to Include
+
+A useful vulnerability report includes:
+
+- Description of the vulnerability and its potential impact
+- Steps to reproduce the issue
+- Affected contract(s) or component(s)
+- Proof of concept or test case, if available
+- Suggested severity (Critical, High, Medium, Low)
 
 ---
 
@@ -50,23 +76,34 @@ Encryption key details will be provided upon initial contact if not yet publishe
 
 The following components are in scope for vulnerability reports:
 
-- **Smart contracts:** `PaymentHub`, `MerchantNFT`, and related on-chain contracts in this repository
-- **Backend API:** REST endpoints handling invoice creation, settlement verification, and merchant registry
-- **Merchant SDK:** JavaScript/TypeScript SDK published under `@tonbankcard/sdk`
+- **Smart contracts:** `PaymentHub`, `MerchantNFT`, and related on-chain contracts in this repository (`contracts/`)
+- **Backend API:** REST endpoints handling invoice creation, settlement verification, and merchant registry (`api/`)
+- **Merchant SDK:** JavaScript/TypeScript SDK published under `@tonbankcard/sdk` (`sdk/`)
 - **Authentication and access control logic:** Key management, role-based access, admin operations
 - **Protocol-level logic:** Settlement finality, reorg handling, invariant violations
+
+### Priority Focus Areas
+
+The most security-critical areas of this protocol:
+
+- **Fund safety:** any path that could result in unauthorized fund movement
+- **NFT ownership enforcement:** any bypass of the ownership check
+- **Lock bypass:** any path to transfer from a locked account
+- **Admin key misuse:** any undocumented admin capability
 
 ### Out of Scope
 
 The following are not in scope:
 
+- Already-deployed and frozen external contracts (TBC Token Jetton, NFT Collections, TBC Diamonds, TONCO DEX) — these are immutable and separately governed
+- Third-party services (ChangeNOW, NOWPayments, CoinRabbit, TONCO) — report vulnerabilities directly to those providers
 - Vulnerabilities in third-party dependencies unless directly exploitable through TONBANKCARD code
 - TON blockchain infrastructure, validator nodes, or core protocol
 - Reports requiring physical access to infrastructure
-- Social engineering attacks against team members
+- Social engineering attacks against team members or users
 - Denial-of-service attacks without demonstrated exploit impact
 - Issues in test environments or non-production deployments with no production impact
-- Self-XSS or self-inflicted issues with no realistic attack path
+- Theoretical vulnerabilities with no demonstrated impact
 
 ---
 
@@ -81,6 +118,15 @@ The following are not in scope:
 | Patch for high severity | Within 60 days |
 | Patch for medium/low severity | Within 90 days |
 
+### Fix Timeline by Severity
+
+| Severity | Target Fix Timeline |
+|----------|---------------------|
+| Critical | Within 72 hours for containment; patch within 30 days |
+| High | Within 60 days |
+| Medium | Within 90 days |
+| Low | Next planned release |
+
 These are target timelines. Complex issues involving on-chain contracts may require additional time due to audit and deployment constraints. Reporters will be kept informed of any delays.
 
 ---
@@ -93,7 +139,8 @@ TONBANKCARD follows a **coordinated disclosure** model:
 2. TONBANKCARD acknowledges receipt and opens a private investigation
 3. TONBANKCARD and reporter agree on a disclosure timeline (default: 90 days from acknowledgement)
 4. A patch or mitigation is developed and deployed
-5. A public disclosure is issued after the fix is available
+5. Reporter is given a preview of the disclosure and credited (if desired)
+6. A public disclosure is issued after the fix is available
 
 **Early disclosure may occur** if:
 
@@ -125,6 +172,30 @@ This safe harbor applies to research conducted under these terms. It does not ex
 - Any activity that violates applicable law
 
 This statement is not legal advice and does not constitute a legal agreement. Researchers are responsible for understanding and complying with all applicable laws.
+
+---
+
+## Non-Custodial Architecture
+
+TONBANKCARD is a **non-custodial protocol**. The architecture enforces that:
+
+- No admin or operator can move user funds
+- No emergency mechanism exists that transfers or seizes funds
+- Account locks restrict outgoing transfers but do not confiscate balances
+
+For more on the security model, see [docs/security/SECURITY.md](docs/security/SECURITY.md).
+
+---
+
+## Security Documentation
+
+For the full security framework, see:
+
+- [docs/security/SECURITY.md](docs/security/SECURITY.md) — Security documentation index and unified framework
+- [docs/security/THREAT_MODEL.md](docs/security/THREAT_MODEL.md) — Threat model and security architecture
+- [docs/security/KEY_MANAGEMENT.md](docs/security/KEY_MANAGEMENT.md) — Key management and operational security
+- [docs/security/INCIDENT_RESPONSE.md](docs/security/INCIDENT_RESPONSE.md) — Incident response procedures
+- [docs/security/AUDIT_READINESS.md](docs/security/AUDIT_READINESS.md) — Audit readiness status
 
 ---
 
