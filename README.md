@@ -141,11 +141,19 @@ All development follows a strict **Issue → PR** workflow:
 - Custody user funds
 - Include upgradeability proxies
 
+### Security Documentation
+
+- [docs/security/SECURITY.md](docs/security/SECURITY.md) — Security framework index
+- [docs/security/THREAT_MODEL.md](docs/security/THREAT_MODEL.md) — Threat model and security architecture
+- [docs/security/KEY_MANAGEMENT.md](docs/security/KEY_MANAGEMENT.md) — Key management and operational security
+- [docs/security/INCIDENT_RESPONSE.md](docs/security/INCIDENT_RESPONSE.md) — Incident response procedures
+- [docs/security/AUDIT_READINESS.md](docs/security/AUDIT_READINESS.md) — Audit readiness status
+
 ### Reporting Security Issues
 
-Please report security vulnerabilities via private channels (details coming soon).
+Please report security vulnerabilities privately. See [SECURITY.md](SECURITY.md) for the responsible disclosure policy.
 
-**DO NOT** disclose security issues publicly.
+**DO NOT** disclose security issues publicly via GitHub issues.
 
 ## Protocol Economics
 
