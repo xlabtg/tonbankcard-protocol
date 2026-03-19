@@ -150,7 +150,7 @@ export class InvoiceService {
       metadata: sanitizeMetadata(request.metadata),
       status: 'pending',
       created_at: createdAt,
-      expires_at: request.expires_at || generateDefaultExpiry(),
+      expires_at: expiresAt,
       payment_url: generatePaymentUrl(invoiceId),
       settlement: undefined,
     };
@@ -161,10 +161,10 @@ export class InvoiceService {
     // Store idempotency key with TTL
     // TTL is set to the invoice expiration time, ensuring idempotency
     // is maintained for the lifetime of the invoice
-    const expiresAt = new Date(invoice.expires_at).getTime();
+    const expiresAtMs = new Date(invoice.expires_at).getTime();
     idempotencyStore.set(idempotencyKey, {
       invoiceId,
-      expiresAt: Math.max(expiresAt, Date.now() + IDEMPOTENCY_TTL_MS),
+      expiresAt: Math.max(expiresAtMs, Date.now() + IDEMPOTENCY_TTL_MS),
     });
 
     return invoice;

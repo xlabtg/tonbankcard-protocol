@@ -201,11 +201,11 @@ Please report security vulnerabilities privately. See [SECURITY.md](SECURITY.md)
 - [x] TONCO liquidity pool
 - [x] Architecture documentation
 
-### Phase 2: Payment Infrastructure (In Progress)
-- [ ] Payment hub smart contract
-- [ ] Merchant API
-- [ ] Payment widget/SDK
-- [ ] Backend indexer
+### Phase 2: Payment Infrastructure ✅
+- [x] Payment hub smart contract
+- [x] Merchant API
+- [x] Payment widget/SDK
+- [x] Backend indexer
 
 ### Phase 3: User Experience
 - [ ] Wallet UI

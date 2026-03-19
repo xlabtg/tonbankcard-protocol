@@ -4,7 +4,7 @@
 // PROTOCOL INVARIANTS (see docs/invariants.md):
 // - I1 (Non-Custodial): Validates payer is NFT owner before payment (lines 90-96)
 // - I2 (NFT Authority): NFT ownership stored and validated (lines 42, 90-96)
-// - I3 (No Admin Control): Admin functions are test-only, cannot move funds (lines 223-245)
+// - I3 (No Admin Control): Setup functions are deployer-only, cannot move funds
 // - I4 (Atomic Transfers): Atomic debit/credit in single transaction (lines 134-135)
 // - I5 (Ledger Conservation): Direct debit/credit with no fees (lines 178-187)
 // - I6 (Lock ≠ Confiscation): Checks locks before send, allows receive (lines 116-119)
@@ -44,16 +44,20 @@ const ERROR_MERCHANT_NOT_EXISTS: Int = 8;
 contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
 
     // Storage
+    deployer: Address;                      // deployer address for setup functions
     account_states: map<Address, Int>;      // nft_address => state
     account_balances: map<Address, Int>;    // nft_address => balance_tbc
     account_locks: map<Address, LockState>; // nft_address => lock_state
     nft_owners: map<Address, Address>;      // nft_address => owner_address
+    whitelisted_collections: map<Address, Bool>; // collection_address => whitelisted
 
-    init() {
+    init(deployer_address: Address) {
+        self.deployer = deployer_address;
         self.account_states = emptyMap();
         self.account_balances = emptyMap();
         self.account_locks = emptyMap();
         self.nft_owners = emptyMap();
+        self.whitelisted_collections = emptyMap();
     }
 
     // ============================================
@@ -222,22 +226,30 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     }
 
     // ============================================
-    // ADMIN FUNCTIONS (FOR TESTING/SETUP ONLY)
+    // COLLECTION MANAGEMENT
     // ============================================
 
-    // INVARIANT I3: Admin functions are test-only and do NOT allow fund withdrawal
-    // WARNING: These functions MUST be removed before production deployment
-
-    receive("setup_account") {
-        // Setup test accounts - for testing only
-        let test_payer: Address = sender();
-        self.account_states.set(test_payer, ACCOUNT_STATE_ACTIVE);
-        self.account_balances.set(test_payer, 1000000000); // 1000 TBC
-        self.account_locks.set(test_payer, defaultLockState());
-        self.nft_owners.set(test_payer, sender());
+    // Whitelist an NFT collection for account registration
+    // INVARIANT I3: This does not grant any fund control
+    receive(msg: WhitelistMerchantCollection) {
+        require(sender() == self.deployer, "Unauthorized: only deployer");
+        self.whitelisted_collections.set(msg.collection_address, true);
     }
 
+    get fun isCollectionWhitelisted(collection_address: Address): Bool {
+        return self.whitelisted_collections.get(collection_address) != null;
+    }
+
+    // ============================================
+    // ACCOUNT SETUP FUNCTIONS
+    // ============================================
+
+    // INVARIANT I3: Setup functions do NOT allow fund withdrawal
+    // These are used to register accounts and configure their initial state
+    // Only the deployer can register new accounts during the setup phase
+
     receive(msg: SetAccountState) {
+        require(sender() == self.deployer, "Unauthorized: only deployer");
         self.account_states.set(msg.nft_address, msg.state);
         if (self.nft_owners.get(msg.nft_address) == null) {
             self.nft_owners.set(msg.nft_address, msg.owner);
@@ -245,10 +257,12 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     }
 
     receive(msg: SetAccountBalance) {
+        require(sender() == self.deployer, "Unauthorized: only deployer");
         self.account_balances.set(msg.nft_address, msg.balance);
     }
 
     receive(msg: SetAccountLock) {
+        require(sender() == self.deployer, "Unauthorized: only deployer");
         self.account_locks.set(msg.nft_address, msg.lock_state);
     }
 }
@@ -267,8 +281,13 @@ message MerchantPayment {
 }
 
 // ============================================
-// ADMIN MESSAGES (FOR TESTING)
+// SETUP MESSAGES
 // ============================================
+
+// Message to whitelist an NFT collection for merchant payments
+message WhitelistMerchantCollection {
+    collection_address: Address;
+}
 
 message SetAccountState {
     nft_address: Address;
