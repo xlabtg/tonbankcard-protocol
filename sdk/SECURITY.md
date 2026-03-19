@@ -318,7 +318,7 @@ Before deploying to production:
 **DO NOT** disclose security vulnerabilities publicly.
 
 To report a security issue:
-1. Email: security@tonbankcard.com (coming soon)
+1. Email: security@tonbankcard.com
 2. Include detailed reproduction steps
 3. Allow time for patch before disclosure
 4. Follow responsible disclosure practices
@@ -354,4 +354,4 @@ Always perform your own security audit before production use.
 
 **Last Updated:** 2024-12-27
 
-**Security Contact:** security@tonbankcard.com (coming soon)
+**Security Contact:** security@tonbankcard.com

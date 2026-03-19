@@ -10,15 +10,16 @@
  */
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
+import '@ton/test-utils';
 import { Address, toNano } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
-import { AccountStateMachine } from './account-state';
+import { AccountStateMachine } from './dist/account-state_AccountStateMachine';
 
-// State constants
-const STATE_ACTIVE = 1;
-const STATE_FROZEN = 2;
-const STATE_COLLATERAL_LOCKED = 3;
-const STATE_CLOSED = 4;
+// State constants (bigint to match Tact-generated TypeScript types)
+const STATE_ACTIVE = 1n;
+const STATE_FROZEN = 2n;
+const STATE_COLLATERAL_LOCKED = 3n;
+const STATE_CLOSED = 4n;
 
 describe('AccountStateMachine', () => {
     let blockchain: Blockchain;
@@ -35,6 +36,13 @@ describe('AccountStateMachine', () => {
         // Deploy the contract
         accountStateMachine = blockchain.openContract(
             await AccountStateMachine.fromInit(deployer.address)
+        );
+
+        // Send deploy message to initialize the contract on-chain
+        await accountStateMachine.send(
+            deployer.getSender(),
+            { value: toNano('0.05') },
+            { $$type: 'Deploy', queryId: 0n }
         );
 
         // Mock NFT addresses
@@ -61,7 +69,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const balance = await accountStateMachine.getBalance(nftAccount1);
+            const balance = await accountStateMachine.getGetBalance(nftAccount1);
             expect(balance).toBe(depositAmount);
         });
 
@@ -89,7 +97,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const balance = await accountStateMachine.getBalance(nftAccount1);
+            const balance = await accountStateMachine.getGetBalance(nftAccount1);
             expect(balance).toBe(deposit1 + deposit2);
         });
 
@@ -120,7 +128,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const balance = await accountStateMachine.getBalance(nftAccount1);
+            const balance = await accountStateMachine.getGetBalance(nftAccount1);
             expect(balance).toBe(depositAmount - withdrawAmount);
         });
 
@@ -183,8 +191,8 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const balance1 = await accountStateMachine.getBalance(nftAccount1);
-            const balance2 = await accountStateMachine.getBalance(nftAccount2);
+            const balance1 = await accountStateMachine.getGetBalance(nftAccount1);
+            const balance2 = await accountStateMachine.getGetBalance(nftAccount2);
 
             expect(balance1).toBe(depositAmount - transferAmount);
             expect(balance2).toBe(transferAmount);
@@ -228,7 +236,7 @@ describe('AccountStateMachine', () => {
 
     describe('State Transitions', () => {
         it('should initialize accounts as ACTIVE by default', async () => {
-            const state = await accountStateMachine.getState(nftAccount1);
+            const state = await accountStateMachine.getGetState(nftAccount1);
             expect(state).toBe(STATE_ACTIVE);
         });
 
@@ -243,7 +251,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const state = await accountStateMachine.getState(nftAccount1);
+            const state = await accountStateMachine.getGetState(nftAccount1);
             expect(state).toBe(STATE_FROZEN);
         });
 
@@ -258,7 +266,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const state = await accountStateMachine.getState(nftAccount1);
+            const state = await accountStateMachine.getGetState(nftAccount1);
             expect(state).toBe(STATE_COLLATERAL_LOCKED);
         });
 
@@ -438,7 +446,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const balance = await accountStateMachine.getBalance(nftAccount1);
+            const balance = await accountStateMachine.getGetBalance(nftAccount1);
             expect(balance).toBe(depositAmount);
         });
 
@@ -522,7 +530,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const balance2 = await accountStateMachine.getBalance(nftAccount2);
+            const balance2 = await accountStateMachine.getGetBalance(nftAccount2);
             expect(balance2).toBe(transferAmount);
         });
     });
@@ -548,7 +556,7 @@ describe('AccountStateMachine', () => {
 
             // Balance should remain with the NFT address
             // regardless of who owns the NFT
-            const balance = await accountStateMachine.getBalance(nftAccount1);
+            const balance = await accountStateMachine.getGetBalance(nftAccount1);
             expect(balance).toBe(depositAmount);
 
             // NOTE: Actual ownership verification would happen through
@@ -580,11 +588,11 @@ describe('AccountStateMachine', () => {
             );
 
             // State should remain COLLATERAL_LOCKED
-            const state = await accountStateMachine.getState(nftAccount1);
+            const state = await accountStateMachine.getGetState(nftAccount1);
             expect(state).toBe(STATE_COLLATERAL_LOCKED);
 
             // Balance should be preserved
-            const balance = await accountStateMachine.getBalance(nftAccount1);
+            const balance = await accountStateMachine.getGetBalance(nftAccount1);
             expect(balance).toBe(depositAmount);
         });
 
@@ -682,7 +690,7 @@ describe('AccountStateMachine', () => {
             });
 
             // Verify final balances
-            const balance1 = await accountStateMachine.getBalance(nftAccount1);
+            const balance1 = await accountStateMachine.getGetBalance(nftAccount1);
             expect(balance1).toBe(depositAmount - transferAmount);
         });
     });
@@ -693,7 +701,7 @@ describe('AccountStateMachine', () => {
 
     describe('Query Functions', () => {
         it('should correctly report canSend for ACTIVE account', async () => {
-            const canSend = await accountStateMachine.canSend(nftAccount1);
+            const canSend = await accountStateMachine.getCanSend(nftAccount1);
             expect(canSend).toBe(true);
         });
 
@@ -708,13 +716,13 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const canSend = await accountStateMachine.canSend(nftAccount1);
+            const canSend = await accountStateMachine.getCanSend(nftAccount1);
             expect(canSend).toBe(false);
         });
 
         it('should correctly report canReceive for all states except CLOSED', async () => {
             // ACTIVE
-            let canReceive = await accountStateMachine.canReceive(nftAccount1);
+            let canReceive = await accountStateMachine.getCanReceive(nftAccount1);
             expect(canReceive).toBe(true);
 
             // FROZEN
@@ -727,7 +735,7 @@ describe('AccountStateMachine', () => {
                     new_state: STATE_FROZEN,
                 }
             );
-            canReceive = await accountStateMachine.canReceive(nftAccount1);
+            canReceive = await accountStateMachine.getCanReceive(nftAccount1);
             expect(canReceive).toBe(true);
 
             // COLLATERAL_LOCKED
@@ -749,7 +757,7 @@ describe('AccountStateMachine', () => {
                     new_state: STATE_COLLATERAL_LOCKED,
                 }
             );
-            canReceive = await accountStateMachine.canReceive(nftAccount1);
+            canReceive = await accountStateMachine.getCanReceive(nftAccount1);
             expect(canReceive).toBe(true);
 
             // Note: Cannot test CLOSED -> ACTIVE transition
@@ -779,7 +787,7 @@ describe('AccountStateMachine', () => {
                 }
             );
 
-            const accountState = await accountStateMachine.getAccountState(nftAccount1);
+            const accountState = await accountStateMachine.getGetAccountState(nftAccount1);
             expect(accountState.balance_tbc).toBe(depositAmount);
             expect(accountState.state).toBe(STATE_FROZEN);
         });

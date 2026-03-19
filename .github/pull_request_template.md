@@ -1,38 +1,43 @@
-# 📌 PR TEMPLATE — TONBANKCARD
-
-Этот шаблон обязателен для **всех Pull Requests**, включая PR от AI-бота.
-
-```markdown
 ## 1. Related Issue
-(Ссылка на Issue. PR без Issue — автоматически отклоняется.)
+
+<!-- Link to the issue this PR addresses. PRs without a linked issue will be rejected. -->
+Fixes #
 
 ## 2. Scope of Changes
-(Что именно реализовано. ДОЛЖНО соответствовать In Scope Issue.)
+
+<!-- Describe what was implemented. MUST match the In-Scope items of the linked issue. -->
 
 ## 3. Out of Scope Confirmation
-Подтверждаю, что PR **не включает**:
-- custody
-- admin withdraw
-- экономические изменения
-- скрытые зависимости
+
+I confirm this PR does **NOT** include:
+- [ ] Any form of custody over user funds
+- [ ] Admin withdrawal capability
+- [ ] Unauthorized economic changes
+- [ ] Hidden dependencies or backdoors
 
 ## 4. Architectural Alignment
-- [ ] NFT = account
-- [ ] TON = collateral
-- [ ] TBC = settlement
-- [ ] On-chain is source of truth
+
+- [ ] NFT = account (NFT-based account abstraction)
+- [ ] TON = collateral (TON as on-chain collateral signal)
+- [ ] TBC = settlement (TBC token for internal transfers)
+- [ ] On-chain is source of truth (no off-chain authority)
 
 ## 5. Security Checklist
+
 - [ ] No reentrancy introduced
-- [ ] No new privileged roles
-- [ ] Access control enforced
-- [ ] Failure modes handled
+- [ ] No new privileged roles added
+- [ ] Access control is correctly enforced
+- [ ] All failure modes are handled gracefully
+- [ ] No secrets or credentials committed
 
 ## 6. Tests
-(Описание тестов или причина их отсутствия.)
+
+<!-- Describe the tests added or explain why tests are not applicable. -->
 
 ## 7. Breaking Changes
-(Если есть — описать. Если нет — указать None.)
+
+<!-- List any breaking changes, or write "None" if there are none. -->
 
 ## 8. Reviewer Notes
-(Любые пояснения для ревьюера.)
+
+<!-- Any notes or context for the reviewer. -->

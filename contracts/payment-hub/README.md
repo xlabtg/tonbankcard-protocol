@@ -473,7 +473,7 @@ Report security issues via private channels (see CONTRIBUTING.md).
 
 ## License
 
-TBD
+MIT — see [LICENSE](../../LICENSE)
 
 ## References
 

@@ -140,6 +140,32 @@ jobs:
       # Contracts use Tact as primary language; TypeScript wrappers are generated
       # by the Tact build step and cannot be type-checked without running it first.
 
+  test-contracts:
+    name: Test (Contracts)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install payment-hub dependencies
+        working-directory: contracts/payment-hub
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build payment-hub contracts
+        working-directory: contracts/payment-hub
+        run: npm run build
+
+      - name: Test payment-hub contract specs
+        working-directory: contracts/payment-hub
+        run: npm test
+
   deploy:
     name: Deploy to Vercel
     runs-on: ubuntu-latest

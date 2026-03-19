@@ -89,6 +89,19 @@ contract AccountStateMachine with Deployable {
     }
 
     // ========================================================================
+    // INTERNAL HELPERS
+    // ========================================================================
+
+    // Get account or return default ACTIVE account with zero balance
+    fun getOrDefault(nft_address: Address): AccountState {
+        let existing: AccountState? = self.accounts.get(nft_address);
+        if (existing != null) {
+            return existing!!;
+        }
+        return AccountState{ balance_tbc: 0, state: STATE_ACTIVE };
+    }
+
+    // ========================================================================
     // BALANCE MANAGEMENT
     // ========================================================================
 
@@ -98,10 +111,7 @@ contract AccountStateMachine with Deployable {
         require(msg.amount > 0, "Amount must be positive");
 
         // Get or initialize account
-        let account: AccountState = self.accounts.get(msg.nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let account: AccountState = self.getOrDefault(msg.nft_address);
 
         // Update balance with overflow protection
         account.balance_tbc = account.balance_tbc + msg.amount;
@@ -117,10 +127,7 @@ contract AccountStateMachine with Deployable {
         require(msg.amount > 0, "Amount must be positive");
 
         // Get account state
-        let account: AccountState = self.accounts.get(msg.nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let account: AccountState = self.getOrDefault(msg.nft_address);
 
         // Check state allows withdrawal
         require(account.state == STATE_ACTIVE, "Account state does not allow withdrawal");
@@ -151,16 +158,10 @@ contract AccountStateMachine with Deployable {
         require(msg.from_nft != msg.to_nft, "Cannot transfer to same account");
 
         // Get source account
-        let from_account: AccountState = self.accounts.get(msg.from_nft) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let from_account: AccountState = self.getOrDefault(msg.from_nft);
 
         // Get destination account
-        let to_account: AccountState = self.accounts.get(msg.to_nft) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let to_account: AccountState = self.getOrDefault(msg.to_nft);
 
         // Check source account state allows sending
         require(from_account.state == STATE_ACTIVE, "Source account must be ACTIVE");
@@ -187,10 +188,7 @@ contract AccountStateMachine with Deployable {
     // Change account state with strict rules
     receive(msg: ChangeAccountState) {
         // Get current account state
-        let account: AccountState = self.accounts.get(msg.nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let account: AccountState = self.getOrDefault(msg.nft_address);
 
         let current_state: Int = account.state;
         let new_state: Int = msg.new_state;
@@ -240,46 +238,31 @@ contract AccountStateMachine with Deployable {
 
     // Get account state (read-only)
     get fun getAccountState(nft_address: Address): AccountState {
-        return self.accounts.get(nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        return self.getOrDefault(nft_address);
     }
 
     // Get account balance (read-only)
     get fun getBalance(nft_address: Address): Int {
-        let account: AccountState = self.accounts.get(nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let account: AccountState = self.getOrDefault(nft_address);
         return account.balance_tbc;
     }
 
     // Get account state value (read-only)
     get fun getState(nft_address: Address): Int {
-        let account: AccountState = self.accounts.get(nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let account: AccountState = self.getOrDefault(nft_address);
         return account.state;
     }
 
     // Check if account can send TBC (read-only)
     get fun canSend(nft_address: Address): Bool {
-        let account: AccountState = self.accounts.get(nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let account: AccountState = self.getOrDefault(nft_address);
         return account.state == STATE_ACTIVE;
     }
 
     // Check if account can receive TBC (read-only)
     // All accounts can receive except CLOSED (future implementation)
     get fun canReceive(nft_address: Address): Bool {
-        let account: AccountState = self.accounts.get(nft_address) ?: AccountState{
-            balance_tbc: 0,
-            state: STATE_ACTIVE
-        };
+        let account: AccountState = self.getOrDefault(nft_address);
         return account.state != STATE_CLOSED;
     }
 }

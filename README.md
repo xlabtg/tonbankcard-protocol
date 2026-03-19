@@ -3,7 +3,9 @@
 **A non-custodial virtual bank protocol built on TON blockchain**
 
 [![TON](https://img.shields.io/badge/TON-Blockchain-0088cc)](https://ton.org)
-[![License](https://img.shields.io/badge/license-TBD-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/xlabtg/tonbankcard-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/xlabtg/tonbankcard-protocol/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-index-informational)](docs/INDEX.md)
 
 ## Overview
 
@@ -102,10 +104,11 @@ User NFT Card ←→ TBC Token ←→ TBC/TON Pool ←→ External Gateways
 ### For Developers
 
 1. Read the [CONTRIBUTING.md](CONTRIBUTING.md) guidelines
-2. Review the [architecture documentation](docs/architecture.md)
-3. Check [existing contracts](docs/existing-contracts.md)
-4. Create an Issue for your proposed changes
-5. Submit a PR following the template
+2. Browse the [Documentation Index](docs/INDEX.md) for full navigation
+3. Review the [architecture documentation](docs/architecture.md)
+4. Check [existing contracts](docs/existing-contracts.md)
+5. Create an Issue for your proposed changes
+6. Submit a PR following the template
 
 ### For Users
 
@@ -229,7 +232,7 @@ We welcome contributions that align with our non-custodial, decentralized princi
 
 ## License
 
-License information coming soon.
+This project is licensed under the [MIT License](LICENSE).
 
 ## Contact
 

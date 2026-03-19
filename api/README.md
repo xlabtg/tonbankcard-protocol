@@ -483,7 +483,7 @@ spec:
 
 **DO NOT** open public GitHub issues for security vulnerabilities.
 
-Report security issues privately to: security@tonbankcard.io
+Report security issues privately to: security@tonbankcard.com
 
 ---
 

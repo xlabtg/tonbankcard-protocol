@@ -34,7 +34,7 @@ Currently, invoice uniqueness and replay protection for merchant payments are en
 - Merchant can detect duplicates via event indexing
 
 **Future Enhancement**:
-- On-chain invoice ID or nonce tracking (Issue #TBD)
+- On-chain invoice ID or nonce tracking (future GitHub Issue)
 - Contract-level replay prevention
 - Mapping: `invoice_id → paid_status`
 
@@ -69,7 +69,7 @@ The state transition from **FROZEN → ACTIVE** is documented in the architectur
 - FRAUD_LOCK provides similar functionality with reversibility
 
 **Future Enhancement**:
-- DAO governance contract (Issue #TBD)
+- DAO governance contract (future GitHub Issue)
 - Multi-sig approval for FROZEN → ACTIVE transition
 - Time-locked unlock mechanisms
 - Appeals process for frozen accounts
@@ -105,7 +105,7 @@ The state transition from **COLLATERAL_LOCKED → ACTIVE** is specified but not 
 - If mistakenly set: requires contract upgrade or migration to unlock
 
 **Future Enhancement**:
-- Lending Adapter contract (Issue #TBD)
+- Lending Adapter contract (future GitHub Issue)
 - Collateral management logic
 - Automated unlock upon debt repayment
 - Integration with external lending protocols (CoinRabbit, etc.)
