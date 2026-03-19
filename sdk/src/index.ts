@@ -57,6 +57,12 @@ export {
   createMockSDK,
 } from './mock';
 
+export {
+  // Payment Widget
+  TonbankcardPaymentWidget,
+  PaymentWidgetConfig,
+} from './widget';
+
 /**
  * SDK Version
  */
