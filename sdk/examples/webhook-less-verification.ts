@@ -9,7 +9,7 @@
  */
 
 import { Address } from '@ton/core';
-import { TonbankcardSDK, TESTNET_CONFIG, Invoice } from '../src';
+import { TonbankcardSDK, TESTNET_CONFIG } from '../src';
 
 /**
  * Payment verification without backend webhooks
@@ -43,7 +43,7 @@ async function webhooklessVerificationExample() {
   // Step 3: Poll for payment status (client-side)
   console.log('\nPolling for payment (client-side)...\n');
 
-  const pollForPayment = async (
+  const _pollForPayment = async (
     invoiceId: string,
     maxAttempts: number = 60,
     intervalMs: number = 5000
@@ -99,7 +99,7 @@ async function directEventMonitoring() {
   console.log('\n\nAdvanced: Direct Event Monitoring');
   console.log('==================================\n');
 
-  const sdk = new TonbankcardSDK({
+  const _sdk = new TonbankcardSDK({
     ...TESTNET_CONFIG,
     paymentHubAddress: Address.parse('EQ...YourPaymentHubAddress'),
   });

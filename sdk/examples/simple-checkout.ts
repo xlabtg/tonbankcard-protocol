@@ -72,7 +72,7 @@ async function simpleCheckoutExample() {
   console.log('- Or use webhooks from your API backend');
 
   // Example: Check payment status
-  const checkPayment = async () => {
+  const _checkPayment = async () => {
     const status = await sdk.getInvoiceStatus(invoice.id);
     console.log('Payment status:', status);
 

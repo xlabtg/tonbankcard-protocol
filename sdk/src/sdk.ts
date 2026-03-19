@@ -7,8 +7,8 @@
  * The blockchain is the single source of truth.
  */
 
-import { Address, TonClient, fromNano, toNano } from '@ton/ton';
-import { Cell } from '@ton/core';
+import { Address, TonClient } from '@ton/ton';
+import { beginCell } from '@ton/core';
 import {
   TonbankcardConfig,
   Invoice,
@@ -19,9 +19,8 @@ import {
   AccountInfo,
   AccountState,
   TransactionVerification,
-  MerchantPaymentEvent,
 } from './types';
-import { generateInvoiceId, createPayloadHash } from './utils';
+import { generateInvoiceId } from './utils';
 
 /**
  * TONBANKCARD Merchant SDK
@@ -214,10 +213,25 @@ export class TonbankcardSDK {
    */
   async verifySettlement(txHash: string): Promise<TransactionVerification> {
     try {
+      // txHash format: "<lt>:<hash>" — logical time and hash separated by colon
+      const separatorIndex = txHash.indexOf(':');
+      if (separatorIndex === -1) {
+        return {
+          isValid: false,
+          txHash,
+          confirmations: 0,
+          matchesInvoice: false,
+          error: 'Invalid txHash format: expected "<lt>:<hash>"',
+        };
+      }
+      const lt = txHash.slice(0, separatorIndex);
+      const hash = txHash.slice(separatorIndex + 1);
+
       // Query transaction from blockchain
       const tx = await this.client.getTransaction(
         this.config.paymentHubAddress,
-        txHash
+        lt,
+        hash
       );
 
       if (!tx) {
@@ -231,8 +245,9 @@ export class TonbankcardSDK {
       }
 
       // Get current block to calculate confirmations
+      // getMasterchainInfo returns { workchain, shard, initSeqno, latestSeqno }
       const masterchain = await this.client.getMasterchainInfo();
-      const confirmations = masterchain.last.seqno - tx.blockSeqno;
+      const confirmations = masterchain.latestSeqno - Number(tx.lt);
 
       // Verify transaction success (not aborted)
       const isValid = tx.description.type === 'generic' && !tx.description.aborted;
@@ -268,25 +283,25 @@ export class TonbankcardSDK {
       const balance = await this.client.runMethod(
         this.config.paymentHubAddress,
         'getBalance',
-        [{ type: 'slice', cell: nftAddress.toCell() }]
+        [{ type: 'slice', cell: beginCell().storeAddress(nftAddress).endCell() }]
       );
 
       const state = await this.client.runMethod(
         this.config.paymentHubAddress,
         'getAccountState',
-        [{ type: 'slice', cell: nftAddress.toCell() }]
+        [{ type: 'slice', cell: beginCell().storeAddress(nftAddress).endCell() }]
       );
 
       const canSend = await this.client.runMethod(
         this.config.paymentHubAddress,
         'canSend',
-        [{ type: 'slice', cell: nftAddress.toCell() }]
+        [{ type: 'slice', cell: beginCell().storeAddress(nftAddress).endCell() }]
       );
 
       const canReceive = await this.client.runMethod(
         this.config.paymentHubAddress,
         'canReceive',
-        [{ type: 'slice', cell: nftAddress.toCell() }]
+        [{ type: 'slice', cell: beginCell().storeAddress(nftAddress).endCell() }]
       );
 
       return {

@@ -17,12 +17,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: backend/indexer/package-lock.json
 
       - name: Install dependencies
         working-directory: backend/indexer
-        run: npm ci
+        run: npm install
 
       - name: Build runtime
         working-directory: backend/indexer
@@ -71,7 +69,7 @@ jobs:
 
       - name: Install indexer dependencies
         working-directory: backend/indexer
-        run: npm ci
+        run: npm install
 
       - name: Lint indexer
         working-directory: backend/indexer
@@ -79,7 +77,7 @@ jobs:
 
       - name: Install contracts dependencies
         working-directory: contracts/payment-hub
-        run: npm ci
+        run: npm install
 
       - name: Lint contracts
         working-directory: contracts/payment-hub
@@ -107,7 +105,7 @@ jobs:
 
       - name: Install indexer dependencies
         working-directory: backend/indexer
-        run: npm ci
+        run: npm install
 
       - name: Test indexer
         working-directory: backend/indexer
@@ -115,7 +113,7 @@ jobs:
 
       - name: Install contracts dependencies
         working-directory: contracts/payment-hub
-        run: npm ci
+        run: npm install
 
       - name: Test contracts
         working-directory: contracts/payment-hub
@@ -143,7 +141,7 @@ jobs:
 
       - name: Install indexer dependencies
         working-directory: backend/indexer
-        run: npm ci
+        run: npm install
 
       - name: TypeScript check indexer
         working-directory: backend/indexer
@@ -151,7 +149,7 @@ jobs:
 
       - name: Install contracts dependencies
         working-directory: contracts/payment-hub
-        run: npm ci
+        run: npm install
 
       - name: TypeScript check contracts
         working-directory: contracts/payment-hub
