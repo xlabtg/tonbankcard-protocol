@@ -280,7 +280,7 @@ export class IndexerService {
           continue;
         }
 
-        const data = await resp.json();
+        const data = (await resp.json()) as { ok?: boolean; result?: any[] };
         if (data.ok && data.result) {
           for (const tx of data.result) {
             allTransactions.push({
@@ -445,7 +445,7 @@ export class IndexerService {
         return null;
       }
 
-      const lookupData = await lookupResp.json();
+      const lookupData = (await lookupResp.json()) as { ok?: boolean; result?: any };
       if (!lookupData.ok || !lookupData.result) {
         return null;
       }
@@ -461,7 +461,7 @@ export class IndexerService {
         return null;
       }
 
-      const headerData = await headerResp.json();
+      const headerData = (await headerResp.json()) as { ok?: boolean; result?: any };
       if (!headerData.ok || !headerData.result) {
         return null;
       }
