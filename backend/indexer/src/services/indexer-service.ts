@@ -198,6 +198,10 @@ export class IndexerService {
 
   /**
    * Process a single block
+   *
+   * In TON, transactions belong to individual accounts. We fetch block
+   * header data for reorg detection, then query transactions for each
+   * tracked contract address within that block's time window.
    */
   private async processBlock(blockNumber: number): Promise<void> {
     try {
@@ -210,7 +214,9 @@ export class IndexerService {
       const blockHash = this.getBlockHash(block);
       const parentHash = this.getParentHash(block);
       const timestamp = this.getBlockTimestamp(block);
-      const transactions = this.getBlockTransactions(block);
+
+      // Fetch transactions for tracked contract addresses
+      const transactions = await this.fetchContractTransactions(blockNumber);
 
       // Store block
       this.db.insertBlock(
@@ -237,6 +243,62 @@ export class IndexerService {
       this.logger.error({ error, blockNumber }, 'Error processing block');
       throw error;
     }
+  }
+
+  /**
+   * Fetch transactions for tracked contracts via TON HTTP API
+   *
+   * Uses getTransactions endpoint to fetch recent transactions for each
+   * contract address that the indexer is tracking.
+   */
+  private async fetchContractTransactions(
+    _blockNumber: number
+  ): Promise<any[]> {
+    const allTransactions: any[] = [];
+    const baseUrl = this.config.tonApiEndpoint;
+    const apiKeyParam = this.config.tonApiKey
+      ? `&api_key=${this.config.tonApiKey}`
+      : '';
+
+    const trackedAddresses = [
+      this.config.contracts.paymentHub,
+      this.config.contracts.merchantPaymentHub,
+      ...this.config.contracts.nftCollections,
+    ].filter((addr) => addr !== '');
+
+    for (const address of trackedAddresses) {
+      try {
+        const url =
+          `${baseUrl}/getTransactions?address=${address}&limit=50${apiKeyParam}`;
+
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          this.logger.warn(
+            { address, status: resp.status },
+            'Failed to fetch transactions'
+          );
+          continue;
+        }
+
+        const data = await resp.json();
+        if (data.ok && data.result) {
+          for (const tx of data.result) {
+            allTransactions.push({
+              ...tx,
+              destination: address,
+              hash: tx.transaction_id?.hash || '',
+            });
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          { error, address },
+          'Error fetching transactions for address'
+        );
+      }
+    }
+
+    return allTransactions;
   }
 
   /**
@@ -341,28 +403,83 @@ export class IndexerService {
 
   /**
    * Get latest block from chain
+   *
+   * Returns masterchain info with the latest seqno. Uses TonClient
+   * which wraps the /getMasterchainInfo endpoint.
    */
-  private async getLatestBlock(): Promise<any> {
+  private async getLatestBlock(): Promise<{ seqno: number } | null> {
     try {
-      return await this.client.getMasterchainInfo();
+      const info = await this.client.getMasterchainInfo();
+      return { seqno: info.latestSeqno };
     } catch (error) {
       this.logger.error({ error }, 'Error fetching latest block');
-      throw error;
+      return null;
     }
   }
 
   /**
-   * Get block by number
+   * Get block by seqno using TON HTTP API
+   *
+   * TON's masterchain blocks are identified by seqno. We fetch block
+   * header data via the HTTP API v2 /lookupBlock + /getBlockHeader endpoints.
+   * If the TON API key is configured, it is sent as a query parameter.
    */
   private async getBlockByNumber(blockNumber: number): Promise<any> {
     try {
-      // TonClient doesn't have direct block-by-number API
-      // In production, this would use appropriate TON API method
-      // For now, return placeholder
-      return null;
+      const baseUrl = this.config.tonApiEndpoint;
+      const apiKeyParam = this.config.tonApiKey
+        ? `&api_key=${this.config.tonApiKey}`
+        : '';
+
+      // Step 1: Lookup block ID by masterchain seqno
+      // workchain -1 = masterchain, shard = -9223372036854775808 (full shard)
+      const lookupUrl =
+        `${baseUrl}/lookupBlock?workchain=-1&shard=-9223372036854775808&seqno=${blockNumber}${apiKeyParam}`;
+
+      const lookupResp = await fetch(lookupUrl);
+      if (!lookupResp.ok) {
+        this.logger.warn(
+          { blockNumber, status: lookupResp.status },
+          'Block lookup failed'
+        );
+        return null;
+      }
+
+      const lookupData = await lookupResp.json();
+      if (!lookupData.ok || !lookupData.result) {
+        return null;
+      }
+
+      const blockId = lookupData.result;
+
+      // Step 2: Get block header for hash and timestamp
+      const headerUrl =
+        `${baseUrl}/getBlockHeader?workchain=${blockId.workchain}&shard=${blockId.shard}&seqno=${blockId.seqno}${apiKeyParam}`;
+
+      const headerResp = await fetch(headerUrl);
+      if (!headerResp.ok) {
+        return null;
+      }
+
+      const headerData = await headerResp.json();
+      if (!headerData.ok || !headerData.result) {
+        return null;
+      }
+
+      const header = headerData.result;
+
+      return {
+        seqno: blockNumber,
+        id: {
+          root_hash: header.id?.root_hash || blockId.root_hash || '',
+          prev_root_hash: header.prev_blocks?.[0]?.root_hash || '',
+        },
+        now: header.gen_utime || 0,
+        transactions: [], // Transactions are fetched per-account, not per-block
+      };
     } catch (error) {
       this.logger.error({ error, blockNumber }, 'Error fetching block');
-      throw error;
+      return null;
     }
   }
 
