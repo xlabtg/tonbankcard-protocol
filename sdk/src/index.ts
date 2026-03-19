@@ -49,10 +49,18 @@ export {
   serializeBigInt,
 } from './utils';
 
+export {
+  // Testing / Sandbox
+  MockTonbankcardSDK,
+  MockSettlementStore,
+  MockSDKOptions,
+  createMockSDK,
+} from './mock';
+
 /**
  * SDK Version
  */
-export const VERSION = '0.1.0';
+export const VERSION = '1.0.0';
 
 /**
  * Default configuration for mainnet
