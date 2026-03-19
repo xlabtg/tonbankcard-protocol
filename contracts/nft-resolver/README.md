@@ -239,7 +239,7 @@ All changes must follow [CONTRIBUTING.md](../../CONTRIBUTING.md) guidelines:
 
 ## License
 
-TBD (follows repository license)
+MIT — see [LICENSE](../../LICENSE)
 
 ---
 

@@ -403,7 +403,7 @@ See `tests/nft-resolver/` for comprehensive test suite:
 
 ## License
 
-TBD (follows repository license)
+MIT — see [LICENSE](../../LICENSE)
 
 ---
 

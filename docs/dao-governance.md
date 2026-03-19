@@ -522,8 +522,8 @@ Users are responsible for:
 #### Step 2: Monitor Governance Channels
 
 - GitHub Discussions: `https://github.com/xlabtg/tonbankcard-protocol/discussions`
-- Governance Forum: (TBD)
-- Snapshot Platform: (TBD)
+- Governance Forum: [GitHub Discussions](https://github.com/xlabtg/tonbankcard-protocol/discussions)
+- Snapshot Platform: [GitHub Discussions](https://github.com/xlabtg/tonbankcard-protocol/discussions) (Snapshot integration planned)
 
 #### Step 3: Review Proposals
 

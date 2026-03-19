@@ -287,7 +287,7 @@ Changes to snapshot tools require:
 
 ## License
 
-TBD (follows repository license)
+MIT — see [LICENSE](../../LICENSE)
 
 ---
 

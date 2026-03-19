@@ -345,7 +345,7 @@ For manual testing, see `tests/account-locks.spec.fc`.
 
 ## License
 
-TBD
+MIT — see [LICENSE](../../LICENSE)
 
 ## References
 
