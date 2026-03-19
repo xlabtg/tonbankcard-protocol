@@ -10,14 +10,28 @@ For SDK-specific changes, see [sdk/CHANGELOG.md](sdk/CHANGELOG.md).
 
 ## [Unreleased]
 
-### Added
+### Added — Phase 2: Payment Infrastructure (Issue #78)
+- **Payment Hub contracts**: NFT collection whitelist verification, deployer access control for setup functions
+- **Merchant API**: `package.json`, `tsconfig.json`, Express app entry point (`api/src/index.ts`)
+- **Payment Widget**: Embeddable `TonbankcardPaymentWidget` with button and inline modes, light/dark themes
+- **Backend Indexer**: TON HTTP API integration for block fetching (`/lookupBlock`, `/getBlockHeader`) and per-contract transaction syncing
+- Integration tests for end-to-end payment flow (invoice creation, settlement, status verification)
+- Widget unit tests covering mount/unmount, payment link generation, theming
+
+### Changed
+- `MerchantPaymentHub.tact`: deployer access control on all setup functions, removed unprotected `setup_account` handler
+- `PaymentHub.tact`: `isValidAccountNFT()` now checks whitelisted collections instead of returning `true` unconditionally
+- `InvoiceService.ts`: fixed duplicate `expiresAt` variable declaration
+- README Phase 2 checklist marked as complete
+
+### Previously Added
 - `LICENSE` file (MIT) at repository root
 - `docs/INDEX.md` — central navigation index for all documentation
 - `CODE_OF_CONDUCT.md` — community standards and contributor expectations
 - `.github/PULL_REQUEST_TEMPLATE.md` — standardized pull request template
 - `tests/future/` directory for planned adversarial test scenarios
 
-### Changed
+### Previously Changed
 - Standardized security contact email to `security@tonbankcard.com` across all docs
 - Updated license references from "TBD" to MIT in all contract and doc READMEs
 - Updated `README.md` license badge and section to reference `LICENSE` file
