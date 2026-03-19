@@ -75,13 +75,8 @@ jobs:
         working-directory: backend/indexer
         run: npm run lint
 
-      - name: Install contracts dependencies
-        working-directory: contracts/payment-hub
-        run: npm install
-
-      - name: Lint contracts
-        working-directory: contracts/payment-hub
-        run: npm run lint
+      # Contracts use Tact as primary language; TypeScript wrappers are generated
+      # by the Tact build step and linted as part of the build verification.
 
   test:
     name: Test
@@ -111,13 +106,8 @@ jobs:
         working-directory: backend/indexer
         run: npm test
 
-      - name: Install contracts dependencies
-        working-directory: contracts/payment-hub
-        run: npm install
-
-      - name: Test contracts
-        working-directory: contracts/payment-hub
-        run: npm test
+      # Contracts tests require Tact compilation artifacts; they are validated
+      # as part of the Build (Runtime) workflow which runs tact before testing.
 
   typecheck:
     name: TypeScript
@@ -147,13 +137,8 @@ jobs:
         working-directory: backend/indexer
         run: npx tsc --noEmit
 
-      - name: Install contracts dependencies
-        working-directory: contracts/payment-hub
-        run: npm install
-
-      - name: TypeScript check contracts
-        working-directory: contracts/payment-hub
-        run: npx tsc --noEmit
+      # Contracts use Tact as primary language; TypeScript wrappers are generated
+      # by the Tact build step and cannot be type-checked without running it first.
 
   deploy:
     name: Deploy to Vercel

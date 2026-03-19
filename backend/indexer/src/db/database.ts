@@ -4,7 +4,6 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import { IndexedEvent, AccountState } from '../types/events';
 
 export class IndexerDatabase {
   private db: Database.Database;
@@ -312,7 +311,7 @@ export class IndexerDatabase {
     offset: number = 0
   ): {
     events: Array<{
-      eventType: string;
+      eventType: 'transfer' | 'payment' | 'state_change';
       timestamp: number;
       blockNumber: number;
       transactionHash: string;
@@ -352,7 +351,7 @@ export class IndexerDatabase {
 
     const events = [
       ...transfers.map((t: any) => ({
-        eventType: 'transfer',
+        eventType: 'transfer' as const,
         timestamp: t.timestamp,
         blockNumber: t.block_number,
         transactionHash: t.transaction_hash,
@@ -364,7 +363,7 @@ export class IndexerDatabase {
         },
       })),
       ...payments.map((p: any) => ({
-        eventType: 'payment',
+        eventType: 'payment' as const,
         timestamp: p.timestamp,
         blockNumber: p.block_number,
         transactionHash: p.transaction_hash,
@@ -376,7 +375,7 @@ export class IndexerDatabase {
         },
       })),
       ...stateChanges.map((s: any) => ({
-        eventType: 'state_change',
+        eventType: 'state_change' as const,
         timestamp: s.timestamp,
         blockNumber: s.block_number,
         transactionHash: s.transaction_hash,

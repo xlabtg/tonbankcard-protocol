@@ -119,9 +119,9 @@ export class ApiServer {
     this.app.use(
       (
         err: Error,
-        req: express.Request,
+        _req: express.Request,
         res: express.Response,
-        next: express.NextFunction
+        _next: express.NextFunction
       ) => {
         this.logger.error({ error: err }, 'Unhandled error');
         res.status(500).json({

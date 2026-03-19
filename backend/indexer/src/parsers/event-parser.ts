@@ -1,7 +1,7 @@
 // Event parser for Tonbankcard on-chain events
 // Parses raw blockchain data into typed events
 
-import { Address, Cell, Slice } from '@ton/core';
+import { Address, Cell } from '@ton/core';
 import {
   IndexedEvent,
   InternalTransferEvent,
@@ -21,8 +21,8 @@ export class EventParser {
    * In production, this would use actual TON cell parsing
    */
   parseTransaction(
-    transaction: any,
-    contractAddress: string
+    _transaction: any,
+    _contractAddress: string
   ): IndexedEvent[] {
     const events: IndexedEvent[] = [];
 
@@ -162,7 +162,7 @@ export class EventParser {
    * Identify event type from transaction message
    * This is contract-specific logic
    */
-  identifyEventType(message: any, contractAddress: string): string | null {
+  identifyEventType(_message: any, _contractAddress: string): string | null {
     // In production, this would:
     // 1. Check message destination
     // 2. Parse message body
@@ -181,7 +181,7 @@ export class EventParser {
     // based on the event schema from Tact contracts
 
     // Placeholder implementation
-    const slice = cell.beginParse();
+    const _slice = cell.beginParse();
     // Parse fields based on event structure
     return {};
   }

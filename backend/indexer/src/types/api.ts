@@ -1,6 +1,5 @@
 // API response types for the Payment Status Indexer
 
-import { AccountState } from './events';
 
 /**
  * Payment status response
