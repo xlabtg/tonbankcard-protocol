@@ -154,7 +154,13 @@ jobs:
 
       - name: Install payment-hub dependencies
         working-directory: contracts/payment-hub
-        run: npm install
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build payment-hub contracts
+        working-directory: contracts/payment-hub
+        run: npm run build
 
       - name: Test payment-hub contract specs
         working-directory: contracts/payment-hub
