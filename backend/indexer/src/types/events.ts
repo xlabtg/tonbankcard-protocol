@@ -1,7 +1,6 @@
 // Event type definitions for Tonbankcard Protocol
 // These mirror the on-chain event structures from smart contracts
 
-import { Address } from '@ton/core';
 
 /**
  * Base event interface - all events extend this

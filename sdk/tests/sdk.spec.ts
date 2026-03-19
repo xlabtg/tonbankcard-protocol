@@ -195,10 +195,10 @@ describe('TonbankcardSDK', () => {
 
       const invoice1 = sdk.createInvoice(params);
 
-      // Wait a moment to ensure different timestamp
-      const now = Date.now();
-      while (Date.now() === now) {
-        // Busy wait
+      // Wait until the second changes to ensure different timestamp
+      const nowSec = Math.floor(Date.now() / 1000);
+      while (Math.floor(Date.now() / 1000) === nowSec) {
+        // Busy wait until next second
       }
 
       const invoice2 = sdk.createInvoice(params);

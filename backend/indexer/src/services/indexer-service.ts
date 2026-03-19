@@ -344,7 +344,7 @@ export class IndexerService {
    */
   private async getLatestBlock(): Promise<any> {
     try {
-      return await this.client.getLastBlock();
+      return await this.client.getMasterchainInfo();
     } catch (error) {
       this.logger.error({ error }, 'Error fetching latest block');
       throw error;

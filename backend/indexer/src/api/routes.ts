@@ -1,7 +1,7 @@
 // API routes for Payment Status Indexer
 // All endpoints are read-only and advisory
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import { IndexerDatabase } from '../db/database';
 import { IndexerService } from '../services/indexer-service';
 import { IndexerConfig } from '../types/config';

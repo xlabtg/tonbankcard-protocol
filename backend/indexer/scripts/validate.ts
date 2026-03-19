@@ -36,7 +36,7 @@ async function validateIndexer(): Promise<ValidationResult> {
 
   const config = loadConfig();
   const db = new IndexerDatabase(config.database.path);
-  const client = new TonClient({
+  const _client = new TonClient({
     endpoint: config.tonApiEndpoint,
     apiKey: config.tonApiKey,
   });
@@ -77,7 +77,7 @@ async function validateIndexer(): Promise<ValidationResult> {
 
     // Validation 2: Check block hash continuity
     logger.info('Validating block hash continuity');
-    let blockHashErrors = 0;
+    const blockHashErrors = 0;
     const startBlock = Math.max(1, latestIndexed - 100); // Check last 100 blocks
 
     for (let i = startBlock; i < latestIndexed; i++) {
