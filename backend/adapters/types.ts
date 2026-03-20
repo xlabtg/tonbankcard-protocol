@@ -620,3 +620,285 @@ export interface CollateralVerificationResponse {
   /** Verification disclaimer */
   disclaimer: string;
 }
+
+// =============================================================================
+// PHASE 4: MULTI-SIGNATURE CARD TYPES
+// =============================================================================
+
+/**
+ * Multi-signature card configuration
+ *
+ * Multi-sig is a PERMISSION LAYER, not a custodial mechanism.
+ * The NFT owner ALWAYS remains the primary authority.
+ */
+export interface MultiSigCardConfig {
+  /** NFT account address */
+  nftAccountId: string;
+
+  /** Number of required co-signatures (1-3) */
+  requiredSignatures: number;
+
+  /** List of co-signer addresses */
+  signers: string[];
+
+  /** Whether multi-sig is currently active */
+  isActive: boolean;
+
+  /** When configuration was created */
+  createdAt: Date;
+}
+
+/**
+ * Multi-sig payment proposal
+ *
+ * Proposals are created by the NFT owner and require
+ * co-signer approval before execution.
+ */
+export interface PaymentProposal {
+  /** Unique proposal ID */
+  proposalId: string;
+
+  /** NFT account that created the proposal */
+  nftAccountId: string;
+
+  /** Payment recipient address */
+  recipient: string;
+
+  /** Payment amount */
+  amount: string;
+
+  /** Current proposal status */
+  status: 'pending' | 'approved' | 'rejected' | 'executed';
+
+  /** Number of approvals received */
+  approvalCount: number;
+
+  /** Required number of approvals */
+  requiredApprovals: number;
+
+  /** Addresses that have approved */
+  approvers: string[];
+
+  /** When proposal was created */
+  createdAt: Date;
+}
+
+// =============================================================================
+// PHASE 4: RECURRING PAYMENT TYPES
+// =============================================================================
+
+/**
+ * Recurring payment mandate
+ *
+ * Mandates are USER-CREATED and USER-CONTROLLED.
+ * Users can cancel at any time.
+ * Merchants CANNOT create mandates on behalf of users.
+ */
+export interface RecurringPaymentMandate {
+  /** Unique mandate ID */
+  mandateId: string;
+
+  /** Payer's NFT account ID */
+  payerNftAccountId: string;
+
+  /** Merchant's NFT account ID (recipient) */
+  merchantNftAccountId: string;
+
+  /** Amount per execution */
+  amountPerPeriod: string;
+
+  /** Interval between executions (in seconds) */
+  periodSeconds: number;
+
+  /** Maximum number of executions (0 = unlimited) */
+  maxExecutions: number;
+
+  /** Number of times executed so far */
+  executionCount: number;
+
+  /** Timestamp of last execution */
+  lastExecutedAt?: Date;
+
+  /** Mandate status */
+  status: 'active' | 'cancelled' | 'completed';
+
+  /** When mandate was created */
+  createdAt: Date;
+}
+
+/**
+ * Recurring payment execution record
+ *
+ * This is an off-chain record of a recurring payment execution.
+ * The actual fund transfer happens through the Payment Hub contract.
+ */
+export interface RecurringPaymentExecution {
+  /** Mandate ID */
+  mandateId: string;
+
+  /** Execution number */
+  executionNumber: number;
+
+  /** Amount transferred */
+  amount: string;
+
+  /** On-chain transaction hash */
+  txHash?: string;
+
+  /** Execution timestamp */
+  executedAt: Date;
+
+  /** Execution status */
+  status: 'pending' | 'confirmed' | 'failed';
+}
+
+// =============================================================================
+// PHASE 4: CROSS-CHAIN BRIDGE TYPES
+// =============================================================================
+
+/**
+ * Supported target chains for cross-chain bridging
+ */
+export type BridgeTargetChain = 'ethereum' | 'bitcoin' | 'bsc' | 'polygon' | 'solana';
+
+/**
+ * Bridge target chain ID mapping
+ */
+export const BRIDGE_CHAIN_IDS: Record<BridgeTargetChain, number> = {
+  ethereum: 1,
+  bitcoin: 2,
+  bsc: 3,
+  polygon: 4,
+  solana: 5,
+};
+
+/**
+ * Cross-chain bridge intent
+ *
+ * Bridge intents are user-initiated coordination records.
+ * Actual cross-chain fund movement happens through external providers.
+ */
+export interface BridgeIntent {
+  /** Unique intent ID */
+  intentId: string;
+
+  /** NFT account initiating the bridge */
+  nftAccountId: string;
+
+  /** Target blockchain */
+  targetChain: BridgeTargetChain;
+
+  /** Amount to bridge (informational) */
+  amount: string;
+
+  /** Target address on destination chain */
+  targetAddress: string;
+
+  /** External provider handling the bridge (e.g., ChangeNOW) */
+  provider: ExternalProvider;
+
+  /** External provider's transaction ID */
+  providerTxId?: string;
+
+  /** Intent status */
+  status: 'pending' | 'confirmed' | 'cancelled' | 'failed';
+
+  /** When intent was created */
+  createdAt: Date;
+
+  /** When bridge was confirmed */
+  confirmedAt?: Date;
+
+  /** External chain transaction hash */
+  externalTxHash?: string;
+}
+
+/**
+ * Bridge configuration
+ */
+export interface BridgeConfig {
+  /** Supported chains and their adapters */
+  supportedChains: BridgeTargetChain[];
+
+  /** Default swap provider */
+  defaultProvider: ExternalProvider;
+
+  /** Bridge contract address (on TON) */
+  bridgeContractAddress?: string;
+}
+
+/**
+ * Bridge quote request
+ */
+export interface BridgeQuoteRequest {
+  /** Source asset on TON (e.g., 'ton', 'tbc') */
+  fromAsset: string;
+
+  /** Destination asset on target chain */
+  toAsset: string;
+
+  /** Target chain */
+  targetChain: BridgeTargetChain;
+
+  /** Amount to bridge */
+  amount: string;
+}
+
+/**
+ * Bridge quote response
+ */
+export interface BridgeQuoteResponse {
+  /** Estimated output amount on target chain */
+  estimatedAmount: string;
+
+  /** Exchange rate */
+  rate?: string;
+
+  /** Network fees */
+  networkFee?: string;
+
+  /** Minimum amount */
+  minAmount?: string;
+
+  /** Quote expiration time */
+  expiresAt: Date;
+
+  /** Provider offering the quote */
+  provider: ExternalProvider;
+}
+
+// =============================================================================
+// PHASE 4: LENDING PROTOCOL INTEGRATION TYPES (Enhanced)
+// =============================================================================
+
+/**
+ * Enhanced lending intent with protocol coordination
+ *
+ * Extends the base LoanIntentRequest with on-chain coordination data.
+ * The protocol remains a passive observer - all enforcement is external.
+ */
+export interface LendingProtocolIntent {
+  /** Unique intent ID */
+  intentId: string;
+
+  /** NFT account ID */
+  nftAccountId: string;
+
+  /** Collateral signal amount (informational) */
+  collateralSignalAmount: string;
+
+  /** Target lender ID (0 = CoinRabbit) */
+  targetLenderId: number;
+
+  /** Intent state */
+  state: 'active' | 'cancelled';
+
+  /** On-chain intent registration tx hash */
+  registrationTxHash?: string;
+
+  /** When intent was registered */
+  createdAt: Date;
+
+  /** When intent was last updated */
+  updatedAt: Date;
+}

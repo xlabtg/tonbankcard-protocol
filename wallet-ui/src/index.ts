@@ -31,6 +31,11 @@ export {
   WalletUIConfig,
   WalletAccount,
   TransactionRecord,
+  // Phase 4 Types
+  MultiSigCardStatus,
+  RecurringMandateDisplay,
+  BridgeTransactionDisplay,
+  LendingIntentDisplay,
 } from './types';
 
 export {

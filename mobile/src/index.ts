@@ -33,6 +33,10 @@ export {
   TransactionItem,
   SyncStatus,
   NotificationPreferences,
+  // Phase 4 Types
+  MobileMultiSigProposal,
+  MobileRecurringMandate,
+  MobileBridgeIntent,
 } from './types';
 
 export {

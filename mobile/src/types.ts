@@ -132,4 +132,97 @@ export interface NotificationPreferences {
 
   /** Notify when account state changes */
   accountStateChanged: boolean;
+
+  /** Notify when multi-sig proposal needs approval */
+  multiSigProposalPending: boolean;
+
+  /** Notify when recurring payment is executed */
+  recurringPaymentExecuted: boolean;
+
+  /** Notify when bridge transaction is confirmed */
+  bridgeTransactionConfirmed: boolean;
+}
+
+// =============================================================================
+// PHASE 4: MULTI-SIGNATURE CARD TYPES
+// =============================================================================
+
+/**
+ * Multi-sig proposal for mobile display
+ */
+export interface MobileMultiSigProposal {
+  /** Proposal ID */
+  proposalId: string;
+
+  /** Recipient address */
+  recipient: string;
+
+  /** Amount in nanocoins */
+  amount: string;
+
+  /** Status */
+  status: 'pending' | 'approved' | 'rejected' | 'executed';
+
+  /** Approval count */
+  approvalCount: number;
+
+  /** Required approvals */
+  requiredApprovals: number;
+
+  /** Timestamp */
+  createdAt: number;
+}
+
+// =============================================================================
+// PHASE 4: RECURRING PAYMENT TYPES
+// =============================================================================
+
+/**
+ * Recurring mandate for mobile display
+ */
+export interface MobileRecurringMandate {
+  /** Mandate ID */
+  mandateId: string;
+
+  /** Merchant address */
+  merchantAddress: string;
+
+  /** Amount per period */
+  amountPerPeriod: string;
+
+  /** Period in seconds */
+  periodSeconds: number;
+
+  /** Status */
+  status: 'active' | 'cancelled' | 'completed';
+
+  /** Execution count */
+  executionCount: number;
+
+  /** Max executions */
+  maxExecutions: number;
+}
+
+// =============================================================================
+// PHASE 4: CROSS-CHAIN BRIDGE TYPES
+// =============================================================================
+
+/**
+ * Bridge intent for mobile display
+ */
+export interface MobileBridgeIntent {
+  /** Intent ID */
+  intentId: string;
+
+  /** Target chain */
+  targetChain: string;
+
+  /** Amount */
+  amount: string;
+
+  /** Status */
+  status: 'pending' | 'confirmed' | 'cancelled' | 'failed';
+
+  /** Timestamp */
+  timestamp: number;
 }
