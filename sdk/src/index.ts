@@ -34,6 +34,12 @@ export {
   TonbankcardConfig,
   TransactionVerification,
   MerchantPaymentEvent,
+  // Phase 4 Types
+  MultiSigConfig,
+  MultiSigProposal,
+  RecurringMandate,
+  BridgeIntentInfo,
+  LendingIntent,
 } from './types';
 
 export {

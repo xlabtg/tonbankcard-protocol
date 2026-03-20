@@ -102,3 +102,102 @@ export interface TransactionRecord {
   /** Optional on-chain transaction hash */
   txHash?: string;
 }
+
+// =============================================================================
+// PHASE 4: MULTI-SIGNATURE CARD TYPES
+// =============================================================================
+
+/**
+ * Multi-sig card status display information
+ */
+export interface MultiSigCardStatus {
+  /** Whether multi-sig is enabled for this card */
+  isEnabled: boolean;
+
+  /** Number of required co-signatures */
+  requiredSignatures: number;
+
+  /** Number of registered co-signers */
+  signerCount: number;
+
+  /** Pending proposals count */
+  pendingProposals: number;
+}
+
+// =============================================================================
+// PHASE 4: RECURRING PAYMENT TYPES
+// =============================================================================
+
+/**
+ * Recurring payment mandate display information
+ */
+export interface RecurringMandateDisplay {
+  /** Mandate ID */
+  mandateId: string;
+
+  /** Merchant address */
+  merchantAddress: string;
+
+  /** Amount per period in nanocoins */
+  amountPerPeriod: string;
+
+  /** Period in human-readable format */
+  periodLabel: string;
+
+  /** Mandate status */
+  status: 'active' | 'cancelled' | 'completed';
+
+  /** Number of executions */
+  executionCount: number;
+
+  /** Next execution time (Unix timestamp) */
+  nextExecutionAt?: number;
+}
+
+// =============================================================================
+// PHASE 4: CROSS-CHAIN BRIDGE TYPES
+// =============================================================================
+
+/**
+ * Bridge transaction display information
+ */
+export interface BridgeTransactionDisplay {
+  /** Intent ID */
+  intentId: string;
+
+  /** Target chain name */
+  targetChain: string;
+
+  /** Amount being bridged */
+  amount: string;
+
+  /** Bridge status */
+  status: 'pending' | 'confirmed' | 'cancelled' | 'failed';
+
+  /** Timestamp */
+  timestamp: number;
+}
+
+// =============================================================================
+// PHASE 4: LENDING TYPES
+// =============================================================================
+
+/**
+ * Lending intent display information
+ */
+export interface LendingIntentDisplay {
+  /** Intent ID */
+  intentId: string;
+
+  /** Collateral amount */
+  collateralAmount: string;
+
+  /** Target lender name */
+  targetLender: string;
+
+  /** Intent state */
+  state: 'active' | 'cancelled';
+
+  /** Timestamp */
+  timestamp: number;
+}

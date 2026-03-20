@@ -31,6 +31,10 @@ export {
   WebhookConfig,
   DashboardView,
   InvoiceGeneratorParams,
+  // Phase 4 Types
+  RecurringSubscriber,
+  RecurringPaymentStats,
+  MultiSigPaymentRecord,
 } from './types';
 
 export {

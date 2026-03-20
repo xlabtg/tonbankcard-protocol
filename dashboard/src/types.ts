@@ -127,3 +127,89 @@ export interface InvoiceGeneratorParams {
   /** Optional expiration time in minutes */
   expirationMinutes?: number;
 }
+
+// =============================================================================
+// PHASE 4: RECURRING PAYMENT TYPES (Merchant View)
+// =============================================================================
+
+/**
+ * Recurring payment subscriber record for merchant dashboard
+ */
+export interface RecurringSubscriber {
+  /** Mandate ID */
+  mandateId: string;
+
+  /** Payer's address */
+  payerAddress: string;
+
+  /** Amount per period in nanocoins */
+  amountPerPeriod: string;
+
+  /** Period in seconds */
+  periodSeconds: number;
+
+  /** Subscriber status */
+  status: 'active' | 'cancelled' | 'completed';
+
+  /** Number of successful payments */
+  paymentCount: number;
+
+  /** Total volume received from this subscriber */
+  totalVolume: string;
+
+  /** When subscription was created */
+  createdAt: number;
+
+  /** Next expected payment timestamp */
+  nextPaymentAt?: number;
+}
+
+/**
+ * Recurring payments statistics for merchant dashboard
+ */
+export interface RecurringPaymentStats {
+  /** Total active subscribers */
+  activeSubscribers: number;
+
+  /** Total recurring volume (all time) */
+  totalRecurringVolume: string;
+
+  /** Monthly recurring revenue */
+  monthlyRecurringRevenue: string;
+
+  /** Average subscription duration in days */
+  averageSubscriptionDays: number;
+
+  /** Churn rate (cancellations / total) */
+  churnRate: number;
+}
+
+// =============================================================================
+// PHASE 4: MULTI-SIG PAYMENT TYPES (Merchant View)
+// =============================================================================
+
+/**
+ * Multi-sig payment record for merchant dashboard
+ */
+export interface MultiSigPaymentRecord {
+  /** Payment ID */
+  paymentId: string;
+
+  /** Payer address */
+  payerAddress: string;
+
+  /** Amount in nanocoins */
+  amount: string;
+
+  /** Whether payment was from a multi-sig card */
+  isMultiSig: boolean;
+
+  /** Number of approvals received */
+  approvalCount: number;
+
+  /** Payment timestamp */
+  timestamp: number;
+
+  /** Transaction hash */
+  txHash?: string;
+}

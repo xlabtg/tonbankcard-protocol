@@ -203,3 +203,121 @@ export interface MerchantPaymentEvent {
   /** Block number */
   blockNumber: number;
 }
+
+// =============================================================================
+// PHASE 4: MULTI-SIGNATURE CARD TYPES
+// =============================================================================
+
+/**
+ * Multi-sig configuration for an NFT card
+ *
+ * Multi-sig adds a co-approval requirement to payments.
+ * The NFT owner ALWAYS remains the primary authority.
+ */
+export interface MultiSigConfig {
+  /** Whether multi-sig is enabled */
+  isEnabled: boolean;
+
+  /** Number of required co-signatures */
+  requiredSignatures: number;
+
+  /** Co-signer addresses */
+  signers: Address[];
+}
+
+/**
+ * Multi-sig payment proposal for SDK consumers
+ */
+export interface MultiSigProposal {
+  /** Proposal ID */
+  proposalId: string;
+
+  /** Recipient address */
+  recipient: Address;
+
+  /** Payment amount in TBC nanocoins */
+  amountTbc: bigint;
+
+  /** Current status */
+  status: 'pending' | 'approved' | 'rejected' | 'executed';
+
+  /** Number of approvals received */
+  approvalCount: number;
+
+  /** Required approvals */
+  requiredApprovals: number;
+}
+
+// =============================================================================
+// PHASE 4: RECURRING PAYMENT TYPES
+// =============================================================================
+
+/**
+ * Recurring payment mandate configuration for SDK consumers
+ *
+ * Mandates are USER-CREATED and USER-CONTROLLED.
+ */
+export interface RecurringMandate {
+  /** Mandate ID */
+  mandateId: string;
+
+  /** Merchant's NFT address (recipient) */
+  merchantNft: Address;
+
+  /** Amount per execution in TBC nanocoins */
+  amountPerPeriod: bigint;
+
+  /** Interval in seconds */
+  periodSeconds: number;
+
+  /** Maximum executions (0 = unlimited) */
+  maxExecutions: number;
+
+  /** Executions completed */
+  executionCount: number;
+
+  /** Mandate status */
+  status: 'active' | 'cancelled' | 'completed';
+}
+
+// =============================================================================
+// PHASE 4: CROSS-CHAIN BRIDGE TYPES
+// =============================================================================
+
+/**
+ * Bridge intent for SDK consumers
+ */
+export interface BridgeIntentInfo {
+  /** Intent ID */
+  intentId: string;
+
+  /** Target blockchain */
+  targetChain: string;
+
+  /** Amount being bridged */
+  amount: string;
+
+  /** Current status */
+  status: 'pending' | 'confirmed' | 'cancelled' | 'failed';
+}
+
+// =============================================================================
+// PHASE 4: LENDING PROTOCOL TYPES
+// =============================================================================
+
+/**
+ * Lending intent for SDK consumers
+ */
+export interface LendingIntent {
+  /** Intent ID */
+  intentId: string;
+
+  /** Collateral signal amount */
+  collateralAmount: string;
+
+  /** Target lender name */
+  targetLender: string;
+
+  /** Intent state */
+  state: 'active' | 'cancelled';
+}
