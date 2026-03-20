@@ -1,0 +1,104 @@
+/**
+ * TONBANKCARD Wallet UI - Type Definitions
+ *
+ * SECURITY NOTICE:
+ * This module defines types for a READ-ONLY, PRESENTATIONAL wallet interface.
+ * - NO private key storage
+ * - NO transaction signing
+ * - NO custody of funds
+ * - The blockchain is the ONLY source of truth
+ */
+
+/**
+ * Account states as defined in the Payment Hub contract
+ */
+export enum AccountState {
+  ACTIVE = 0,
+  FROZEN = 1,
+  COLLATERAL_LOCKED = 2,
+  CLOSED = 3,
+}
+
+/**
+ * Available wallet views
+ */
+export enum WalletView {
+  BALANCE = 'balance',
+  TRANSACTIONS = 'transactions',
+  SETTINGS = 'settings',
+}
+
+/**
+ * Wallet UI configuration
+ */
+export interface WalletUIConfig {
+  /** TON network: 'mainnet' or 'testnet' */
+  network: 'mainnet' | 'testnet';
+
+  /** Payment Hub contract address */
+  paymentHubAddress: string;
+
+  /** Optional RPC endpoint URL */
+  rpcEndpoint?: string;
+
+  /** Optional API endpoint for data retrieval (read-only) */
+  apiEndpoint?: string;
+
+  /** Container element ID to render the wallet UI into */
+  containerId: string;
+
+  /** UI theme */
+  theme?: 'light' | 'dark';
+
+  /** Callback on error */
+  onError?: (error: Error) => void;
+
+  /** Callback when widget is ready */
+  onReady?: () => void;
+}
+
+/**
+ * Wallet account information (read-only view of on-chain state)
+ */
+export interface WalletAccount {
+  /** NFT account address */
+  nftAddress: string;
+
+  /** Current TBC balance in nanocoins */
+  balance: string;
+
+  /** Account state */
+  state: AccountState;
+
+  /** Whether account can send payments */
+  canSend: boolean;
+
+  /** Whether account can receive payments */
+  canReceive: boolean;
+}
+
+/**
+ * Transaction record for display purposes
+ */
+export interface TransactionRecord {
+  /** Unique transaction identifier */
+  id: string;
+
+  /** Transaction type */
+  type: 'send' | 'receive';
+
+  /** Counterparty address */
+  counterparty: string;
+
+  /** Amount in nanocoins */
+  amount: string;
+
+  /** Unix timestamp in seconds */
+  timestamp: number;
+
+  /** Transaction status */
+  status: 'confirmed' | 'pending';
+
+  /** Optional on-chain transaction hash */
+  txHash?: string;
+}
