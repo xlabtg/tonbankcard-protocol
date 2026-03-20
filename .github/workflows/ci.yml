@@ -47,6 +47,63 @@ jobs:
         working-directory: sdk
         run: npm run build
 
+  build-wallet-ui:
+    name: Build (Wallet UI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: wallet-ui
+        run: npm install
+
+      - name: Build Wallet UI
+        working-directory: wallet-ui
+        run: npm run build
+
+  build-mobile-core:
+    name: Build (Mobile Core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm install
+
+      - name: Build Mobile Core
+        working-directory: mobile
+        run: npm run build
+
+  build-dashboard:
+    name: Build (Merchant Dashboard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: dashboard
+        run: npm install
+
+      - name: Build Merchant Dashboard
+        working-directory: dashboard
+        run: npm run build
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -73,6 +130,30 @@ jobs:
 
       - name: Lint indexer
         working-directory: backend/indexer
+        run: npm run lint
+
+      - name: Install wallet-ui dependencies
+        working-directory: wallet-ui
+        run: npm install
+
+      - name: Lint wallet-ui
+        working-directory: wallet-ui
+        run: npm run lint
+
+      - name: Install mobile-core dependencies
+        working-directory: mobile
+        run: npm install
+
+      - name: Lint mobile-core
+        working-directory: mobile
+        run: npm run lint
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm install
+
+      - name: Lint dashboard
+        working-directory: dashboard
         run: npm run lint
 
       # Contracts use Tact as primary language; TypeScript wrappers are generated
@@ -106,6 +187,30 @@ jobs:
         working-directory: backend/indexer
         run: npm test
 
+      - name: Install wallet-ui dependencies
+        working-directory: wallet-ui
+        run: npm install
+
+      - name: Test wallet-ui
+        working-directory: wallet-ui
+        run: npm test
+
+      - name: Install mobile-core dependencies
+        working-directory: mobile
+        run: npm install
+
+      - name: Test mobile-core
+        working-directory: mobile
+        run: npm test
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm install
+
+      - name: Test dashboard
+        working-directory: dashboard
+        run: npm test
+
       # Contracts tests require Tact compilation artifacts; they are validated
       # as part of the Build (Runtime) workflow which runs tact before testing.
 
@@ -136,6 +241,30 @@ jobs:
       - name: TypeScript check indexer
         working-directory: backend/indexer
         run: npx tsc --noEmit
+
+      - name: Install wallet-ui dependencies
+        working-directory: wallet-ui
+        run: npm install
+
+      - name: TypeScript check wallet-ui
+        working-directory: wallet-ui
+        run: npm run typecheck
+
+      - name: Install mobile-core dependencies
+        working-directory: mobile
+        run: npm install
+
+      - name: TypeScript check mobile-core
+        working-directory: mobile
+        run: npm run typecheck
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm install
+
+      - name: TypeScript check dashboard
+        working-directory: dashboard
+        run: npm run typecheck
 
       # Contracts use Tact as primary language; TypeScript wrappers are generated
       # by the Tact build step and cannot be type-checked without running it first.

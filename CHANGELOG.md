@@ -10,6 +10,16 @@ For SDK-specific changes, see [sdk/CHANGELOG.md](sdk/CHANGELOG.md).
 
 ## [Unreleased]
 
+### Added — Phase 3: User Experience (Issue #80)
+- **Wallet UI** (`wallet-ui/`): Non-custodial wallet interface with balance view, transaction history, and account settings. Vanilla DOM rendering with light/dark theme support. Package: `@tonbankcard/wallet-ui` v1.0.0
+- **Mobile App Core** (`mobile/`): Platform-agnostic TypeScript business logic layer for mobile apps. Includes AccountService, PaymentService, and SyncService. No DOM dependencies. Package: `@tonbankcard/mobile-core` v1.0.0
+- **Merchant Dashboard** (`dashboard/`): Merchant portal with payment history, invoice link generation, statistics overview, and webhook management. Vanilla DOM with light/dark themes. Package: `@tonbankcard/merchant-dashboard` v1.0.0
+- CI workflow updated with build, lint, test, and typecheck jobs for all three new packages
+- Comprehensive test suites: 28 wallet-ui tests, 57 mobile-core tests, 47 dashboard tests
+
+### Changed — Phase 3
+- README: updated repository structure to include Phase 3 packages, Phase 3 checklist marked as complete
+
 ### Added — Phase 2: Payment Infrastructure (Issue #78)
 - **Payment Hub contracts**: NFT collection whitelist verification, deployer access control for setup functions
 - **Merchant API**: `package.json`, `tsconfig.json`, Express app entry point (`api/src/index.ts`)

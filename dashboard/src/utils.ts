@@ -1,0 +1,112 @@
+/**
+ * Utility functions for TONBANKCARD Merchant Dashboard
+ *
+ * SECURITY NOTICE:
+ * These utilities are purely for data formatting and display.
+ * They do NOT sign transactions, store keys, or custody funds.
+ */
+
+import { InvoiceGeneratorParams } from './types';
+
+/**
+ * Format nanocoin amount to human-readable TBC string
+ *
+ * @param nanocoins - Amount in nanocoins as a string (1 TBC = 10^9 nanocoins)
+ * @param decimals - Number of decimal places (default: 2)
+ * @returns Formatted TBC amount string (e.g., "10.50")
+ */
+export function formatTBC(nanocoins: string, decimals: number = 2): string {
+  const tbc = Number(nanocoins) / 1e9;
+  return tbc.toFixed(decimals);
+}
+
+/**
+ * Shorten an address for display
+ *
+ * @param address - Full wallet address
+ * @param chars - Number of characters to show on each side (default: 6)
+ * @returns Shortened address (e.g., "EQAjHk...3il-Le")
+ */
+export function shortAddress(address: string, chars: number = 6): string {
+  if (address.length <= chars * 2 + 3) {
+    return address;
+  }
+  return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+}
+
+/**
+ * Format a Unix timestamp to a human-readable date string
+ *
+ * @param timestamp - Unix timestamp in seconds
+ * @returns Human-readable date string
+ */
+export function formatDate(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Format nanocoin amount as a display currency string with thousands separator
+ *
+ * @param nanocoins - Amount in nanocoins as a string
+ * @returns Formatted currency string (e.g., "1,234.56 TBC")
+ */
+export function formatCurrency(nanocoins: string): string {
+  const tbc = Number(nanocoins) / 1e9;
+  const parts = tbc.toFixed(2).split('.');
+  const integerPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${integerPart}.${parts[1]} TBC`;
+}
+
+/**
+ * Calculate the success rate from settled and total payment counts
+ *
+ * @param settled - Number of settled (successful) payments
+ * @param total - Total number of payments
+ * @returns Success rate as a ratio from 0 to 1
+ */
+export function calculateSuccessRate(settled: number, total: number): number {
+  if (total === 0) {
+    return 0;
+  }
+  return settled / total;
+}
+
+/**
+ * Generate a ton:// deep link for a payment invoice
+ *
+ * This generates a link that opens the user's TON wallet.
+ * The wallet handles signing - this function does NOT sign anything.
+ *
+ * @param merchantNft - Merchant's NFT account address
+ * @param params - Invoice generation parameters
+ * @returns ton:// deep link URL
+ */
+export function generateInvoiceLink(
+  merchantNft: string,
+  params: InvoiceGeneratorParams
+): string {
+  const textParts = [
+    'TONBANKCARD Payment',
+    params.orderId ? `Order: ${params.orderId}` : '',
+    params.description || '',
+  ]
+    .filter(Boolean)
+    .join(' | ');
+
+  const text = encodeURIComponent(textParts);
+  let link = `ton://transfer/${merchantNft}?amount=${params.amountTbc}&text=${text}`;
+
+  if (params.expirationMinutes !== undefined) {
+    const expiresAt = Math.floor(Date.now() / 1000) + params.expirationMinutes * 60;
+    link += `&exp=${expiresAt}`;
+  }
+
+  return link;
+}

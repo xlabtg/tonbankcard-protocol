@@ -37,25 +37,30 @@ Tonbankcard is **NOT** a traditional bank. It's a protocol that enables:
 
 ```
 tonbankcard-protocol/
-├── contracts/           # Smart contracts (future)
-│   ├── token/          # TBC jetton (existing, deployed)
-│   ├── nft-cards/      # NFT card collections (existing, deployed)
-│   ├── payments/       # Payment hub / escrow (future)
-│   └── lending/        # Collateral & lending adapters (future)
+├── contracts/           # Smart contracts
+│   ├── payment-hub/    # Payment Hub (Phase 2)
+│   ├── payments/       # Payment logic
+│   ├── nft-resolver/   # NFT account abstraction
+│   ├── collateral-lookup/  # Collateral signaling
+│   └── governance/     # DAO governance
 │
-├── backend/            # Off-chain services (future)
-│   ├── api/           # Merchant API, internal services
-│   └── indexer/       # TON blockchain indexer / watchers
+├── sdk/                # Merchant SDK & Payment Widget (Phase 2)
+├── api/                # Merchant API (Phase 2)
 │
-├── frontend/           # User interfaces (future)
-│   ├── merchant/      # Payment widget / SDK
-│   └── wallet/        # User wallet UI (future)
+├── backend/            # Off-chain services
+│   ├── indexer/       # Payment status indexer (Phase 2)
+│   └── adapters/      # Gateway adapters
+│
+├── wallet-ui/          # Wallet UI (Phase 3)
+├── mobile/             # Mobile app core logic (Phase 3)
+├── dashboard/          # Merchant dashboard (Phase 3)
 │
 ├── docs/              # Documentation
 │   ├── architecture.md     # System architecture
-│   ├── existing-contracts.md  # Deployed contracts reference
-│   └── litepaper.md        # Protocol specification (future)
+│   ├── INDEX.md            # Documentation navigation
+│   └── existing-contracts.md  # Deployed contracts reference
 │
+├── tests/             # Integration & contract tests
 ├── CONTRIBUTING.md    # Development guidelines
 └── README.md         # This file
 ```
@@ -207,10 +212,10 @@ Please report security vulnerabilities privately. See [SECURITY.md](SECURITY.md)
 - [x] Payment widget/SDK
 - [x] Backend indexer
 
-### Phase 3: User Experience
-- [ ] Wallet UI
-- [ ] Mobile app
-- [ ] Merchant dashboard
+### Phase 3: User Experience ✅
+- [x] Wallet UI
+- [x] Mobile app
+- [x] Merchant dashboard
 
 ### Phase 4: Advanced Features
 - [ ] Lending protocol integration
