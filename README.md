@@ -37,23 +37,34 @@ Tonbankcard is **NOT** a traditional bank. It's a protocol that enables:
 
 ```
 tonbankcard-protocol/
-├── contracts/           # Smart contracts
-│   ├── payment-hub/    # Payment Hub (Phase 2)
-│   ├── payments/       # Payment logic
-│   ├── nft-resolver/   # NFT account abstraction
-│   ├── collateral-lookup/  # Collateral signaling
-│   └── governance/     # DAO governance
+├── contracts/                        # Smart contracts
+│   ├── payment-hub/                 # Payment Hub (Phase 2)
+│   ├── payments/                    # Payment logic
+│   ├── nft-resolver/                # NFT account abstraction
+│   ├── collateral-lookup/           # Collateral signaling
+│   ├── governance/                  # DAO governance
+│   ├── LendingProtocolCoordinator.tact  # Lending coordination (Phase 4)
+│   ├── MultiSigCard.tact            # Multi-signature cards (Phase 4)
+│   ├── RecurringPayments.tact       # Recurring payments (Phase 4)
+│   └── CrossChainBridge.tact        # Cross-chain bridge (Phase 4)
 │
 ├── sdk/                # Merchant SDK & Payment Widget (Phase 2)
+│                       # Package: @tonbankcard/merchant-sdk
 ├── api/                # Merchant API (Phase 2)
+│                       # Package: @tonbankcard/merchant-api
 │
 ├── backend/            # Off-chain services
 │   ├── indexer/       # Payment status indexer (Phase 2)
-│   └── adapters/      # Gateway adapters
+│   │                  # Package: @tonbankcard/payment-indexer
+│   └── adapters/      # Gateway adapters (ChangeNOW, NOWPayments,
+│                      #   CoinRabbit, MultiSig, Recurring, Bridge)
 │
 ├── wallet-ui/          # Wallet UI (Phase 3)
+│                       # Package: @tonbankcard/wallet-ui
 ├── mobile/             # Mobile app core logic (Phase 3)
+│                       # Package: @tonbankcard/mobile-core
 ├── dashboard/          # Merchant dashboard (Phase 3)
+│                       # Package: @tonbankcard/merchant-dashboard
 │
 ├── docs/              # Documentation
 │   ├── architecture.md     # System architecture
@@ -103,6 +114,121 @@ User NFT Card ←→ TBC Token ←→ TBC/TON Pool ←→ External Gateways
 - **ChangeNOW**: Crypto swap gateway
 - **NOWPayments**: Payment processing
 - **CoinRabbit**: Collateral-based lending
+
+## Installation
+
+### Prerequisites
+
+- Node.js >= 18.0.0
+- npm or yarn
+
+### Merchant SDK
+
+For merchants integrating TONBANKCARD payments into websites or applications:
+
+```bash
+npm install @tonbankcard/merchant-sdk
+```
+
+```typescript
+import { TonbankcardSDK, TESTNET_CONFIG, parseTBC } from '@tonbankcard/merchant-sdk';
+import { Address } from '@ton/core';
+
+const sdk = new TonbankcardSDK({
+  ...TESTNET_CONFIG,
+  paymentHubAddress: Address.parse('EQ...YourPaymentHub'),
+});
+```
+
+See the full [SDK documentation](sdk/README.md) for usage examples and API reference.
+
+### Merchant API
+
+To run the off-chain Merchant API service:
+
+```bash
+cd api
+npm install
+npm run build
+npm start
+```
+
+See [docs/merchant-api-spec.md](docs/merchant-api-spec.md) for the full REST API specification.
+
+### Payment Indexer
+
+To run the read-only blockchain indexer:
+
+```bash
+cd backend/indexer
+npm install
+npm run db:migrate
+npm start
+```
+
+### Wallet UI
+
+```bash
+npm install @tonbankcard/wallet-ui
+```
+
+### Mobile Core
+
+```bash
+npm install @tonbankcard/mobile-core
+```
+
+### Merchant Dashboard
+
+```bash
+npm install @tonbankcard/merchant-dashboard
+```
+
+### Development Setup (all packages)
+
+Clone the repository and install dependencies for each package:
+
+```bash
+git clone https://github.com/xlabtg/tonbankcard-protocol.git
+cd tonbankcard-protocol
+
+# Install SDK dependencies
+cd sdk && npm install && cd ..
+
+# Install API dependencies
+cd api && npm install && cd ..
+
+# Install indexer dependencies
+cd backend/indexer && npm install && cd ../..
+
+# Install wallet-ui dependencies
+cd wallet-ui && npm install && cd ..
+
+# Install mobile dependencies
+cd mobile && npm install && cd ..
+
+# Install dashboard dependencies
+cd dashboard && npm install && cd ..
+```
+
+### Running Tests
+
+Each package includes its own test suite:
+
+```bash
+# Run tests for a specific package
+cd sdk && npm test
+cd api && npm test
+cd backend/indexer && npm test
+cd wallet-ui && npm test
+cd mobile && npm test
+cd dashboard && npm test
+
+# Run with coverage
+npm run test:coverage
+```
+
+---
 
 ## Getting Started
 
@@ -190,8 +316,12 @@ Please report security vulnerabilities privately. See [SECURITY.md](SECURITY.md)
 ## Links
 
 - **Protocol Docs**: [docs/architecture.md](docs/architecture.md)
+- **Documentation Index**: [docs/INDEX.md](docs/INDEX.md)
 - **Existing Contracts**: [docs/existing-contracts.md](docs/existing-contracts.md)
 - **Protocol Registry**: [docs/registry/protocol-registry.md](docs/registry/protocol-registry.md)
+- **Merchant SDK**: [sdk/README.md](sdk/README.md)
+- **Merchant API Spec**: [docs/merchant-api-spec.md](docs/merchant-api-spec.md)
+- **Phase 4 Advanced Features**: [docs/phase4-advanced-features.md](docs/phase4-advanced-features.md)
 - **Security Threat Model**: [docs/security/THREAT_MODEL.md](docs/security/THREAT_MODEL.md)
 - **Key Management**: [docs/security/KEY_MANAGEMENT.md](docs/security/KEY_MANAGEMENT.md)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
@@ -217,11 +347,11 @@ Please report security vulnerabilities privately. See [SECURITY.md](SECURITY.md)
 - [x] Mobile app
 - [x] Merchant dashboard
 
-### Phase 4: Advanced Features
-- [ ] Lending protocol integration
-- [ ] Multi-signature cards
-- [ ] Recurring payments
-- [ ] Cross-chain bridges
+### Phase 4: Advanced Features ✅
+- [x] Lending protocol integration
+- [x] Multi-signature cards
+- [x] Recurring payments
+- [x] Cross-chain bridges
 
 ## Contributing
 
