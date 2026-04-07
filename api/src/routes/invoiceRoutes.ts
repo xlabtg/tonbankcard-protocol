@@ -15,6 +15,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { invoiceService } from '../services/InvoiceService';
+import { apiKeyService } from '../services/ApiKeyService';
 import { ValidationError } from '../utils/validation';
 import {
   ErrorCode,
@@ -47,9 +48,6 @@ import {
 
 /** Rate limit buckets per API key + endpoint (in-memory, for reference only) */
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
-
-/** API key store (in-memory, for reference only) */
-const apiKeyStore = new Map<string, ApiKey>();
 
 /**
  * Default rate limits per endpoint (requests per minute)
@@ -266,43 +264,9 @@ export function authenticateWithPermission(requiredPermission: ApiKeyPermission)
     try {
       const apiKeyValue = extractApiKey(req);
 
-      // In production, lookup API key in database by hash
-      // const apiKey = await apiKeyService.findByKeyHash(hashApiKey(apiKeyValue));
-      //
-      // For reference implementation, we use a stub that accepts any key
-      // and creates a temporary entry with full permissions
-      let apiKey = apiKeyStore.get(apiKeyValue);
-
-      if (!apiKey) {
-        // Stub: Create temporary API key entry for reference implementation
-        // In production, this would throw INVALID_API_KEY error
-        apiKey = {
-          key_id: `key_${apiKeyValue.substring(0, 8)}`,
-          key_hash: apiKeyValue, // Stub: not actually hashed
-          merchant_nft: '', // Would be set from database
-          permissions: ['invoice:create', 'invoice:read', 'invoice:status'],
-          rate_limits: {
-            invoice_create_rpm: DEFAULT_RATE_LIMITS['invoice:create'],
-            invoice_read_rpm: DEFAULT_RATE_LIMITS['invoice:read'],
-            invoice_status_rpm: DEFAULT_RATE_LIMITS['invoice:status'],
-          },
-          created_at: new Date().toISOString(),
-          expires_at: null,
-          last_used_at: null,
-          is_active: true,
-        };
-        apiKeyStore.set(apiKeyValue, apiKey);
-      }
-
-      // Check if key is active
-      if (!apiKey.is_active) {
-        throw new ValidationError(ErrorCode.INVALID_API_KEY, 'API key is deactivated');
-      }
-
-      // Check if key is expired
-      if (apiKey.expires_at && new Date(apiKey.expires_at) < new Date()) {
-        throw new ValidationError(ErrorCode.INVALID_API_KEY, 'API key has expired');
-      }
+      // Look up API key by hash – throws INVALID_API_KEY if not found,
+      // deactivated, or expired.
+      const apiKey = apiKeyService.findAndValidateKey(apiKeyValue);
 
       // Check permission (scoping)
       if (!hasPermission(apiKey, requiredPermission)) {
@@ -341,8 +305,7 @@ export function authenticateWithPermission(requiredPermission: ApiKeyPermission)
       res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
 
       // Update last used timestamp
-      apiKey.last_used_at = new Date().toISOString();
-      apiKeyStore.set(apiKeyValue, apiKey);
+      apiKeyService.touchKey(apiKey.key_hash);
 
       // Store API key info in request for later use
       (req as any).apiKey = apiKey;
