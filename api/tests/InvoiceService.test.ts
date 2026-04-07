@@ -15,9 +15,8 @@ describe('InvoiceService', () => {
   let keyService: ApiKeyService;
   const TEST_API_KEY = 'tbck_test_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d';
   const OTHER_API_KEY = 'tbck_test_other_9z8y7x6w5v4u3t2s1r0q9p8o7n6m5l4k';
-  // Valid TON addresses: EQ + 46 base64url chars = 48 chars total
-  const TEST_MERCHANT_NFT = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-  const OTHER_MERCHANT_NFT = 'EQBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+  const TEST_MERCHANT_NFT = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'; // Series 7777 (whitelisted)
+  const OTHER_MERCHANT_NFT = 'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7'; // Series 8888 (whitelisted)
 
   beforeEach(() => {
     keyService = new ApiKeyService();
