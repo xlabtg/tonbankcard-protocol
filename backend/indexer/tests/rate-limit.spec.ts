@@ -1,6 +1,6 @@
 // Tests for rate limiting behavior in ApiServer
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, afterEach } from '@jest/globals';
 import express from 'express';
 import http from 'http';
 import {
