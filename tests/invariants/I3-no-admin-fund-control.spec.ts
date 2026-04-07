@@ -364,4 +364,173 @@ describe('Invariant I3 - No Admin Fund Control', () => {
             expect(true).toBe(true); // Placeholder assertion
         });
     });
+
+    describe('Admin Transfer (Issue #96): Two-Phase Timelock', () => {
+        // 7-day timelock in seconds
+        const SEVEN_DAYS = 7 * 24 * 60 * 60;
+
+        it('should allow admin to propose a transfer to a new admin', async () => {
+            const newAdmin = await blockchain.treasury('newAdmin');
+
+            const result = await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ProposeAdminTransfer', new_admin: newAdmin.address }
+            );
+
+            expect(result.transactions).toHaveTransaction({
+                from: deployer.address,
+                to: paymentHub.address,
+                success: true,
+            });
+
+            const pending = await paymentHub.getGetPendingAdmin();
+            expect(pending?.toString()).toBe(newAdmin.address.toString());
+        });
+
+        it('should reject admin transfer execution before timelock expires', async () => {
+            const newAdmin = await blockchain.treasury('newAdmin2');
+
+            await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ProposeAdminTransfer', new_admin: newAdmin.address }
+            );
+
+            // Attempt immediate execution (before 7-day timelock)
+            const result = await paymentHub.send(
+                newAdmin.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ExecuteAdminTransfer' }
+            );
+
+            expect(result.transactions).toHaveTransaction({
+                from: newAdmin.address,
+                to: paymentHub.address,
+                success: false,
+            });
+
+            // Admin must not have changed
+            const admin = await paymentHub.getGetAdmin();
+            expect(admin.toString()).toBe(deployer.address.toString());
+        });
+
+        it('should complete admin transfer after timelock and preserve user funds', async () => {
+            const newAdmin = await blockchain.treasury('newAdmin3');
+            const userBalance = toNano('10000');
+
+            await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                {
+                    $$type: 'InitializeAccount',
+                    nft_address: user.address,
+                    owner: user.address,
+                    initial_balance: userBalance,
+                    initial_state: 0,
+                }
+            );
+
+            await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ProposeAdminTransfer', new_admin: newAdmin.address }
+            );
+
+            // Advance blockchain time past 7 days
+            blockchain.now = Math.floor(Date.now() / 1000) + SEVEN_DAYS + 1;
+
+            await paymentHub.send(
+                newAdmin.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ExecuteAdminTransfer' }
+            );
+
+            // Admin must have changed
+            const admin = await paymentHub.getGetAdmin();
+            expect(admin.toString()).toBe(newAdmin.address.toString());
+
+            // INVARIANT I3: User funds must be completely unchanged
+            const balance = await paymentHub.getGetBalance(user.address);
+            expect(balance).toBe(userBalance);
+        });
+
+        it('should prevent new admin from moving user funds (I3 preserved post-transfer)', async () => {
+            const newAdmin = await blockchain.treasury('newAdmin4');
+            const userBalance = toNano('10000');
+
+            await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                {
+                    $$type: 'InitializeAccount',
+                    nft_address: user.address,
+                    owner: user.address,
+                    initial_balance: userBalance,
+                    initial_state: 0,
+                }
+            );
+
+            // Complete admin transfer
+            await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ProposeAdminTransfer', new_admin: newAdmin.address }
+            );
+            blockchain.now = Math.floor(Date.now() / 1000) + SEVEN_DAYS + 1;
+            await paymentHub.send(
+                newAdmin.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ExecuteAdminTransfer' }
+            );
+
+            // New admin tries to steal user funds
+            const stealAttempt = await paymentHub.send(
+                newAdmin.getSender(),
+                { value: toNano('0.05') },
+                {
+                    $$type: 'TransferInternalRequest',
+                    from_nft: user.address,
+                    to_nft: newAdmin.address,
+                    amount_tbc: toNano('5000'),
+                    payload: null,
+                }
+            );
+
+            expect(stealAttempt.transactions).toHaveTransaction({
+                from: newAdmin.address,
+                to: paymentHub.address,
+                success: false,
+            });
+
+            // Balance unchanged
+            const balance = await paymentHub.getGetBalance(user.address);
+            expect(balance).toBe(userBalance);
+        });
+
+        it('should allow admin to cancel a pending transfer', async () => {
+            const newAdmin = await blockchain.treasury('newAdmin5');
+
+            await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'ProposeAdminTransfer', new_admin: newAdmin.address }
+            );
+
+            const cancelResult = await paymentHub.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                { $$type: 'CancelAdminTransfer' }
+            );
+
+            expect(cancelResult.transactions).toHaveTransaction({
+                from: deployer.address,
+                to: paymentHub.address,
+                success: true,
+            });
+
+            const pending = await paymentHub.getGetPendingAdmin();
+            expect(pending).toBeNull();
+        });
+    });
 });

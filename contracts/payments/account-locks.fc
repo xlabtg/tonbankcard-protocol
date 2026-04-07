@@ -1,5 +1,6 @@
 ;; Account Locks Smart Contract
 ;; Part of Tonbankcard Payment Hub
+;; Issue #96: Two-phase role transfer with 7-day timelock for risk_authority and lending_adapter
 ;;
 ;; Implements lock mechanism for NFT accounts to:
 ;; - Block fraudulent accounts (FRAUD_LOCK)
@@ -8,10 +9,11 @@
 ;;
 ;; PROTOCOL INVARIANTS (see docs/invariants.md):
 ;; - I3 (No Admin Control): risk_authority and lending_adapter can ONLY set locks, NOT move funds
+;;   Role transfer uses a 7-day timelock (propose + execute pattern)
 ;; - I6 (Lock ≠ Confiscation): Locks restrict sending, NOT ownership or balance
-;;   * can_send() returns 0 when locked (lines 83-92)
-;;   * can_receive() ALWAYS returns 1 (lines 94-98)
-;;   * Lock operations do NOT modify balances (lines 100-110)
+;;   * can_send() returns 0 when locked
+;;   * can_receive() ALWAYS returns 1
+;;   * Lock operations do NOT modify balances
 ;; - I7 (Adapter Isolation): External adapters cannot bypass protocol rules
 
 #include "stdlib.fc";
@@ -30,32 +32,69 @@ const int op::clear_collateral_lock = 0x1004;
 const int op::check_can_send = 0x2001;
 const int op::get_lock_state = 0x3001;
 
+;; Role transfer operation codes (Issue #96: two-phase transfer with 7-day timelock)
+;; risk_authority role transfer
+const int op::propose_risk_authority = 0x4001;
+const int op::execute_risk_authority = 0x4002;
+const int op::cancel_risk_authority = 0x4003;
+;; lending_adapter role transfer
+const int op::propose_lending_adapter = 0x4011;
+const int op::execute_lending_adapter = 0x4012;
+const int op::cancel_lending_adapter = 0x4013;
+
 ;; Exit codes
 const int err::unauthorized = 401;
 const int err::account_locked = 403;
 const int err::invalid_nft = 404;
 const int err::invalid_operation = 400;
+const int err::no_pending_transfer = 405;
+const int err::timelock_not_expired = 406;
+
+;; Timelock delay: 7 days in seconds
+const int ROLE_TRANSFER_DELAY = 7 * 24 * 60 * 60;
 
 ;; Storage structure
 ;; cell storage contains:
 ;; - dict: nft_address -> (fraud_locked, collateral_locked)
 ;; - slice: risk_authority_address
 ;; - slice: lending_adapter_address
+;; - int: pending_risk_authority_present (0 or 1)
+;; - slice: pending_risk_authority_address (only valid if pending_risk_authority_present == 1)
+;; - int: pending_risk_authority_executable_at (unix timestamp)
+;; - int: pending_lending_adapter_present (0 or 1)
+;; - slice: pending_lending_adapter_address (only valid if pending_lending_adapter_present == 1)
+;; - int: pending_lending_adapter_executable_at (unix timestamp)
 
-(cell, slice, slice) load_data() inline {
+(cell, slice, slice, int, slice, int, int, slice, int) load_data() inline {
     slice ds = get_data().begin_parse();
     cell lock_dict = ds~load_dict();
     slice risk_authority = ds~load_msg_addr();
     slice lending_adapter = ds~load_msg_addr();
-    return (lock_dict, risk_authority, lending_adapter);
+    int pending_risk_present = ds~load_uint(1);
+    slice pending_risk = ds~load_msg_addr();
+    int pending_risk_at = ds~load_uint(32);
+    int pending_lending_present = ds~load_uint(1);
+    slice pending_lending = ds~load_msg_addr();
+    int pending_lending_at = ds~load_uint(32);
+    return (lock_dict, risk_authority, lending_adapter,
+            pending_risk_present, pending_risk, pending_risk_at,
+            pending_lending_present, pending_lending, pending_lending_at);
 }
 
-() save_data(cell lock_dict, slice risk_authority, slice lending_adapter) impure inline {
+() save_data(cell lock_dict, slice risk_authority, slice lending_adapter,
+             int pending_risk_present, slice pending_risk, int pending_risk_at,
+             int pending_lending_present, slice pending_lending, int pending_lending_at) impure inline {
     set_data(
         begin_cell()
             .store_dict(lock_dict)
             .store_slice(risk_authority)
             .store_slice(lending_adapter)
+            .store_uint(pending_risk_present, 1)
+            .store_slice(pending_risk)
+            .store_uint(pending_risk_at, 32)
+            .store_uint(pending_lending_present, 1)
+            .store_slice(pending_lending)
+            .store_uint(pending_lending_at, 32)
         .end_cell()
     );
 }
@@ -63,7 +102,7 @@ const int err::invalid_operation = 400;
 ;; Get lock state for an NFT account
 ;; Returns (fraud_locked: int, collateral_locked: int)
 (int, int) get_lock_state(slice nft_address) method_id {
-    (cell lock_dict, _, _) = load_data();
+    (cell lock_dict, _, _, _, _, _, _, _, _) = load_data();
 
     ;; Convert address to 256-bit hash for dictionary key
     int key = slice_hash(nft_address);
@@ -163,7 +202,9 @@ int can_receive(slice nft_address) method_id {
 
     int op = in_msg_body~load_uint(32);
 
-    (cell lock_dict, slice risk_authority, slice lending_adapter) = load_data();
+    (cell lock_dict, slice risk_authority, slice lending_adapter,
+     int pending_risk_present, slice pending_risk, int pending_risk_at,
+     int pending_lending_present, slice pending_lending, int pending_lending_at) = load_data();
 
     ;; Set FRAUD_LOCK
     if (op == op::set_fraud_lock) {
@@ -174,7 +215,9 @@ int can_receive(slice nft_address) method_id {
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
         set_lock(lock_dict, nft_address, 1, collateral_locked);
-        save_data(lock_dict, risk_authority, lending_adapter);
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  pending_lending_present, pending_lending, pending_lending_at);
 
         emit_account_locked(nft_address, FRAUD_LOCK);
         return ();
@@ -182,14 +225,16 @@ int can_receive(slice nft_address) method_id {
 
     ;; Clear FRAUD_LOCK
     if (op == op::clear_fraud_lock) {
-        ;; Only risk authority can clear fraud lock (or DAO in future)
+        ;; Only risk authority can clear fraud lock
         throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
 
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
         set_lock(lock_dict, nft_address, 0, collateral_locked);
-        save_data(lock_dict, risk_authority, lending_adapter);
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  pending_lending_present, pending_lending, pending_lending_at);
 
         emit_account_unlocked(nft_address, FRAUD_LOCK);
         return ();
@@ -204,7 +249,9 @@ int can_receive(slice nft_address) method_id {
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
         set_lock(lock_dict, nft_address, fraud_locked, 1);
-        save_data(lock_dict, risk_authority, lending_adapter);
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  pending_lending_present, pending_lending, pending_lending_at);
 
         emit_account_locked(nft_address, COLLATERAL_LOCK);
         return ();
@@ -219,7 +266,9 @@ int can_receive(slice nft_address) method_id {
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
         set_lock(lock_dict, nft_address, fraud_locked, 0);
-        save_data(lock_dict, risk_authority, lending_adapter);
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  pending_lending_present, pending_lending, pending_lending_at);
 
         emit_account_unlocked(nft_address, COLLATERAL_LOCK);
         return ();
@@ -233,6 +282,78 @@ int can_receive(slice nft_address) method_id {
         ;; Throw if account is locked
         throw_unless(err::account_locked, can_send_flag);
 
+        return ();
+    }
+
+    ;; ========================================================
+    ;; ROLE TRANSFER: risk_authority (Issue #96, two-phase + 7-day timelock)
+    ;; ========================================================
+
+    ;; Phase 1: Current risk_authority proposes a new risk_authority
+    if (op == op::propose_risk_authority) {
+        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+        slice proposed = in_msg_body~load_msg_addr();
+        int executable_at = now() + ROLE_TRANSFER_DELAY;
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  1, proposed, executable_at,
+                  pending_lending_present, pending_lending, pending_lending_at);
+        return ();
+    }
+
+    ;; Phase 2: Proposed risk_authority executes the transfer (after timelock)
+    if (op == op::execute_risk_authority) {
+        throw_unless(err::no_pending_transfer, pending_risk_present);
+        throw_unless(err::unauthorized, equal_slices(sender_address, pending_risk));
+        throw_unless(err::timelock_not_expired, now() >= pending_risk_at);
+        save_data(lock_dict, pending_risk, lending_adapter,
+                  0, pending_risk, 0,
+                  pending_lending_present, pending_lending, pending_lending_at);
+        return ();
+    }
+
+    ;; Cancel a pending risk_authority transfer (only current risk_authority)
+    if (op == op::cancel_risk_authority) {
+        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+        throw_unless(err::no_pending_transfer, pending_risk_present);
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  0, risk_authority, 0,
+                  pending_lending_present, pending_lending, pending_lending_at);
+        return ();
+    }
+
+    ;; ========================================================
+    ;; ROLE TRANSFER: lending_adapter (Issue #96, two-phase + 7-day timelock)
+    ;; ========================================================
+
+    ;; Phase 1: Current lending_adapter proposes a new lending_adapter
+    if (op == op::propose_lending_adapter) {
+        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+        slice proposed = in_msg_body~load_msg_addr();
+        int executable_at = now() + ROLE_TRANSFER_DELAY;
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  1, proposed, executable_at);
+        return ();
+    }
+
+    ;; Phase 2: Proposed lending_adapter executes the transfer (after timelock)
+    if (op == op::execute_lending_adapter) {
+        throw_unless(err::no_pending_transfer, pending_lending_present);
+        throw_unless(err::unauthorized, equal_slices(sender_address, pending_lending));
+        throw_unless(err::timelock_not_expired, now() >= pending_lending_at);
+        save_data(lock_dict, risk_authority, pending_lending,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  0, pending_lending, 0);
+        return ();
+    }
+
+    ;; Cancel a pending lending_adapter transfer (only current lending_adapter)
+    if (op == op::cancel_lending_adapter) {
+        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+        throw_unless(err::no_pending_transfer, pending_lending_present);
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  0, lending_adapter, 0);
         return ();
     }
 
@@ -265,5 +386,31 @@ int get_can_receive(slice nft_address) method_id {
 
 ;; Get contract version
 int get_version() method_id {
-    return 1;
+    return 2;  ;; bumped for Issue #96: role transfer support
+}
+
+;; Get current risk_authority address
+slice get_risk_authority() method_id {
+    (_, slice risk_authority, _, _, _, _, _, _, _) = load_data();
+    return risk_authority;
+}
+
+;; Get current lending_adapter address
+slice get_lending_adapter() method_id {
+    (_, _, slice lending_adapter, _, _, _, _, _, _) = load_data();
+    return lending_adapter;
+}
+
+;; Get pending risk_authority transfer info
+;; Returns (pending_present: int, pending_address: slice, executable_at: int)
+(int, slice, int) get_pending_risk_authority() method_id {
+    (_, _, _, int pending_present, slice pending_addr, int executable_at, _, _, _) = load_data();
+    return (pending_present, pending_addr, executable_at);
+}
+
+;; Get pending lending_adapter transfer info
+;; Returns (pending_present: int, pending_address: slice, executable_at: int)
+(int, slice, int) get_pending_lending_adapter() method_id {
+    (_, _, _, _, _, _, int pending_present, slice pending_addr, int executable_at) = load_data();
+    return (pending_present, pending_addr, executable_at);
 }

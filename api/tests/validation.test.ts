@@ -15,12 +15,12 @@ import {
   validateInvoiceId,
   ValidationError,
 } from '../src/utils/validation';
-import { ErrorCode } from '../src/types/invoice';
+import { ErrorCode, WHITELISTED_NFT_COLLECTIONS } from '../src/types/invoice';
 
 describe('Validation Utilities', () => {
   describe('validateTonAddress', () => {
     it('should accept valid TON address', () => {
-      const validAddress = 'EQAbcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ';
+      const validAddress = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le';
       expect(() => validateTonAddress(validAddress)).not.toThrow();
     });
 
@@ -37,6 +37,62 @@ describe('Validation Utilities', () => {
     it('should reject address with wrong length', () => {
       const shortAddress = 'EQAbc123';
       expect(() => validateTonAddress(shortAddress)).toThrow(ValidationError);
+    });
+  });
+
+  describe('validateWhitelistedNFT', () => {
+    it('should accept NFT address from whitelisted collection (Series 7777)', () => {
+      const whitelistedAddress = WHITELISTED_NFT_COLLECTIONS[0];
+      expect(() => validateWhitelistedNFT(whitelistedAddress)).not.toThrow();
+      expect(validateWhitelistedNFT(whitelistedAddress)).toBe(true);
+    });
+
+    it('should accept NFT address from whitelisted collection (Series 8888)', () => {
+      const whitelistedAddress = WHITELISTED_NFT_COLLECTIONS[1];
+      expect(() => validateWhitelistedNFT(whitelistedAddress)).not.toThrow();
+      expect(validateWhitelistedNFT(whitelistedAddress)).toBe(true);
+    });
+
+    it('should reject valid TON address not in whitelist', () => {
+      const nonWhitelistedAddress = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      expect(() => validateWhitelistedNFT(nonWhitelistedAddress)).toThrow(ValidationError);
+    });
+
+    it('should reject non-whitelisted address with NFT_NOT_WHITELISTED error code', () => {
+      const nonWhitelistedAddress = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      try {
+        validateWhitelistedNFT(nonWhitelistedAddress);
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as ValidationError).code).toBe(ErrorCode.NFT_NOT_WHITELISTED);
+        expect((error as ValidationError).message).toBe('NFT address is not from a whitelisted collection');
+      }
+    });
+
+    it('should reject invalid TON address format before whitelist check', () => {
+      expect(() => validateWhitelistedNFT('invalid')).toThrow(ValidationError);
+      try {
+        validateWhitelistedNFT('invalid');
+      } catch (error) {
+        expect((error as ValidationError).code).toBe(ErrorCode.INVALID_NFT_ADDRESS);
+      }
+    });
+
+    it('should reject empty address', () => {
+      expect(() => validateWhitelistedNFT('')).toThrow(ValidationError);
+    });
+
+    it('error details should include the rejected address and the whitelist', () => {
+      const nonWhitelistedAddress = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      try {
+        validateWhitelistedNFT(nonWhitelistedAddress);
+      } catch (error) {
+        expect((error as ValidationError).details).toMatchObject({
+          nftAddress: nonWhitelistedAddress,
+          whitelistedCollections: WHITELISTED_NFT_COLLECTIONS,
+        });
+      }
     });
   });
 

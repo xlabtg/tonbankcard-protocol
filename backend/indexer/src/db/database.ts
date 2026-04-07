@@ -5,8 +5,27 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
+interface AccountHistoryResult {
+  events: Array<{
+    eventType: 'transfer' | 'payment' | 'state_change';
+    timestamp: number;
+    blockNumber: number;
+    transactionHash: string;
+    details: any;
+  }>;
+  totalCount: number;
+}
+
+interface AccountHistoryCache {
+  result: AccountHistoryResult;
+  cachedAt: number;
+}
+
+const CACHE_TTL_MS = 5000; // 5 seconds
+
 export class IndexerDatabase {
   private db: Database.Database;
+  private historyCache: Map<string, AccountHistoryCache> = new Map();
 
   constructor(dbPath: string) {
     // Ensure directory exists
@@ -165,6 +184,10 @@ export class IndexerDatabase {
     // Update account snapshots
     this.updateAccountSnapshot(event.fromNft, event.blockNumber);
     this.updateAccountSnapshot(event.toNft, event.blockNumber);
+
+    // Invalidate history cache for affected accounts
+    this.invalidateHistoryCache(event.fromNft);
+    this.invalidateHistoryCache(event.toNft);
   }
 
   /**
@@ -200,6 +223,10 @@ export class IndexerDatabase {
     // Update account snapshots
     this.updateAccountSnapshot(event.payerNft, event.blockNumber);
     this.updateAccountSnapshot(event.merchantNft, event.blockNumber);
+
+    // Invalidate history cache for affected accounts
+    this.invalidateHistoryCache(event.payerNft);
+    this.invalidateHistoryCache(event.merchantNft);
   }
 
   /**
@@ -238,6 +265,9 @@ export class IndexerDatabase {
          VALUES (?, ?, ?, ?)`
       )
       .run(event.nftAddress, event.newState, event.blockNumber, now);
+
+    // Invalidate history cache for affected account
+    this.invalidateHistoryCache(event.nftAddress);
   }
 
   /**
@@ -303,95 +333,116 @@ export class IndexerDatabase {
   }
 
   /**
-   * Get account history
+   * Get account history using UNION ALL for efficient single-pass query with keyset pagination.
+   *
+   * Supports two pagination modes:
+   * - Offset-based: provide offset (legacy, slower for deep pages)
+   * - Keyset-based: provide beforeTimestamp to page efficiently through large histories
    */
   getAccountHistory(
     nftAddress: string,
     limit: number = 100,
-    offset: number = 0
-  ): {
-    events: Array<{
-      eventType: 'transfer' | 'payment' | 'state_change';
-      timestamp: number;
-      blockNumber: number;
-      transactionHash: string;
-      details: any;
-    }>;
-    totalCount: number;
-  } {
-    const transfers = this.db
-      .prepare(
-        `SELECT block_number, transaction_hash, timestamp, from_nft, to_nft, amount_tbc, payload_hash
-         FROM internal_transfers
-         WHERE from_nft = ? OR to_nft = ?
-         ORDER BY timestamp DESC
-         LIMIT ? OFFSET ?`
-      )
-      .all(nftAddress, nftAddress, limit, offset) as any[];
+    offset: number = 0,
+    beforeTimestamp?: number
+  ): AccountHistoryResult {
+    const cacheKey = `${nftAddress}:${limit}:${offset}:${beforeTimestamp ?? ''}`;
+    const now = Date.now();
+    const cached = this.historyCache.get(cacheKey);
+    if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
+      return cached.result;
+    }
 
-    const payments = this.db
-      .prepare(
-        `SELECT block_number, transaction_hash, timestamp, payer_nft, merchant_nft, amount_tbc, payload_hash
-         FROM merchant_payments
-         WHERE payer_nft = ? OR merchant_nft = ?
-         ORDER BY timestamp DESC
-         LIMIT ? OFFSET ?`
-      )
-      .all(nftAddress, nftAddress, limit, offset) as any[];
+    // Build UNION ALL query: each sub-query selects from one table with a common shape.
+    // Composite indexes on (nft_address/from_nft/to_nft, timestamp DESC) are used per sub-query.
+    // The outer query sorts and paginates the unified result set in a single pass.
+    const tsFilter = beforeTimestamp !== undefined ? 'AND timestamp < ?' : '';
 
-    const stateChanges = this.db
-      .prepare(
-        `SELECT block_number, transaction_hash, timestamp, old_state, new_state
-         FROM account_state_changes
-         WHERE nft_address = ?
-         ORDER BY timestamp DESC
-         LIMIT ? OFFSET ?`
-      )
-      .all(nftAddress, limit, offset) as any[];
+    const unionSql = `
+      SELECT 'transfer' AS event_type, block_number, transaction_hash, timestamp,
+             from_nft, to_nft, amount_tbc, payload_hash, NULL AS old_state, NULL AS new_state
+      FROM internal_transfers
+      WHERE (from_nft = ? OR to_nft = ?) ${tsFilter}
+      UNION ALL
+      SELECT 'payment' AS event_type, block_number, transaction_hash, timestamp,
+             payer_nft AS from_nft, merchant_nft AS to_nft, amount_tbc, payload_hash, NULL AS old_state, NULL AS new_state
+      FROM merchant_payments
+      WHERE (payer_nft = ? OR merchant_nft = ?) ${tsFilter}
+      UNION ALL
+      SELECT 'state_change' AS event_type, block_number, transaction_hash, timestamp,
+             NULL AS from_nft, NULL AS to_nft, NULL AS amount_tbc, NULL AS payload_hash, old_state, new_state
+      FROM account_state_changes
+      WHERE nft_address = ? ${tsFilter}
+    `;
 
-    const events = [
-      ...transfers.map((t: any) => ({
-        eventType: 'transfer' as const,
-        timestamp: t.timestamp,
-        blockNumber: t.block_number,
-        transactionHash: t.transaction_hash,
-        details: {
-          from: t.from_nft,
-          to: t.to_nft,
-          amount: t.amount_tbc,
-          payloadHash: t.payload_hash,
-        },
-      })),
-      ...payments.map((p: any) => ({
-        eventType: 'payment' as const,
-        timestamp: p.timestamp,
-        blockNumber: p.block_number,
-        transactionHash: p.transaction_hash,
-        details: {
-          payer: p.payer_nft,
-          merchant: p.merchant_nft,
-          amount: p.amount_tbc,
-          payloadHash: p.payload_hash,
-        },
-      })),
-      ...stateChanges.map((s: any) => ({
-        eventType: 'state_change' as const,
-        timestamp: s.timestamp,
-        blockNumber: s.block_number,
-        transactionHash: s.transaction_hash,
-        details: {
-          oldState: s.old_state,
-          newState: s.new_state,
-        },
-      })),
-    ].sort((a, b) => b.timestamp - a.timestamp);
+    const countSql = `SELECT COUNT(*) AS cnt FROM (${unionSql})`;
+    const pageSql = `${unionSql} ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
 
-    const totalCount = events.length; // Simplified - in production, use separate COUNT query
+    let bindArgs: any[];
+    if (beforeTimestamp !== undefined) {
+      bindArgs = [nftAddress, nftAddress, beforeTimestamp, nftAddress, nftAddress, beforeTimestamp, nftAddress, beforeTimestamp];
+    } else {
+      bindArgs = [nftAddress, nftAddress, nftAddress, nftAddress, nftAddress];
+    }
 
-    return {
-      events: events.slice(0, limit),
-      totalCount,
-    };
+    const totalCount = (this.db.prepare(countSql).get(...bindArgs) as any).cnt as number;
+    const rows = this.db.prepare(pageSql).all(...bindArgs, limit, offset) as any[];
+
+    const events = rows.map((row: any) => {
+      if (row.event_type === 'transfer') {
+        return {
+          eventType: 'transfer' as const,
+          timestamp: row.timestamp,
+          blockNumber: row.block_number,
+          transactionHash: row.transaction_hash,
+          details: {
+            from: row.from_nft,
+            to: row.to_nft,
+            amount: row.amount_tbc,
+            payloadHash: row.payload_hash,
+          },
+        };
+      } else if (row.event_type === 'payment') {
+        return {
+          eventType: 'payment' as const,
+          timestamp: row.timestamp,
+          blockNumber: row.block_number,
+          transactionHash: row.transaction_hash,
+          details: {
+            payer: row.from_nft,
+            merchant: row.to_nft,
+            amount: row.amount_tbc,
+            payloadHash: row.payload_hash,
+          },
+        };
+      } else {
+        return {
+          eventType: 'state_change' as const,
+          timestamp: row.timestamp,
+          blockNumber: row.block_number,
+          transactionHash: row.transaction_hash,
+          details: {
+            oldState: row.old_state,
+            newState: row.new_state,
+          },
+        };
+      }
+    });
+
+    const result: AccountHistoryResult = { events, totalCount };
+    this.historyCache.set(cacheKey, { result, cachedAt: now });
+    return result;
+  }
+
+  /**
+   * Invalidate the history cache for a specific account.
+   * Called internally when new events are inserted for that account.
+   */
+  private invalidateHistoryCache(nftAddress: string): void {
+    for (const key of this.historyCache.keys()) {
+      if (key.startsWith(`${nftAddress}:`)) {
+        this.historyCache.delete(key);
+      }
+    }
   }
 
   /**
