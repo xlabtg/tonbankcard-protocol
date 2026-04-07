@@ -45,19 +45,6 @@ export function generateIdempotencyKey(request: CreateInvoiceRequest): string {
 }
 
 /**
- * Hash an API key for safe storage and comparison
- *
- * Uses SHA-256 to produce a fixed-length hash. The raw key is never stored;
- * only the hash is persisted in the API key store.
- *
- * @param apiKey - Raw API key string
- * @returns SHA-256 hex digest
- */
-export function hashApiKey(apiKey: string): string {
-  return crypto.createHash('sha256').update(apiKey).digest('hex');
-}
-
-/**
  * Hash metadata for on-chain payload matching
  *
  * This hash is used to match on-chain MerchantPayment events
@@ -174,6 +161,26 @@ export function sanitizeMetadata(metadata?: InvoiceMetadata): InvoiceMetadata | 
   }
 
   return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
+
+/**
+ * Hash an API key for secure storage/lookup
+ *
+ * Uses HMAC-SHA256 with a server-side secret so that the hash cannot be
+ * reversed or pre-computed without knowledge of the secret.  The secret
+ * defaults to the API_KEY_SECRET environment variable; tests may override it.
+ *
+ * IMPORTANT: Never store or log the plaintext API key – only the hash.
+ *
+ * @param apiKeyValue - Plaintext API key as supplied by the caller
+ * @param secret      - HMAC secret (defaults to process.env.API_KEY_SECRET)
+ * @returns Lowercase hex HMAC-SHA256 digest
+ */
+export function hashApiKey(
+  apiKeyValue: string,
+  secret: string = process.env.API_KEY_SECRET || 'default-dev-secret'
+): string {
+  return crypto.createHmac('sha256', secret).update(apiKeyValue).digest('hex');
 }
 
 /**
