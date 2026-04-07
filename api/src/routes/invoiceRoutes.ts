@@ -28,12 +28,25 @@ import {
 /**
  * ⚠️ PRODUCTION WARNING: In-memory stores MUST NOT be used in production.
  *
- * For production, use:
- * - Redis for rate limiting (with automatic TTL expiration)
- * - PostgreSQL/MongoDB for API key storage
+ * `rateLimitBuckets` and `apiKeyStore` below are process-local Maps that:
+ *  - Lose all state on server restart or crash
+ *  - Are not shared across horizontal replicas (each instance enforces limits
+ *    independently, allowing N×RPM through N load-balanced replicas)
+ *  - Grow without bound under sustained load, risking OOM crashes
+ *
+ * For production, replace with:
+ *  - Redis for rate limiting: use a sliding-window or token-bucket algorithm
+ *    backed by Redis atomic operations (e.g., `INCR` + `EXPIRE`, or a library
+ *    such as `rate-limiter-flexible`).
+ *  - PostgreSQL/MongoDB for API key storage: store hashed keys with scoped
+ *    permissions and look them up on each authenticated request.
+ *
+ * The `IInvoiceStorage` / `IIdempotencyStorage` abstractions in
+ * `src/storage/IStorage.ts` demonstrate the pattern to follow when
+ * extracting these in-memory stores into injectable, swappable adapters.
  */
 
-/** Rate limit buckets per API key + endpoint (in-memory, for reference) */
+/** Rate limit buckets per API key + endpoint (in-memory, for reference only) */
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
 
 /**
