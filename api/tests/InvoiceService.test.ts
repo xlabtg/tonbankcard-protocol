@@ -12,7 +12,7 @@ import { ValidationError } from '../src/utils/validation';
 describe('InvoiceService', () => {
   let service: InvoiceService;
   const TEST_API_KEY = 'tbck_test_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d';
-  const TEST_MERCHANT_NFT = 'EQAbc123456789012345678901234567890123456789012345';
+  const TEST_MERCHANT_NFT = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'; // Series 7777 (whitelisted)
 
   beforeEach(() => {
     service = new InvoiceService();
