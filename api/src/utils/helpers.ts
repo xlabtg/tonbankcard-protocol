@@ -164,6 +164,26 @@ export function sanitizeMetadata(metadata?: InvoiceMetadata): InvoiceMetadata | 
 }
 
 /**
+ * Hash an API key for secure storage/lookup
+ *
+ * Uses HMAC-SHA256 with a server-side secret so that the hash cannot be
+ * reversed or pre-computed without knowledge of the secret.  The secret
+ * defaults to the API_KEY_SECRET environment variable; tests may override it.
+ *
+ * IMPORTANT: Never store or log the plaintext API key – only the hash.
+ *
+ * @param apiKeyValue - Plaintext API key as supplied by the caller
+ * @param secret      - HMAC secret (defaults to process.env.API_KEY_SECRET)
+ * @returns Lowercase hex HMAC-SHA256 digest
+ */
+export function hashApiKey(
+  apiKeyValue: string,
+  secret: string = process.env.API_KEY_SECRET || 'default-dev-secret'
+): string {
+  return crypto.createHmac('sha256', secret).update(apiKeyValue).digest('hex');
+}
+
+/**
  * Generate current ISO 8601 timestamp
  *
  * @returns Current timestamp
