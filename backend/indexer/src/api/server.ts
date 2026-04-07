@@ -6,12 +6,51 @@ import { IndexerDatabase } from '../db/database';
 import { IndexerService } from '../services/indexer-service';
 import { IndexerConfig } from '../types/config';
 import pino from 'pino';
+import {
+  RateLimiterMemory,
+  RateLimiterRedis,
+  RateLimiterAbstract,
+  RateLimiterRes,
+} from 'rate-limiter-flexible';
+import Redis from 'ioredis';
+
+/**
+ * Extract the real client IP address.
+ *
+ * When `trustProxy` is true we inspect, in order of preference:
+ *   1. CF-Connecting-IP  (Cloudflare)
+ *   2. X-Forwarded-For   (first / leftmost address, i.e. the actual client)
+ *
+ * Falls back to `req.socket.remoteAddress` when no proxy header is present or
+ * when trust-proxy is disabled.
+ */
+function getClientIp(req: express.Request, trustProxy: boolean): string {
+  if (trustProxy) {
+    const cf = req.headers['cf-connecting-ip'];
+    if (typeof cf === 'string' && cf.trim()) {
+      return cf.trim();
+    }
+
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+      const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+      const first = raw.split(',')[0].trim();
+      if (first) {
+        return first;
+      }
+    }
+  }
+
+  return req.socket?.remoteAddress || 'unknown';
+}
 
 export class ApiServer {
   private app: express.Application;
   private server?: any;
   private logger: pino.Logger;
   private config: IndexerConfig;
+  private rateLimiter!: RateLimiterAbstract;
+  private redisClient?: Redis;
 
   constructor(
     db: IndexerDatabase,
@@ -23,9 +62,60 @@ export class ApiServer {
     this.logger = logger.child({ service: 'api' });
     this.app = express();
 
+    this.setupRateLimiter();
     this.setupMiddleware();
     this.setupRoutes(db, indexer);
     this.setupErrorHandling();
+  }
+
+  /**
+   * Build a rate limiter backed by Redis (distributed, multi-instance safe)
+   * when Redis is configured, or fall back to an in-process memory limiter for
+   * single-instance / development deployments.
+   */
+  private setupRateLimiter(): void {
+    const { windowMs, maxRequests } = this.config.api.rateLimit;
+    // rate-limiter-flexible uses "points" (requests) per "duration" (seconds).
+    const durationSec = Math.ceil(windowMs / 1000);
+
+    if (this.config.redis) {
+      const { host, port, password, db } = this.config.redis;
+      this.redisClient = new Redis({
+        host,
+        port,
+        password: password || undefined,
+        db,
+        // Don't let a Redis outage take the API down – queue commands instead.
+        enableOfflineQueue: false,
+        lazyConnect: true,
+      });
+
+      this.redisClient.on('error', (err) => {
+        this.logger.warn({ err }, 'Redis error – rate limiting may degrade');
+      });
+
+      this.rateLimiter = new RateLimiterRedis({
+        storeClient: this.redisClient,
+        keyPrefix: 'rl_indexer',
+        points: maxRequests,
+        duration: durationSec,
+      });
+
+      this.logger.info(
+        { host, port },
+        'Rate limiter using Redis (distributed mode)'
+      );
+    } else {
+      this.rateLimiter = new RateLimiterMemory({
+        points: maxRequests,
+        duration: durationSec,
+      });
+
+      this.logger.warn(
+        'Rate limiter using in-process memory (single-instance only). ' +
+          'Set REDIS_HOST to enable distributed rate limiting.'
+      );
+    }
   }
 
   private setupMiddleware(): void {
@@ -53,22 +143,41 @@ export class ApiServer {
       next();
     });
 
-    // Simple rate limiting (in production, use proper rate limiter)
-    const requestCounts = new Map<string, { count: number; resetTime: number }>();
-    this.app.use((req, res, next) => {
-      const ip = req.ip || 'unknown';
-      const now = Date.now();
-      const windowMs = this.config.api.rateLimit.windowMs;
-      const maxRequests = this.config.api.rateLimit.maxRequests;
+    // Distributed-safe rate limiting with proper IP extraction and headers
+    const { maxRequests, windowMs } = this.config.api.rateLimit;
+    const trustProxy = this.config.api.trustProxy;
 
-      const record = requestCounts.get(ip);
-      if (!record || now > record.resetTime) {
-        requestCounts.set(ip, { count: 1, resetTime: now + windowMs });
+    this.app.use(async (req, res, next) => {
+      const ip = getClientIp(req, trustProxy);
+
+      try {
+        const rateLimiterRes: RateLimiterRes =
+          await this.rateLimiter.consume(ip);
+
+        const remaining = Math.max(0, rateLimiterRes.remainingPoints);
+        const resetEpochMs = Date.now() + rateLimiterRes.msBeforeNext;
+
+        res.setHeader('X-RateLimit-Limit', maxRequests);
+        res.setHeader('X-RateLimit-Remaining', remaining);
+        res.setHeader('X-RateLimit-Reset', Math.ceil(resetEpochMs / 1000));
+        res.setHeader(
+          'X-RateLimit-Window',
+          Math.ceil(windowMs / 1000)
+        );
+
         next();
-      } else if (record.count < maxRequests) {
-        record.count++;
-        next();
-      } else {
+      } catch (rateLimiterRes: unknown) {
+        const rlRes = rateLimiterRes as RateLimiterRes;
+        const secsToReset = Math.ceil((rlRes.msBeforeNext ?? windowMs) / 1000);
+
+        res.setHeader('Retry-After', secsToReset);
+        res.setHeader('X-RateLimit-Limit', maxRequests);
+        res.setHeader('X-RateLimit-Remaining', 0);
+        res.setHeader(
+          'X-RateLimit-Reset',
+          Math.ceil((Date.now() + (rlRes.msBeforeNext ?? windowMs)) / 1000)
+        );
+
         res.status(429).json({
           error: {
             code: 'RATE_LIMIT_EXCEEDED',
@@ -137,6 +246,15 @@ export class ApiServer {
   async start(): Promise<void> {
     const { host, port } = this.config.api;
 
+    // Connect to Redis lazily now that the server is starting
+    if (this.redisClient) {
+      try {
+        await this.redisClient.connect();
+      } catch (err) {
+        this.logger.warn({ err }, 'Could not connect to Redis on startup');
+      }
+    }
+
     return new Promise((resolve) => {
       this.server = this.app.listen(port, host, () => {
         this.logger.info({ host, port }, 'API server started');
@@ -146,6 +264,14 @@ export class ApiServer {
   }
 
   async stop(): Promise<void> {
+    if (this.redisClient) {
+      try {
+        await this.redisClient.quit();
+      } catch {
+        // ignore
+      }
+    }
+
     if (!this.server) {
       return;
     }
