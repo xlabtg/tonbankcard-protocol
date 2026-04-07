@@ -106,41 +106,67 @@ These invariants form the basis for:
 
 **Formal Definition:**
 ```
-∀ role R in [admin, deployer, operator, risk_authority, lending_adapter]:
+∀ role R in [admin, operator, risk_authority, lending_adapter]:
   ∀ account A:
     R CANNOT initiate fund transfer from A
     R CANNOT withdraw from A
     R CANNOT modify balance(A) except through user-initiated transfers
     R CANNOT upgrade contracts to bypass these restrictions
+    R CAN transfer the admin role to another address only via the two-phase timelock
 ```
 
 **Guaranteed Properties:**
 - No role other than the NFT owner can initiate fund transfers
-- Admin roles (deployer, risk authority, lending adapter) can only set flags/states
+- Admin roles (admin, risk authority, lending adapter) can only set flags/states
 - No emergency withdrawal functions exist
 - No upgradeable proxies that could bypass these rules
 - Development/testing admin functions MUST be removed before production
+- Admin role is transferable but ONLY via two-phase timelock (7-day delay)
+- Admin role transfer does NOT affect user fund ownership or balances
 
 **Implementation Requirements:**
 1. Admin roles limited to non-financial operations:
+   - Admin: Whitelist NFT collections, initialize accounts (testing only)
    - Risk authority: Set/clear fraud locks only
    - Lending adapter: Set/clear collateral locks only
-   - Deployer: Initialize accounts (testing only, must be removed)
 2. No `onlyAdmin` functions that move funds
 3. No upgradeable proxy patterns
 4. All contracts are immutable after deployment
 
+**Admin Transfer Mechanism (Issue #96):**
+
+To prevent single-point-of-failure from the deployer key and allow migration to DAO/multisig, the `admin` role supports two-phase transferable ownership with a 7-day timelock:
+
+1. **Phase 1 — Propose** (`ProposeAdminTransfer` / `MerchantProposeAdminTransfer`):
+   - Only the current admin can call this
+   - Records the proposed new admin and a timestamp = `now() + 7 days`
+   - Does NOT change admin immediately
+2. **Phase 2 — Execute** (`ExecuteAdminTransfer` / `MerchantExecuteAdminTransfer`):
+   - Only the proposed new admin can call this
+   - Can only execute after the 7-day timelock has elapsed
+   - Commits the admin change; clears the pending proposal
+3. **Cancel** (`CancelAdminTransfer` / `MerchantCancelAdminTransfer`):
+   - Only the current admin can cancel a pending proposal before it executes
+
+The same two-phase timelock pattern applies to `risk_authority` and `lending_adapter` roles in `account-locks.fc` (op codes `0x4001`–`0x4013`).
+
 **Contract Mapping:**
-- `PaymentHub.tact`: `deployer` can only `InitializeAccount` (testing only, lines 229-240)
-- `account-locks.fc`: Risk authority sets locks, NOT moves funds (lines 160-217)
-- `MerchantPaymentHub.tact`: Admin setup functions are test-only (lines 223-245)
+- `PaymentHub.tact`: `admin` field replaces `deployer`; admin transfer via `ProposeAdminTransfer`/`ExecuteAdminTransfer`/`CancelAdminTransfer`
+- `MerchantPaymentHub.tact`: Same pattern via `MerchantProposeAdminTransfer`/`MerchantExecuteAdminTransfer`/`MerchantCancelAdminTransfer`
+- `account-locks.fc`: `risk_authority` and `lending_adapter` transferable via `op::propose_risk_authority` / `op::execute_risk_authority` / `op::cancel_risk_authority` and equivalents for `lending_adapter`
 
 **Test Coverage:**
 - `tests/invariants/I3-no-admin-fund-control.spec.ts`
-- Negative test: Admin cannot withdraw user funds
-- Negative test: Risk authority cannot move funds
-- Negative test: Deployer cannot drain account balances
-- Code audit: Verify no admin override in fund transfer paths
+  - Negative test: Admin cannot withdraw user funds
+  - Negative test: Risk authority cannot move funds
+  - Negative test: Deployer cannot drain account balances
+  - Positive test: Admin can propose a transfer
+  - Negative test: Execution before timelock expiry is rejected
+  - Positive test: Execution after timelock succeeds; user funds unchanged
+  - Negative test: New admin cannot move user funds (I3 preserved post-transfer)
+  - Positive test: Admin can cancel a pending transfer
+- `tests/admin-transfer/PaymentHub-admin-transfer.spec.ts` — comprehensive admin transfer tests
+- `tests/admin-transfer/MerchantPaymentHub-admin-transfer.spec.ts` — comprehensive admin transfer tests
 
 ---
 
