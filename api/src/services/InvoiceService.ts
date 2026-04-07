@@ -43,6 +43,8 @@ import {
   hashMetadata,
 } from '../utils/helpers';
 
+import { ApiKeyService, apiKeyService } from './ApiKeyService';
+
 import {
   IInvoiceStorage,
   IIdempotencyStorage,
@@ -86,19 +88,24 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
  * ```
  */
 export class InvoiceService {
+  private readonly apiKeyService: ApiKeyService;
   private readonly invoiceStorage: IInvoiceStorage;
   private readonly idempotencyStorage: IIdempotencyStorage;
 
   /**
+   * @param keyService         - API key service for merchant authorization.
+   *   Defaults to the module-level singleton.
    * @param invoiceStorage     - Persistent store for invoices.
    *   Defaults to `InMemoryInvoiceStorage` (⚠️ not for production).
    * @param idempotencyStorage - Persistent store for idempotency keys.
    *   Defaults to `InMemoryIdempotencyStorage` (⚠️ not for production).
    */
   constructor(
+    keyService: ApiKeyService = apiKeyService,
     invoiceStorage: IInvoiceStorage = new InMemoryInvoiceStorage(),
     idempotencyStorage: IIdempotencyStorage = new InMemoryIdempotencyStorage()
   ) {
+    this.apiKeyService = keyService;
     this.invoiceStorage = invoiceStorage;
     this.idempotencyStorage = idempotencyStorage;
   }
@@ -121,14 +128,22 @@ export class InvoiceService {
     // Validate inputs
     this.validateCreateInvoiceRequest(request);
 
-    // TODO: In production, validate merchantApiKey and verify it's authorized
-    // for the merchant_nft address
-    // if (!this.isAuthorizedMerchant(merchantApiKey, request.merchant_nft)) {
-    //   throw new ValidationError(
-    //     ErrorCode.UNAUTHORIZED_MERCHANT,
-    //     'Merchant NFT not authorized for this API key'
-    //   );
-    // }
+    // Verify the API key is authorised for the requested merchant NFT.
+    // This prevents any API key holder from creating invoices on behalf of
+    // a merchant they are not linked to (UNAUTHORIZED_MERCHANT protection).
+    if (!this.apiKeyService.isAuthorizedMerchant(merchantApiKey, request.merchant_nft)) {
+      // Audit-log cross-merchant attempts so operators can detect misuse.
+      console.warn(
+        `[AUDIT] Unauthorized invoice creation attempt: ` +
+        `merchant_nft="${request.merchant_nft}" ` +
+        `api_key_prefix="${merchantApiKey.slice(0, 12)}…" ` +
+        `timestamp="${new Date().toISOString()}"`
+      );
+      throw new ValidationError(
+        ErrorCode.UNAUTHORIZED_MERCHANT,
+        'API key not authorized for this merchant NFT'
+      );
+    }
 
     // Check idempotency (with TTL support)
     const idempotencyKey = generateIdempotencyKey(request);

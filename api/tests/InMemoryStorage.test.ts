@@ -186,11 +186,19 @@ describe('InMemoryIdempotencyStorage', () => {
 // ---------------------------------------------------------------------------
 
 import { InvoiceService } from '../src/services/InvoiceService';
+import { ApiKeyService } from '../src/services/ApiKeyService';
 import { CreateInvoiceRequest } from '../src/types/invoice';
 
 describe('InvoiceService with injected storage', () => {
   const TEST_API_KEY = 'tbck_test_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d';
   const TEST_MERCHANT_NFT = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'; // Series 7777 (whitelisted)
+
+  let keyService: ApiKeyService;
+
+  beforeEach(() => {
+    keyService = new ApiKeyService();
+    keyService.registerKey(TEST_API_KEY, TEST_MERCHANT_NFT);
+  });
 
   const validRequest: CreateInvoiceRequest = {
     merchant_nft: TEST_MERCHANT_NFT,
@@ -204,11 +212,11 @@ describe('InvoiceService with injected storage', () => {
     const idempotencyStorage = new InMemoryIdempotencyStorage();
 
     // Create invoice through service A
-    const serviceA = new InvoiceService(invoiceStorage, idempotencyStorage);
+    const serviceA = new InvoiceService(keyService, invoiceStorage, idempotencyStorage);
     const created  = await serviceA.createInvoice(validRequest, TEST_API_KEY);
 
     // Retrieve invoice through a different service instance sharing the same storage
-    const serviceB   = new InvoiceService(invoiceStorage, idempotencyStorage);
+    const serviceB   = new InvoiceService(keyService, invoiceStorage, idempotencyStorage);
     const retrieved  = await serviceB.getInvoice(created.invoice_id);
 
     expect(retrieved.invoice_id).toBe(created.invoice_id);
@@ -217,10 +225,12 @@ describe('InvoiceService with injected storage', () => {
 
   it('two services with independent storage should NOT share data', async () => {
     const serviceA = new InvoiceService(
+      keyService,
       new InMemoryInvoiceStorage(),
       new InMemoryIdempotencyStorage()
     );
     const serviceB = new InvoiceService(
+      keyService,
       new InMemoryInvoiceStorage(),
       new InMemoryIdempotencyStorage()
     );
@@ -234,10 +244,16 @@ describe('InvoiceService with injected storage', () => {
 
   it('default constructor should use in-memory storage', async () => {
     // Constructed without arguments — should still work (in-memory defaults)
+    // The default keyService singleton has no registered keys, so we register one first
+    const { apiKeyService: defaultKeyService } = await import('../src/services/ApiKeyService');
+    defaultKeyService.registerKey(TEST_API_KEY, TEST_MERCHANT_NFT);
+
     const service  = new InvoiceService();
     const invoice  = await service.createInvoice(validRequest, TEST_API_KEY);
     const retrieved = await service.getInvoice(invoice.invoice_id);
 
     expect(retrieved.invoice_id).toBe(invoice.invoice_id);
+
+    defaultKeyService.clearAll();
   });
 });

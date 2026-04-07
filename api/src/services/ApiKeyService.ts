@@ -1,7 +1,7 @@
 /**
  * API Key Service
  *
- * Manages API key registration and secure lookup.
+ * Manages API key registration, secure lookup, and merchant authorization checks.
  *
  * Design principles
  * -----------------
@@ -10,7 +10,9 @@
  *    does not expose usable credentials.
  * 2. Lookup is always by hash, never by plaintext value.
  * 3. The merchant_nft bound to the key is returned and verified at the call
- *    site (authenticateWithPermission) to prevent cross-merchant abuse.
+ *    site (isAuthorizedMerchant) to prevent cross-merchant abuse.
+ * 4. Authorization checks are cached with a short TTL (60 s) to reduce
+ *    redundant lookups on hot paths without meaningfully delaying revocation.
  *
  * In production this in-memory store must be replaced with a persistent
  * database (PostgreSQL, MongoDB, etc.).
@@ -27,6 +29,18 @@ import { ErrorCode } from '../types/invoice';
  * ⚠️ PRODUCTION WARNING: Replace with a database-backed store.
  */
 const apiKeyRegistry = new Map<string, ApiKey>();
+
+/** Cache entry for authorization results */
+interface AuthCacheEntry {
+  authorized: boolean;
+  expiresAt: number;
+}
+
+/** TTL for the authorization cache (60 seconds) */
+const AUTH_CACHE_TTL_MS = 60 * 1000;
+
+/** Short-lived authorization cache: `${keyHash}:${merchantNft}` → AuthCacheEntry */
+const authCache = new Map<string, AuthCacheEntry>();
 
 export class ApiKeyService {
   /**
@@ -67,7 +81,20 @@ export class ApiKeyService {
     };
 
     apiKeyRegistry.set(keyHash, apiKey);
+    // Invalidate any cached authorization for this key
+    this._invalidateCacheForKey(keyHash, merchantNft);
     return apiKey;
+  }
+
+  /**
+   * Convenience alias for registerApiKey used in tests and simple callers.
+   *
+   * @param plaintextKey - Plaintext API key
+   * @param merchantNft  - NFT address this key is authorised for
+   * @returns Stored ApiKey record
+   */
+  registerKey(plaintextKey: string, merchantNft: string): ApiKey {
+    return this.registerApiKey(plaintextKey, merchantNft);
   }
 
   /**
@@ -101,6 +128,54 @@ export class ApiKeyService {
   }
 
   /**
+   * Check whether a plaintext API key is authorised for the given merchant NFT.
+   *
+   * Results are cached for AUTH_CACHE_TTL_MS to keep hot-path latency low.
+   * The cache is invalidated automatically on expiry and when a key is
+   * registered/deactivated.
+   *
+   * An inactive or expired key is treated as unauthorised.
+   *
+   * @param plaintextKey - Plaintext API key presented by the caller
+   * @param merchantNft  - Merchant NFT address from the invoice request
+   * @returns true if the key is valid, active, and bound to merchantNft
+   */
+  isAuthorizedMerchant(plaintextKey: string, merchantNft: string): boolean {
+    const keyHash = hashApiKey(plaintextKey);
+    const cacheKey = `${keyHash}:${merchantNft}`;
+    const now = Date.now();
+
+    // Return cached result if still valid
+    const cached = authCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.authorized;
+    }
+
+    // Compute fresh result
+    const apiKey = apiKeyRegistry.get(keyHash);
+    const authorized =
+      apiKey !== undefined &&
+      apiKey.is_active &&
+      apiKey.merchant_nft === merchantNft &&
+      (!apiKey.expires_at || new Date(apiKey.expires_at) >= new Date());
+
+    // Cache and return
+    authCache.set(cacheKey, { authorized, expiresAt: now + AUTH_CACHE_TTL_MS });
+    return authorized;
+  }
+
+  /**
+   * Invalidate the authorization cache for a specific key/merchant pair.
+   * Call this when an API key is revoked or its merchant NFT changes.
+   *
+   * @param keyHash     - Hash of the raw API key
+   * @param merchantNft - Merchant NFT address
+   */
+  private _invalidateCacheForKey(keyHash: string, merchantNft: string): void {
+    authCache.delete(`${keyHash}:${merchantNft}`);
+  }
+
+  /**
    * Update the last_used_at timestamp for a key.
    *
    * @param keyHash - The key_hash of the key to update
@@ -123,6 +198,8 @@ export class ApiKeyService {
     if (apiKey) {
       apiKey.is_active = false;
       apiKeyRegistry.set(keyHash, apiKey);
+      // Invalidate cached authorization for all merchant NFTs bound to this key
+      this._invalidateCacheForKey(keyHash, apiKey.merchant_nft);
     }
   }
 
@@ -138,6 +215,7 @@ export class ApiKeyService {
    */
   clearAll(): void {
     apiKeyRegistry.clear();
+    authCache.clear();
   }
 }
 
