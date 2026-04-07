@@ -190,7 +190,7 @@ import { CreateInvoiceRequest } from '../src/types/invoice';
 
 describe('InvoiceService with injected storage', () => {
   const TEST_API_KEY = 'tbck_test_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d';
-  const TEST_MERCHANT_NFT = 'EQAbcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ';
+  const TEST_MERCHANT_NFT = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'; // Series 7777 (whitelisted)
 
   const validRequest: CreateInvoiceRequest = {
     merchant_nft: TEST_MERCHANT_NFT,
