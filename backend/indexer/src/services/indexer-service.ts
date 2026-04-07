@@ -246,6 +246,81 @@ export class IndexerService {
   }
 
   /**
+   * Fetch a URL with timeout and exponential backoff retry.
+   *
+   * Retries on network errors and 5xx responses up to maxRetries times.
+   * Uses AbortController to enforce a per-attempt timeout.
+   *
+   * @param url - The URL to fetch
+   * @param maxRetries - Maximum number of attempts (default 3)
+   * @param timeoutMs - Per-attempt timeout in milliseconds (default 10000)
+   */
+  private async fetchWithRetry(
+    url: string,
+    maxRetries: number = 3,
+    timeoutMs: number = 10000
+  ): Promise<any> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      let resp: Response;
+      try {
+        resp = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        lastError = error;
+
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        this.logger.warn(
+          { url, attempt, error },
+          'Fetch failed, retrying...'
+        );
+        await this.delay(2 ** attempt * 1000);
+        continue;
+      }
+
+      if (!resp.ok) {
+        const httpError = new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+
+        // Do not retry on client errors (4xx)
+        if (resp.status < 500) {
+          throw httpError;
+        }
+
+        // Retry on 5xx errors with exponential backoff
+        if (attempt === maxRetries) {
+          throw httpError;
+        }
+
+        this.logger.warn(
+          { url, attempt, status: resp.status },
+          'Fetch failed with 5xx, retrying...'
+        );
+        await this.delay(2 ** attempt * 1000);
+        continue;
+      }
+
+      return await resp.json();
+    }
+
+    throw lastError;
+  }
+
+  /**
+   * Delay execution for a given number of milliseconds.
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
    * Fetch transactions for tracked contracts via TON HTTP API
    *
    * Uses getTransactions endpoint to fetch recent transactions for each
@@ -271,16 +346,11 @@ export class IndexerService {
         const url =
           `${baseUrl}/getTransactions?address=${address}&limit=50${apiKeyParam}`;
 
-        const resp = await fetch(url);
-        if (!resp.ok) {
-          this.logger.warn(
-            { address, status: resp.status },
-            'Failed to fetch transactions'
-          );
-          continue;
-        }
+        const data = (await this.fetchWithRetry(url)) as {
+          ok?: boolean;
+          result?: any[];
+        };
 
-        const data = (await resp.json()) as { ok?: boolean; result?: any[] };
         if (data.ok && data.result) {
           for (const tx of data.result) {
             allTransactions.push({
