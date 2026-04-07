@@ -20,7 +20,7 @@ import { ErrorCode } from '../src/types/invoice';
 describe('Validation Utilities', () => {
   describe('validateTonAddress', () => {
     it('should accept valid TON address', () => {
-      const validAddress = 'EQAbc123456789012345678901234567890123456789012345';
+      const validAddress = 'EQAbcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ';
       expect(() => validateTonAddress(validAddress)).not.toThrow();
     });
 
