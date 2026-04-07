@@ -45,6 +45,19 @@ export function generateIdempotencyKey(request: CreateInvoiceRequest): string {
 }
 
 /**
+ * Hash an API key for safe storage and comparison
+ *
+ * Uses SHA-256 to produce a fixed-length hash. The raw key is never stored;
+ * only the hash is persisted in the API key store.
+ *
+ * @param apiKey - Raw API key string
+ * @returns SHA-256 hex digest
+ */
+export function hashApiKey(apiKey: string): string {
+  return crypto.createHash('sha256').update(apiKey).digest('hex');
+}
+
+/**
  * Hash metadata for on-chain payload matching
  *
  * This hash is used to match on-chain MerchantPayment events

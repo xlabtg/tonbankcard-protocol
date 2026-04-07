@@ -6,16 +6,27 @@
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { InvoiceService } from '../src/services/InvoiceService';
+import { ApiKeyService } from '../src/services/ApiKeyService';
 import { CreateInvoiceRequest } from '../src/types/invoice';
 import { ValidationError } from '../src/utils/validation';
 
 describe('InvoiceService', () => {
   let service: InvoiceService;
+  let keyService: ApiKeyService;
   const TEST_API_KEY = 'tbck_test_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d';
-  const TEST_MERCHANT_NFT = 'EQAbc123456789012345678901234567890123456789012345';
+  const OTHER_API_KEY = 'tbck_test_other_9z8y7x6w5v4u3t2s1r0q9p8o7n6m5l4k';
+  // Valid TON addresses: EQ + 46 base64url chars = 48 chars total
+  const TEST_MERCHANT_NFT = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const OTHER_MERCHANT_NFT = 'EQBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
 
   beforeEach(() => {
-    service = new InvoiceService();
+    keyService = new ApiKeyService();
+    // Register the test API key so authorization checks pass
+    keyService.registerKey(TEST_API_KEY, TEST_MERCHANT_NFT);
+    // Inject the key service via the module-level singleton override for tests
+    // We create InvoiceService instances that share this keyService by
+    // passing it through the constructor (production uses the singleton).
+    service = new InvoiceService(keyService);
   });
 
   describe('createInvoice', () => {
@@ -122,6 +133,57 @@ describe('InvoiceService', () => {
         service.createInvoice(invalidRequest, TEST_API_KEY)
       ).rejects.toThrow(ValidationError);
     });
+
+    it('should reject when API key is not registered', async () => {
+      await expect(
+        service.createInvoice(validRequest, 'tbck_unknown_key_that_was_never_registered')
+      ).rejects.toThrow(ValidationError);
+
+      await expect(
+        service.createInvoice(validRequest, 'tbck_unknown_key_that_was_never_registered')
+      ).rejects.toThrow('API key not authorized for this merchant NFT');
+    });
+
+    it('should reject when API key belongs to a different merchant NFT', async () => {
+      // Register OTHER_API_KEY for OTHER_MERCHANT_NFT
+      keyService.registerKey(OTHER_API_KEY, OTHER_MERCHANT_NFT);
+
+      // Attempt to create an invoice for TEST_MERCHANT_NFT using OTHER_API_KEY
+      await expect(
+        service.createInvoice(validRequest, OTHER_API_KEY)
+      ).rejects.toThrow(ValidationError);
+
+      await expect(
+        service.createInvoice(validRequest, OTHER_API_KEY)
+      ).rejects.toThrow('API key not authorized for this merchant NFT');
+    });
+
+    it('should allow each API key only for its own merchant NFT', async () => {
+      keyService.registerKey(OTHER_API_KEY, OTHER_MERCHANT_NFT);
+
+      const requestForOther: CreateInvoiceRequest = {
+        ...validRequest,
+        merchant_nft: OTHER_MERCHANT_NFT,
+      };
+
+      // Each key succeeds only for its own merchant
+      const inv1 = await service.createInvoice(validRequest, TEST_API_KEY);
+      const inv2 = await service.createInvoice(requestForOther, OTHER_API_KEY);
+
+      expect(inv1.merchant_nft).toBe(TEST_MERCHANT_NFT);
+      expect(inv2.merchant_nft).toBe(OTHER_MERCHANT_NFT);
+    });
+
+    it('should error with UNAUTHORIZED_MERCHANT code for wrong API key', async () => {
+      let caught: unknown;
+      try {
+        await service.createInvoice(validRequest, 'tbck_wrong_key_xxxxxxxxxxxxxxxx');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(ValidationError);
+      expect((caught as ValidationError).code).toBe('UNAUTHORIZED_MERCHANT');
+    });
   });
 
   describe('getInvoice', () => {
@@ -213,7 +275,7 @@ describe('InvoiceService', () => {
 
       // Simulate settlement event processing
       await service.processSettlementEvent({
-        payer_nft: 'EQDef456789012345678901234567890123456789012345',
+        payer_nft: 'EQCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
         merchant_nft: TEST_MERCHANT_NFT,
         amount_tbc: '1000000000',
         payload_hash: 'test_hash',
