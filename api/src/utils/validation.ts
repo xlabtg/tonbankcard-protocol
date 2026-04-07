@@ -66,19 +66,31 @@ export function validateTonAddress(address: string): boolean {
 /**
  * Validate NFT address is in whitelisted collections
  *
+ * Checks the NFT address against the static whitelist of known collection addresses.
+ *
+ * Note: Full on-chain verification (querying the NFT item contract to retrieve its
+ * collection address and then calling PaymentHub.isCollectionWhitelisted) requires
+ * TON SDK integration and should be implemented before production use.
+ *
  * @param nftAddress - NFT address to validate
  * @returns true if whitelisted
- * @throws ValidationError if not whitelisted
+ * @throws ValidationError if address format is invalid or not in whitelist
  */
 export function validateWhitelistedNFT(nftAddress: string): boolean {
-  // Note: In production, this should verify the NFT belongs to a whitelisted collection
-  // by querying the blockchain. For the reference implementation, we perform basic validation.
-
   validateTonAddress(nftAddress);
 
-  // In production: Query NFT item to get collection address
-  // For now, we accept any valid TON address
-  // TODO: Implement on-chain verification via TON SDK
+  const isWhitelisted = (WHITELISTED_NFT_COLLECTIONS as readonly string[]).includes(nftAddress);
+
+  if (!isWhitelisted) {
+    throw new ValidationError(
+      ErrorCode.NFT_NOT_WHITELISTED,
+      'NFT address is not from a whitelisted collection',
+      {
+        nftAddress,
+        whitelistedCollections: WHITELISTED_NFT_COLLECTIONS,
+      }
+    );
+  }
 
   return true;
 }
