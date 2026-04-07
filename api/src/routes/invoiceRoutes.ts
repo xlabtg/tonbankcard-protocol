@@ -357,9 +357,35 @@ export function rateLimitMiddleware(req: Request, res: Response, next: NextFunct
 
 /**
  * CORS middleware configuration
+ *
+ * Never defaults to wildcard '*'. When ALLOWED_ORIGINS is unset (e.g. in
+ * production without explicit configuration) all cross-origin requests are
+ * rejected. Server-to-server calls that carry no Origin header are always
+ * allowed.
+ *
+ * Set the ALLOWED_ORIGINS environment variable to a comma-separated list of
+ * permitted origins:
+ *   ALLOWED_ORIGINS=https://yourdomain.com,https://staging.yourdomain.com
+ *
+ * Fixes: https://github.com/xlabtg/tonbankcard-protocol/issues/92
  */
+const _allowedOrigins: string[] = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+
 export const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow server-to-server requests (no Origin header present)
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    if (_allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: false,
