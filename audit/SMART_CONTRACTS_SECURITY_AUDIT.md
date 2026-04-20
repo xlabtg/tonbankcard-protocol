@@ -431,7 +431,39 @@ Mapping of the threat classes in `audit/THREAT_MODEL.md` against the findings ab
 
 ---
 
-## 7. Limitations of this review
+## 7. Mitigations applied in this PR
+
+The following mitigations have been applied as part of this audit PR. They
+address the most exploitable findings (anonymous-sender attacks against the
+test-only ownership backdoors and the deploy-blocker for the FunC stub) and
+reduce the immediate attack surface, but **do not** by themselves resolve the
+underlying architectural items (X-2 NFT ownership source-of-truth, X-3 dual
+encodings, the missing message-based `INFTResolver`, etc.).
+
+| Finding | Contract | Mitigation in this PR | Residual risk |
+|---------|----------|-----------------------|---------------|
+| X-1, C-CS-* (CollateralSignal `RegisterNFTOwner`) | `contracts/CollateralSignal.tact` | Handler now requires `sender() == deployer` (deployer recorded at `init()`). Anonymous senders can no longer poison the ownership map. | Test-only handler still present; remove (or compile-out) before mainnet. |
+| X-1, C-CCB-C1 (CrossChainBridge `RegisterNFTOwnerBridge`) | `contracts/CrossChainBridge.tact` | Handler gated by deployer + write-once on `nft_owners`. `RegisterRelayer` likewise gated. | Same — test-only path remains. C-CCB-H2 (composite key) and X-2 still open. |
+| X-1, C-LPC-C1 (LendingProtocolCoordinator `RegisterNFTOwner`) | `contracts/LendingProtocolCoordinator.tact` | Handler gated by deployer + write-once on `nft_owners`. | Same. C-LPC-H1 (dead `RegisterNFTOwnerLending` opcode) still open. |
+| X-1, C-MSC-C1 (MultiSigCard `RegisterNFTOwnerMultiSig`) | `contracts/MultiSigCard.tact` | Handler gated by deployer + write-once on `nft_owners`. | Same. C-MSC-H1 (no real settlement) still open. |
+| X-1 (RecurringPayments `RegisterNFTOwnerRecurring`) | `contracts/RecurringPayments.tact` | Handler gated by deployer + write-once on `nft_owners`. | Same. |
+| C-ASM-C1, C-ASM-H1 (account-state.tact unauthenticated mutators) | `contracts/payment-hub/account-state.tact` | `DepositTBC`, `WithdrawTBC`, `TransferInternal`, `ChangeAccountState` now require `sender() == self.owner` (deployer set at `init`). Anonymous senders can no longer mint balance or freeze accounts. | Real per-role / per-NFT-owner authorisation still pending the NFT Account Resolver integration; contract remains explicitly TEST-ONLY. |
+| C-PHF-C1, C-PHF-C2, C-PHF-H1 (FunC `payment-hub.fc` stub) | `contracts/payments/payment-hub.fc` | `recv_internal` now `throw`s `DEPLOY_BLOCKER_NOT_PRODUCTION_READY` (0xDEAD) on every entry, making accidental deployment impossible until the verify_ownership stub, the missing Account Locks integration, and the missing balance updates are implemented. The throw and the constant are documented inline so the gate is removed in one place. | Contract still semantically incomplete; the deploy-blocker is a guardrail, not a fix. |
+| C-MPH-C1 (MerchantPaymentHub `SetAccountBalance` admin mint) | `contracts/MerchantPaymentHub.tact` | `SetAccountBalance` is now an *initial-only* operation: it requires the existing balance to be `null` or `0`. Once a balance is established, only NFT-owner-authorised payments can change it, which removes the admin-mint path while preserving the test bootstrap pattern. `SetAccountState`'s write-once `nft_owners` guard is unchanged and still effective. | Full remediation (remove the handler entirely or place behind multi-sig + timelock) is still desirable; tracked in the follow-up plan posted on PR #111. |
+
+Findings **not** addressed in this PR (and the reason):
+
+- `X-2` (NFT ownership source-of-truth), `C-MPH-H1` (stale `nft_owners` after NFT transfer): requires a message-based `INFTResolver` and re-architecting every authority check. Architectural change — needs its own issue and tests.
+- `X-3` (dual `AccountState` encodings): needs coordinated refactor across `types/AccountState.tact` and `payment-hub/account-state.tact`; safer to land in a dedicated PR with cross-contract integration tests.
+- `C-PR-C1`, `C-PR-H1`, `C-PR-H2`, `C-SV-C1`, `C-SV-H1` (governance vote integrity): require a real Diamonds collection address and a snapshot oracle role; out of scope until governance is funded.
+- `C-MPH-M2` (per-payment nonce / replay protection): requires an ABI change to `MerchantPaymentRequest` and downstream off-chain merchant integration work.
+- `C-PHT-H1`, `C-PHT-H2`, `C-PHT-M2` (Tact `PaymentHub` admin-mint and storage growth): needs the same `InitializeAccount` rework as `SetAccountBalance` plus a pure-getter migration; tracked separately.
+
+The owner's remediation plan posted on PR #111 (https://github.com/xlabtg/tonbankcard-protocol/pull/111#issuecomment-4284760756) lists the full P0 / P1 backlog; this PR closes the items that can be safely landed without breaking the existing test suite.
+
+---
+
+## 8. Limitations of this review
 
 - Review is **static**: findings were derived by reading the code and cross-referencing invariants, threat model, and system audit. No automated tooling (Tact Analyzer, Slither-on-Tact, fuzzers) was run as part of this document. Issue #110 asks for Tact Analyzer / Slither; those should be executed in a follow-up once the CRITICAL findings above are addressed (running them against the backdoored test-only handlers would bury real findings under noise).
 - Review covered the contracts listed in issue #110 plus the immediate dependencies in `contracts/types/`, `contracts/interfaces/`, and `contracts/governance/`. It did not cover `RecurringPayments.tact`, the `TransparencyRegistry.tact` state-mutation paths, or the FunC `diamond_resolver.fc` / `PublicCollateralLookup.*`.

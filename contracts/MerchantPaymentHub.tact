@@ -308,8 +308,19 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
         }
     }
 
+    // AUDIT C-MPH-C1 partial mitigation: SetAccountBalance is restricted to
+    // the *initial* balance (i.e. the previous balance must be 0). This
+    // forbids the admin from arbitrarily mutating an existing balance — which
+    // the audit flags as economically equivalent to mint — while still
+    // permitting the test-only bootstrap pattern used in the spec suite.
+    // INVARIANT I3: admin still cannot WITHDRAW funds via this path; once a
+    // balance is non-zero, only NFT-owner-authorised payments can change it.
+    // The full remediation (remove this handler entirely or place it behind a
+    // multi-sig + timelock) is tracked in the audit follow-up plan.
     receive(msg: SetAccountBalance) {
         require(sender() == self.admin, "Unauthorized: only admin");
+        let existing: Int? = self.account_balances.get(msg.nft_address);
+        require(existing == null || existing!! == 0, "SetAccountBalance: initial-only (existing balance must be zero)");
         self.account_balances.set(msg.nft_address, msg.balance);
     }
 

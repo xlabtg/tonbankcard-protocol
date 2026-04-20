@@ -136,9 +136,15 @@ contract LendingProtocolCoordinator {
     // Storage: NFT address => owner address (for ownership verification)
     nft_owners: map<Address, Address>;
 
+    // Deployer address — gates the test-only RegisterNFTOwner handler.
+    // INVARIANT I3: deployer cannot move funds (this contract never custodies
+    // them) or override an existing owner entry.
+    deployer: Address;
+
     init() {
         self.lending_intents = emptyMap();
         self.nft_owners = emptyMap();
+        self.deployer = sender();
     }
 
     // ============================================
@@ -343,9 +349,14 @@ contract LendingProtocolCoordinator {
     // WARNING: These functions MUST be removed before production deployment
     // INVARIANT I3: These functions cannot affect lending or fund movement
     // They only register NFT ownership for testing purposes.
+    //
+    // Mitigation for audit finding C-LPC-C1 / cross-cutting X-1: the handler
+    // is now gated behind the deployer recorded at init() and refuses to
+    // overwrite an already-registered owner.
 
     receive(msg: RegisterNFTOwner) {
-        // For testing only: Register an NFT owner
+        require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
+        require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
         self.nft_owners.set(msg.nft_address, msg.owner);
     }
 }
