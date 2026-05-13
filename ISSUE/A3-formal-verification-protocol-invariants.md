@@ -57,6 +57,11 @@ All seven protocol invariants from `docs/invariants.md`:
    - Proofs checked by TLC (TLA+) or Lean 4 type checker
    - Proof artifacts stored in `docs/formal-verification/`
 
+4. For Acton/Tolk-based testing:
+   - Evaluate Acton through D6 before adopting it as required tooling
+   - If D6 approves adoption, use Acton fuzz or mutation testing only for Tolk prototypes or migrated contract modules
+   - Keep the current Tact/FunC test path authoritative until a migration decision is accepted
+
 ## 6. Non-Functional Requirements
 
 - Property tests must complete in < 60 seconds per invariant in CI
@@ -86,3 +91,4 @@ All seven protocol invariants from `docs/invariants.md`:
 - [Tests — Adversarial](../tests/adversarial/)
 - TLA+ tooling: https://lamport.azurewebsites.net/tla/tla.html
 - @ton/blueprint property-based testing utilities
+- Acton/Tolk tooling evaluation: [D6](./D6-acton-toolchain-evaluation.md)

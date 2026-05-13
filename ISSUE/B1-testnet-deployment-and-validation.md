@@ -60,6 +60,7 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track B, B1](../TEMP/DEVELOPMENT_ROADMAP
    - ChangeNOW sandbox mode
    - NOWPayments sandbox mode
    - CoinRabbit testnet
+5. If D6 approves Acton for any Tolk-based deployment prototype, document whether it supplements or replaces the existing `scripts/deploy/` path for testnet only
 
 ## 6. Non-Functional Requirements
 
@@ -91,3 +92,4 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track B, B1](../TEMP/DEVELOPMENT_ROADMAP
 - [Architecture](../docs/architecture.md)
 - [Backend Adapters](../backend/adapters/)
 - TON Testnet: https://testnet.toncenter.com
+- Acton/Tolk tooling evaluation: [D6](./D6-acton-toolchain-evaluation.md)

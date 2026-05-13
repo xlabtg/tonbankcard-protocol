@@ -54,6 +54,7 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track D, D2](../TEMP/DEVELOPMENT_ROADMAP
 3. Optimization PRs submitted for operations > 20% above target budget
 4. All existing tests still pass after optimization
 5. Gas cost documentation added to `docs/gas-costs.md`
+6. Acton gas snapshots may be used only if D6 confirms a compatible Tolk/Acton workflow for the profiled contract module
 
 ## 6. Non-Functional Requirements
 
@@ -84,3 +85,4 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track D, D2](../TEMP/DEVELOPMENT_ROADMAP
 - [Tests — Payments](../tests/payments/)
 - @ton/sandbox gas profiling utilities
 - TON gas documentation: https://docs.ton.org/develop/smart-contracts/fees
+- Acton/Tolk tooling evaluation: [D6](./D6-acton-toolchain-evaluation.md)

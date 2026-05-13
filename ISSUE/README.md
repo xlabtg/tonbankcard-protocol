@@ -1,6 +1,6 @@
 # Tonbankcard Protocol — Development Issues
 
-This folder contains detailed, ready-to-implement issue specifications for the next phases of Tonbankcard Protocol development. All issues are derived from the [Development Roadmap](../TEMP/DEVELOPMENT_ROADMAP.md).
+This folder contains detailed, ready-to-implement issue specifications for the next phases of Tonbankcard Protocol development. Most issues are derived from the [Development Roadmap](../TEMP/DEVELOPMENT_ROADMAP.md); D6 was added after reviewer feedback to evaluate Acton/Tolk tooling before standardizing future contract workflows.
 
 Each issue follows the project's [ISSUE_TEMPLATE](../ISSUE_TEMPLATE/) conventions.
 
@@ -57,6 +57,7 @@ The GitHub issues were published from these specifications on 2026-05-13. The fi
 | [D3](./D3-error-handling-standardization.md) | Error Handling Standardization | 🟡 Medium |
 | [D4](./D4-rate-limiting-ddos-protection.md) | Rate Limiting & DDoS Protection | 🟠 High |
 | [D5](./D5-dependency-audit-and-updates.md) | Dependency Audit and Updates | 🟠 High |
+| [D6](./D6-acton-toolchain-evaluation.md) | Acton Toolchain Evaluation | 🟡 Medium |
 
 ---
 
@@ -113,6 +114,7 @@ The GitHub issues were published from these specifications on 2026-05-13. The fi
 | D | [D3](./D3-error-handling-standardization.md) | [#129](https://github.com/xlabtg/tonbankcard-protocol/issues/129) |
 | D | [D4](./D4-rate-limiting-ddos-protection.md) | [#130](https://github.com/xlabtg/tonbankcard-protocol/issues/130) |
 | D | [D5](./D5-dependency-audit-and-updates.md) | [#131](https://github.com/xlabtg/tonbankcard-protocol/issues/131) |
+| D | [D6](./D6-acton-toolchain-evaluation.md) | [#143](https://github.com/xlabtg/tonbankcard-protocol/issues/143) |
 | E | [E1](./E1-dao-governance-activation.md) | [#132](https://github.com/xlabtg/tonbankcard-protocol/issues/132) |
 | E | [E2](./E2-protocol-parameter-governance.md) | [#133](https://github.com/xlabtg/tonbankcard-protocol/issues/133) |
 | E | [E3](./E3-risk-authority-decentralization.md) | [#134](https://github.com/xlabtg/tonbankcard-protocol/issues/134) |
@@ -135,7 +137,8 @@ Phase 5 — Production Readiness (Immediate)
 ├── B1. Testnet Deployment
 ├── D1. Test Coverage
 ├── D5. Dependency Audit
-└── B4. Infrastructure as Code
+├── B4. Infrastructure as Code
+└── D6. Acton Toolchain Evaluation
 
 Phase 6 — Ecosystem Growth (3–6 months post-audit)
 ├── A2. Audit — Phase 4 Contracts
@@ -159,6 +162,14 @@ Phase 8 — Expansion (12+ months)
 ├── F5. Multi-Sig Card Activation
 └── F2. Mobile App Wrapper
 ```
+
+---
+
+## Tooling Note — Acton
+
+Acton is a Tolk-first TON smart contract toolchain with native tests, fuzzing, mutation testing, coverage, gas snapshots, deployment, verification, and CI support. The current repository is primarily Tact/FunC with TypeScript tests and deployment scripts, so Acton must be evaluated before it becomes required project tooling.
+
+Use [D6](./D6-acton-toolchain-evaluation.md) to decide whether Acton should remain experimental, be adopted for new Tolk modules only, support selected FunC migration work, or require a broader architecture decision. Until D6 is accepted, existing Tact/FunC + TypeScript workflows remain authoritative.
 
 ---
 

@@ -39,6 +39,7 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track D, D1](../TEMP/DEVELOPMENT_ROADMAP
 - Fuzz entry points: `PaymentHub.tact` — `transfer()`, `lockAccount()`, `unlockAccount()`
 - Tool: `@ton/sandbox` property-based test utilities or `tact-fuzz` if available
 - Fuzz targets: amount boundaries, address edge cases, state machine transitions
+- Acton fuzz, mutation, or coverage tooling may be used only after the D6 tooling evaluation confirms a compatible Tolk/Acton path for the relevant contract module
 
 ## 4. Out of Scope
 
@@ -86,3 +87,4 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track D, D1](../TEMP/DEVELOPMENT_ROADMAP
 - [Invariants](../docs/invariants.md)
 - [Contracts](../contracts/)
 - @ton/sandbox documentation
+- Acton/Tolk tooling evaluation: [D6](./D6-acton-toolchain-evaluation.md)

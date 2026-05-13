@@ -61,6 +61,7 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track B, B2](../TEMP/DEVELOPMENT_ROADMAP
    - Contract code hash verified against repository
    - Initial state (owner, whitelist, locks) verified
    - At least one test transaction executed on mainnet before public announcement
+   - If D6 approves Acton for Tolk-based modules, include Acton verifier dry-run output where applicable; otherwise keep existing verification scripts authoritative
 
 4. **Contract address registry**:
    - `docs/existing-contracts.md` updated with mainnet addresses
@@ -101,3 +102,4 @@ Related to: [DEVELOPMENT_ROADMAP.md — Track B, B2](../TEMP/DEVELOPMENT_ROADMAP
 - [Key Management](../docs/security/KEY_MANAGEMENT.md)
 - Issue A1: [A1-formal-security-audit-core-contracts.md](./A1-formal-security-audit-core-contracts.md)
 - Issue B1: [B1-testnet-deployment-and-validation.md](./B1-testnet-deployment-and-validation.md)
+- Acton/Tolk tooling evaluation: [D6](./D6-acton-toolchain-evaluation.md)
