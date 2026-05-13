@@ -4,6 +4,8 @@ This folder contains detailed, ready-to-implement issue specifications for the n
 
 Each issue follows the project's [ISSUE_TEMPLATE](../ISSUE_TEMPLATE/) conventions.
 
+The GitHub issues were published from these specifications on 2026-05-13. The files in this folder remain the canonical implementation specs; the GitHub issues are the execution tracker.
+
 ---
 
 ## Issue Index
@@ -87,6 +89,44 @@ Each issue follows the project's [ISSUE_TEMPLATE](../ISSUE_TEMPLATE/) convention
 
 ---
 
+## Published GitHub Issues
+
+| Track | Spec | GitHub Issue |
+|-------|------|--------------|
+| A | [A1](./A1-formal-security-audit-core-contracts.md) | [#112](https://github.com/xlabtg/tonbankcard-protocol/issues/112) |
+| A | [A2](./A2-formal-security-audit-phase4-contracts.md) | [#113](https://github.com/xlabtg/tonbankcard-protocol/issues/113) |
+| A | [A3](./A3-formal-verification-protocol-invariants.md) | [#114](https://github.com/xlabtg/tonbankcard-protocol/issues/114) |
+| A | [A4](./A4-penetration-testing-offchain-services.md) | [#115](https://github.com/xlabtg/tonbankcard-protocol/issues/115) |
+| A | [A5](./A5-bug-bounty-program.md) | [#116](https://github.com/xlabtg/tonbankcard-protocol/issues/116) |
+| B | [B1](./B1-testnet-deployment-and-validation.md) | [#117](https://github.com/xlabtg/tonbankcard-protocol/issues/117) |
+| B | [B2](./B2-mainnet-deployment-plan.md) | [#118](https://github.com/xlabtg/tonbankcard-protocol/issues/118) |
+| B | [B3](./B3-production-monitoring-and-alerting.md) | [#119](https://github.com/xlabtg/tonbankcard-protocol/issues/119) |
+| B | [B4](./B4-infrastructure-as-code.md) | [#120](https://github.com/xlabtg/tonbankcard-protocol/issues/120) |
+| B | [B5](./B5-database-migration-strategy.md) | [#121](https://github.com/xlabtg/tonbankcard-protocol/issues/121) |
+| C | [C1](./C1-public-documentation-site.md) | [#122](https://github.com/xlabtg/tonbankcard-protocol/issues/122) |
+| C | [C2](./C2-sdk-developer-experience.md) | [#123](https://github.com/xlabtg/tonbankcard-protocol/issues/123) |
+| C | [C3](./C3-test-sandbox-environment.md) | [#124](https://github.com/xlabtg/tonbankcard-protocol/issues/124) |
+| C | [C4](./C4-developer-quickstart-improvements.md) | [#125](https://github.com/xlabtg/tonbankcard-protocol/issues/125) |
+| C | [C5](./C5-sdk-client-libraries-other-languages.md) | [#126](https://github.com/xlabtg/tonbankcard-protocol/issues/126) |
+| D | [D1](./D1-test-coverage-improvements.md) | [#127](https://github.com/xlabtg/tonbankcard-protocol/issues/127) |
+| D | [D2](./D2-contract-gas-optimization.md) | [#128](https://github.com/xlabtg/tonbankcard-protocol/issues/128) |
+| D | [D3](./D3-error-handling-standardization.md) | [#129](https://github.com/xlabtg/tonbankcard-protocol/issues/129) |
+| D | [D4](./D4-rate-limiting-ddos-protection.md) | [#130](https://github.com/xlabtg/tonbankcard-protocol/issues/130) |
+| D | [D5](./D5-dependency-audit-and-updates.md) | [#131](https://github.com/xlabtg/tonbankcard-protocol/issues/131) |
+| E | [E1](./E1-dao-governance-activation.md) | [#132](https://github.com/xlabtg/tonbankcard-protocol/issues/132) |
+| E | [E2](./E2-protocol-parameter-governance.md) | [#133](https://github.com/xlabtg/tonbankcard-protocol/issues/133) |
+| E | [E3](./E3-risk-authority-decentralization.md) | [#134](https://github.com/xlabtg/tonbankcard-protocol/issues/134) |
+| E | [E4](./E4-onchain-transparency-reporting.md) | [#135](https://github.com/xlabtg/tonbankcard-protocol/issues/135) |
+| F | [F1](./F1-ton-connect-deep-integration.md) | [#136](https://github.com/xlabtg/tonbankcard-protocol/issues/136) |
+| F | [F2](./F2-mobile-app-wrapper.md) | [#137](https://github.com/xlabtg/tonbankcard-protocol/issues/137) |
+| F | [F3](./F3-crosschain-bridge-production-readiness.md) | [#138](https://github.com/xlabtg/tonbankcard-protocol/issues/138) |
+| F | [F4](./F4-recurring-payments-activation.md) | [#139](https://github.com/xlabtg/tonbankcard-protocol/issues/139) |
+| F | [F5](./F5-multisig-card-activation.md) | [#140](https://github.com/xlabtg/tonbankcard-protocol/issues/140) |
+| F | [F6](./F6-additional-dex-integrations.md) | [#141](https://github.com/xlabtg/tonbankcard-protocol/issues/141) |
+| F | [F7](./F7-analytics-and-reporting.md) | [#142](https://github.com/xlabtg/tonbankcard-protocol/issues/142) |
+
+---
+
 ## Recommended Execution Order
 
 ```
@@ -126,7 +166,7 @@ Phase 8 — Expansion (12+ months)
 
 All issues in this folder follow the contribution workflow defined in [CONTRIBUTING.md](../CONTRIBUTING.md):
 
-1. Open a GitHub Issue referencing the relevant file in this folder
+1. Pick one of the published GitHub issues above and use the corresponding file in this folder as the scope definition
 2. Implement on a feature branch (`issue-{N}-{description}`)
 3. Submit a PR with all CI checks passing
 
