@@ -105,9 +105,15 @@ contract CollateralSignal with ICollateralSignal {
     // Storage: NFT address => owner address (for ownership verification)
     nft_owners: map<Address, Address>;
 
+    // Deployer address — gate for the test-only RegisterNFTOwner handler.
+    // Recorded once at init() and never mutated. INVARIANT I3: deployer cannot
+    // affect collateral signal state, only seed test ownership entries.
+    deployer: Address;
+
     init() {
         self.collateral_signals = emptyMap();
         self.nft_owners = emptyMap();
+        self.deployer = sender();
     }
 
     // ============================================
@@ -351,9 +357,15 @@ contract CollateralSignal with ICollateralSignal {
     // WARNING: These functions MUST be removed before production deployment
     // INVARIANT I3: These functions cannot affect collateral or fund movement
     // They only register NFT ownership for testing purposes.
+    //
+    // Mitigation for audit finding C-CS / cross-cutting X-1: gate the handler
+    // behind the deployer address recorded at init(), so an arbitrary sender
+    // cannot overwrite the authorisation map. The handler is still test-only
+    // and MUST be removed (or moved behind a build flag) before mainnet.
 
     receive(msg: RegisterNFTOwner) {
-        // For testing only: Register an NFT owner
+        // Gate: only the deployer can seed test ownership.
+        require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
         self.nft_owners.set(msg.nft_address, msg.owner);
     }
 }

@@ -44,6 +44,8 @@ CREATE INDEX IF NOT EXISTS idx_internal_transfers_from ON internal_transfers(fro
 CREATE INDEX IF NOT EXISTS idx_internal_transfers_to ON internal_transfers(to_nft);
 CREATE INDEX IF NOT EXISTS idx_internal_transfers_timestamp ON internal_transfers(timestamp);
 CREATE INDEX IF NOT EXISTS idx_internal_transfers_payload_hash ON internal_transfers(payload_hash);
+CREATE INDEX IF NOT EXISTS idx_internal_transfers_from_ts ON internal_transfers(from_nft, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_internal_transfers_to_ts ON internal_transfers(to_nft, timestamp DESC);
 
 -- Merchant payment events from MerchantPaymentHub
 CREATE TABLE IF NOT EXISTS merchant_payments (
@@ -64,6 +66,8 @@ CREATE INDEX IF NOT EXISTS idx_merchant_payments_payer ON merchant_payments(paye
 CREATE INDEX IF NOT EXISTS idx_merchant_payments_merchant ON merchant_payments(merchant_nft);
 CREATE INDEX IF NOT EXISTS idx_merchant_payments_timestamp ON merchant_payments(timestamp);
 CREATE INDEX IF NOT EXISTS idx_merchant_payments_payload_hash ON merchant_payments(payload_hash);
+CREATE INDEX IF NOT EXISTS idx_merchant_payments_payer_ts ON merchant_payments(payer_nft, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_merchant_payments_merchant_ts ON merchant_payments(merchant_nft, timestamp DESC);
 
 -- Account state change events
 CREATE TABLE IF NOT EXISTS account_state_changes (
@@ -81,6 +85,7 @@ CREATE TABLE IF NOT EXISTS account_state_changes (
 
 CREATE INDEX IF NOT EXISTS idx_account_state_changes_nft ON account_state_changes(nft_address);
 CREATE INDEX IF NOT EXISTS idx_account_state_changes_timestamp ON account_state_changes(timestamp);
+CREATE INDEX IF NOT EXISTS idx_account_state_changes_nft_ts ON account_state_changes(nft_address, timestamp DESC);
 
 -- NFT ownership changes
 CREATE TABLE IF NOT EXISTS nft_ownership_changes (

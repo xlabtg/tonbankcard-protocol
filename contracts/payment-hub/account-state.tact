@@ -107,7 +107,15 @@ contract AccountStateMachine with Deployable {
 
     // Deposit TBC to an NFT account
     // Can receive to ANY state (even FROZEN/CLOSED)
+    //
+    // AUDIT C-ASM-C1 mitigation: gate writes behind the deployer recorded at
+    // init() so that an arbitrary external sender can no longer mint balance
+    // for any NFT. This is a stop-gap until the NFT Account Resolver
+    // (Issue #4) integration lands and sender authorization can be verified
+    // against on-chain NFT ownership; the contract is still TEST-ONLY and
+    // MUST NOT be deployed to mainnet in this form.
     receive(msg: DepositTBC) {
+        require(sender() == self.owner, "Unauthorized: only deployer (test-only)");
         require(msg.amount > 0, "Amount must be positive");
 
         // Get or initialize account
@@ -123,7 +131,10 @@ contract AccountStateMachine with Deployable {
     // Withdraw TBC from an NFT account
     // FROZEN accounts cannot withdraw
     // COLLATERAL_LOCKED accounts cannot withdraw
+    //
+    // AUDIT C-ASM-C1 mitigation: gated behind the deployer (see DepositTBC).
     receive(msg: WithdrawTBC) {
+        require(sender() == self.owner, "Unauthorized: only deployer (test-only)");
         require(msg.amount > 0, "Amount must be positive");
 
         // Get account state
@@ -153,7 +164,10 @@ contract AccountStateMachine with Deployable {
     // Internal transfer between NFT accounts
     // From account must be ACTIVE
     // To account can be any state (can always receive)
+    //
+    // AUDIT C-ASM-C1 mitigation: gated behind the deployer (see DepositTBC).
     receive(msg: TransferInternal) {
+        require(sender() == self.owner, "Unauthorized: only deployer (test-only)");
         require(msg.amount > 0, "Amount must be positive");
         require(msg.from_nft != msg.to_nft, "Cannot transfer to same account");
 
@@ -186,7 +200,13 @@ contract AccountStateMachine with Deployable {
     // ========================================================================
 
     // Change account state with strict rules
+    //
+    // AUDIT C-ASM-H1 mitigation: gated behind the deployer recorded at init().
+    // Per-role gating (risk_authority for FROZEN, lending_adapter for
+    // COLLATERAL_LOCKED, DAO for unfreeze) is the production design and is
+    // tracked in the audit follow-up; this gate prevents anonymous freezes.
     receive(msg: ChangeAccountState) {
+        require(sender() == self.owner, "Unauthorized: only deployer (test-only)");
         // Get current account state
         let account: AccountState = self.getOrDefault(msg.nft_address);
 

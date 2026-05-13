@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Tonbankcard Protocol - Payment Hub: Internal TBC Transfers
 // Issue #6: Issue 3.3 Payment Hub — Internal TBC Transfers Between NFT Accounts
+// Issue #96: Upgradeable admin system with timelock and two-phase ownership transfer
 //
 // PROTOCOL INVARIANTS (see docs/invariants.md):
 // - I1 (Non-Custodial): Only NFT owner can initiate transfers (line 164)
 // - I2 (NFT Authority): NFT ownership determines account control (line 36)
-// - I3 (No Admin Control): Deployer cannot move funds, only initialize for testing (lines 229-240)
+// - I3 (No Admin Control): Admin cannot move funds; admin transfer uses 7-day timelock (see ProposeAdminTransfer)
 // - I4 (Atomic Transfers): Reentrancy protection (lines 149-150) and atomic balance updates (lines 197-198)
 // - I5 (Ledger Conservation): Direct debit/credit with no fees (lines 197-198)
 
@@ -31,6 +32,12 @@ const ERROR_UNAUTHORIZED: Int = 104;              // msg.sender is not NFT owner
 const ERROR_FROM_ACCOUNT_NOT_ACTIVE: Int = 105;   // From account must be ACTIVE
 const ERROR_TO_ACCOUNT_CLOSED: Int = 106;         // Cannot send to CLOSED account
 const ERROR_REENTRANCY: Int = 107;                // Reentrancy detected
+
+// ========================================
+// Admin Transfer Constants
+// ========================================
+// 7-day timelock delay for admin transfers (in seconds)
+const ADMIN_TRANSFER_DELAY: Int = 7 * 24 * 60 * 60;
 
 // ========================================
 // Structs
@@ -91,6 +98,51 @@ message InitializeAccount {
 }
 
 // ========================================
+// Admin Transfer Messages
+// ========================================
+
+// Phase 1: Current admin proposes a new admin (starts 7-day timelock)
+// INVARIANT I3: Proposing a new admin does NOT grant any fund control
+message ProposeAdminTransfer {
+    new_admin: Address;
+}
+
+// Phase 2: Proposed admin executes the transfer after timelock expires
+// Only the proposed new_admin can execute this
+message ExecuteAdminTransfer {
+}
+
+// Cancel a pending admin transfer proposal (only current admin)
+message CancelAdminTransfer {
+}
+
+// ========================================
+// Admin Transfer Events
+// ========================================
+
+// Emitted when a new admin is proposed
+message AdminTransferProposed {
+    current_admin: Address;
+    proposed_admin: Address;
+    executable_at: Int as uint32;  // Unix timestamp when transfer can be executed
+    timestamp: Int as uint32;
+}
+
+// Emitted when admin transfer is executed
+message AdminTransferExecuted {
+    old_admin: Address;
+    new_admin: Address;
+    timestamp: Int as uint32;
+}
+
+// Emitted when admin transfer is cancelled
+message AdminTransferCancelled {
+    admin: Address;
+    cancelled_proposed: Address;
+    timestamp: Int as uint32;
+}
+
+// ========================================
 // Events
 // ========================================
 
@@ -121,8 +173,15 @@ contract PaymentHub with Deployable {
     // State Variables
     // ========================================
 
-    // Deployer address (for administrative functions during development)
-    deployer: Address;
+    // Current admin address (transferable via two-phase timelock, see ProposeAdminTransfer)
+    // INVARIANT I3: Admin cannot move or withdraw user funds
+    admin: Address;
+
+    // Pending admin transfer: proposed new admin address (null if no transfer pending)
+    pending_admin: Address?;
+
+    // Unix timestamp when the pending admin transfer becomes executable (after 7-day timelock)
+    pending_admin_executable_at: Int as uint32 = 0;
 
     // Reentrancy guard
     locked: Bool = false;
@@ -138,10 +197,13 @@ contract PaymentHub with Deployable {
     // ========================================
 
     init(deployer_address: Address) {
-        self.deployer = deployer_address;
+        // The deployer becomes the initial admin. Admin rights can later be
+        // transferred to a DAO or multisig via ProposeAdminTransfer + ExecuteAdminTransfer.
+        self.admin = deployer_address;
+        self.pending_admin = null;
 
         // Whitelisted NFT collections are set via WhitelistCollection messages
-        // after deployment. The deployer is the only address that can whitelist
+        // after deployment. The admin is the only address that can whitelist
         // collections during the setup phase.
         //
         // Known deployed collections:
@@ -239,10 +301,10 @@ contract PaymentHub with Deployable {
     // ========================================
 
     /// @notice Whitelist an NFT collection for account creation
-    /// @dev Only deployer can whitelist collections during setup phase
+    /// @dev Only admin can whitelist collections during setup phase
     /// @dev INVARIANT I3: This does not grant any fund control
     receive(msg: WhitelistCollection) {
-        require(sender() == self.deployer, "Unauthorized: only deployer");
+        require(sender() == self.admin, "Unauthorized: only admin");
         self.whitelisted_collections.set(msg.collection_address, true);
     }
 
@@ -256,12 +318,12 @@ contract PaymentHub with Deployable {
     // ========================================
 
     /// @notice Initialize or update an account
-    /// @dev INVARIANT I3: Deployer can initialize but NOT withdraw/move existing funds
+    /// @dev INVARIANT I3: Admin can initialize but NOT withdraw/move existing funds
     /// @dev This is needed for account setup when an NFT holder registers
     receive(msg: InitializeAccount) {
-        // INVARIANT I3: Only deployer can initialize accounts during development
+        // INVARIANT I3: Only admin can initialize accounts during development
         // NOTE: This is a test-only function and does NOT allow moving existing funds
-        require(sender() == self.deployer, "Unauthorized: only deployer");
+        require(sender() == self.admin, "Unauthorized: only admin");
 
         let account: AccountState = AccountState{
             balance: msg.initial_balance,
@@ -270,6 +332,71 @@ contract PaymentHub with Deployable {
         };
 
         self.accounts.set(msg.nft_address, account);
+    }
+
+    // ========================================
+    // Admin Transfer Functions (Issue #96)
+    // ========================================
+
+    /// @notice Phase 1: Propose a new admin address (starts 7-day timelock)
+    /// @dev Only the current admin can propose a transfer
+    /// @dev INVARIANT I3: Proposing new admin does NOT grant any fund control
+    receive(msg: ProposeAdminTransfer) {
+        // Only current admin can propose a transfer
+        require(sender() == self.admin, "Unauthorized: only admin");
+
+        // Record the proposal and set the timelock expiry
+        self.pending_admin = msg.new_admin;
+        self.pending_admin_executable_at = now() + ADMIN_TRANSFER_DELAY;
+
+        emit(AdminTransferProposed{
+            current_admin: self.admin,
+            proposed_admin: msg.new_admin,
+            executable_at: self.pending_admin_executable_at,
+            timestamp: now()
+        }.toCell());
+    }
+
+    /// @notice Phase 2: Execute the admin transfer after timelock expires
+    /// @dev Only the proposed new admin can execute; timelock must have elapsed
+    /// @dev INVARIANT I3: Changing admin does NOT move any user funds
+    receive(msg: ExecuteAdminTransfer) {
+        // Only the proposed new admin can execute the transfer
+        require(self.pending_admin != null, "No pending admin transfer");
+        require(sender() == self.pending_admin!!, "Unauthorized: only proposed admin");
+
+        // Timelock must have elapsed
+        require(now() >= self.pending_admin_executable_at, "Timelock not expired: wait 7 days");
+
+        let old_admin: Address = self.admin;
+        let new_admin: Address = self.pending_admin!!;
+
+        // Commit the transfer
+        self.admin = new_admin;
+        self.pending_admin = null;
+        self.pending_admin_executable_at = 0;
+
+        emit(AdminTransferExecuted{
+            old_admin: old_admin,
+            new_admin: new_admin,
+            timestamp: now()
+        }.toCell());
+    }
+
+    /// @notice Cancel a pending admin transfer proposal (only current admin)
+    receive(msg: CancelAdminTransfer) {
+        require(sender() == self.admin, "Unauthorized: only admin");
+        require(self.pending_admin != null, "No pending admin transfer");
+
+        let cancelled: Address = self.pending_admin!!;
+        self.pending_admin = null;
+        self.pending_admin_executable_at = 0;
+
+        emit(AdminTransferCancelled{
+            admin: self.admin,
+            cancelled_proposed: cancelled,
+            timestamp: now()
+        }.toCell());
     }
 
     // Get account state (read-only query)
@@ -386,6 +513,21 @@ contract PaymentHub with Deployable {
     get fun canReceive(nft_address: Address): Bool {
         let account: AccountState = self.getOrCreateAccount(nft_address);
         return account.state != ACCOUNT_STATE_CLOSED;
+    }
+
+    // Get current admin address
+    get fun getAdmin(): Address {
+        return self.admin;
+    }
+
+    // Get pending admin address (null if no transfer is pending)
+    get fun getPendingAdmin(): Address? {
+        return self.pending_admin;
+    }
+
+    // Get timestamp when pending admin transfer becomes executable (0 if none)
+    get fun getPendingAdminExecutableAt(): Int {
+        return self.pending_admin_executable_at;
     }
 }
 

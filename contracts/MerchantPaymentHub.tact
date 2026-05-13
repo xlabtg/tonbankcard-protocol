@@ -1,10 +1,11 @@
 // Merchant Payment Hub Contract
 // Implementation of Issue #8 - Merchant Payments (On-Chain Settlement in TBC)
+// Issue #96: Upgradeable admin system with timelock and two-phase ownership transfer
 //
 // PROTOCOL INVARIANTS (see docs/invariants.md):
 // - I1 (Non-Custodial): Validates payer is NFT owner before payment (lines 90-96)
 // - I2 (NFT Authority): NFT ownership stored and validated (lines 42, 90-96)
-// - I3 (No Admin Control): Setup functions are deployer-only, cannot move funds
+// - I3 (No Admin Control): Admin cannot move funds; admin transfer uses 7-day timelock
 // - I4 (Atomic Transfers): Atomic debit/credit in single transaction (lines 134-135)
 // - I5 (Ledger Conservation): Direct debit/credit with no fees (lines 178-187)
 // - I6 (Lock ≠ Confiscation): Checks locks before send, allows receive (lines 116-119)
@@ -40,11 +41,59 @@ const ERROR_INSUFFICIENT_BALANCE: Int = 6;
 const ERROR_PAYER_NOT_EXISTS: Int = 7;
 const ERROR_MERCHANT_NOT_EXISTS: Int = 8;
 
+// Admin transfer messages (Issue #96)
+
+// Phase 1: Current admin proposes a new admin (starts 7-day timelock)
+// INVARIANT I3: Proposing a new admin does NOT grant any fund control
+message MerchantProposeAdminTransfer {
+    new_admin: Address;
+}
+
+// Phase 2: Proposed admin executes the transfer after timelock expires
+message MerchantExecuteAdminTransfer {
+}
+
+// Cancel a pending admin transfer proposal (only current admin)
+message MerchantCancelAdminTransfer {
+}
+
+// Admin transfer events
+message MerchantAdminTransferProposed {
+    current_admin: Address;
+    proposed_admin: Address;
+    executable_at: Int as uint32;
+    timestamp: Int as uint32;
+}
+
+message MerchantAdminTransferExecuted {
+    old_admin: Address;
+    new_admin: Address;
+    timestamp: Int as uint32;
+}
+
+message MerchantAdminTransferCancelled {
+    admin: Address;
+    cancelled_proposed: Address;
+    timestamp: Int as uint32;
+}
+
+// 7-day timelock delay for admin transfers (in seconds)
+const MERCHANT_ADMIN_TRANSFER_DELAY: Int = 7 * 24 * 60 * 60;
+
 // Merchant Payment Hub Contract
 contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
 
     // Storage
-    deployer: Address;                      // deployer address for setup functions
+    // Current admin address (transferable via two-phase timelock, see MerchantProposeAdminTransfer)
+    // INVARIANT I3: Admin cannot move or withdraw user funds
+    admin: Address;
+
+    // Pending admin transfer: proposed new admin address (null if no transfer pending)
+    pending_admin: Address?;
+
+    // Unix timestamp when the pending admin transfer becomes executable (after 7-day timelock)
+    pending_admin_executable_at: Int as uint32 = 0;
+
     account_states: map<Address, Int>;      // nft_address => state
     account_balances: map<Address, Int>;    // nft_address => balance_tbc
     account_locks: map<Address, LockState>; // nft_address => lock_state
@@ -52,7 +101,10 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     whitelisted_collections: map<Address, Bool>; // collection_address => whitelisted
 
     init(deployer_address: Address) {
-        self.deployer = deployer_address;
+        // The deployer becomes the initial admin. Admin rights can later be
+        // transferred to a DAO or multisig via MerchantProposeAdminTransfer + MerchantExecuteAdminTransfer.
+        self.admin = deployer_address;
+        self.pending_admin = null;
         self.account_states = emptyMap();
         self.account_balances = emptyMap();
         self.account_locks = emptyMap();
@@ -232,7 +284,7 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     // Whitelist an NFT collection for account registration
     // INVARIANT I3: This does not grant any fund control
     receive(msg: WhitelistMerchantCollection) {
-        require(sender() == self.deployer, "Unauthorized: only deployer");
+        require(sender() == self.admin, "Unauthorized: only admin");
         self.whitelisted_collections.set(msg.collection_address, true);
     }
 
@@ -249,21 +301,107 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     // Only the deployer can register new accounts during the setup phase
 
     receive(msg: SetAccountState) {
-        require(sender() == self.deployer, "Unauthorized: only deployer");
+        require(sender() == self.admin, "Unauthorized: only admin");
         self.account_states.set(msg.nft_address, msg.state);
         if (self.nft_owners.get(msg.nft_address) == null) {
             self.nft_owners.set(msg.nft_address, msg.owner);
         }
     }
 
+    // AUDIT C-MPH-C1 partial mitigation: SetAccountBalance is restricted to
+    // the *initial* balance (i.e. the previous balance must be 0). This
+    // forbids the admin from arbitrarily mutating an existing balance — which
+    // the audit flags as economically equivalent to mint — while still
+    // permitting the test-only bootstrap pattern used in the spec suite.
+    // INVARIANT I3: admin still cannot WITHDRAW funds via this path; once a
+    // balance is non-zero, only NFT-owner-authorised payments can change it.
+    // The full remediation (remove this handler entirely or place it behind a
+    // multi-sig + timelock) is tracked in the audit follow-up plan.
     receive(msg: SetAccountBalance) {
-        require(sender() == self.deployer, "Unauthorized: only deployer");
+        require(sender() == self.admin, "Unauthorized: only admin");
+        let existing: Int? = self.account_balances.get(msg.nft_address);
+        require(existing == null || existing!! == 0, "SetAccountBalance: initial-only (existing balance must be zero)");
         self.account_balances.set(msg.nft_address, msg.balance);
     }
 
     receive(msg: SetAccountLock) {
-        require(sender() == self.deployer, "Unauthorized: only deployer");
+        require(sender() == self.admin, "Unauthorized: only admin");
         self.account_locks.set(msg.nft_address, msg.lock_state);
+    }
+
+    // ============================================
+    // ADMIN TRANSFER FUNCTIONS (Issue #96)
+    // ============================================
+
+    /// @notice Phase 1: Propose a new admin address (starts 7-day timelock)
+    /// @dev Only the current admin can propose a transfer
+    /// @dev INVARIANT I3: Proposing new admin does NOT grant any fund control
+    receive(msg: MerchantProposeAdminTransfer) {
+        require(sender() == self.admin, "Unauthorized: only admin");
+
+        self.pending_admin = msg.new_admin;
+        self.pending_admin_executable_at = now() + MERCHANT_ADMIN_TRANSFER_DELAY;
+
+        emit(MerchantAdminTransferProposed{
+            current_admin: self.admin,
+            proposed_admin: msg.new_admin,
+            executable_at: self.pending_admin_executable_at,
+            timestamp: now()
+        }.toCell());
+    }
+
+    /// @notice Phase 2: Execute the admin transfer after timelock expires
+    /// @dev Only the proposed new admin can execute; timelock must have elapsed
+    /// @dev INVARIANT I3: Changing admin does NOT move any user funds
+    receive(msg: MerchantExecuteAdminTransfer) {
+        require(self.pending_admin != null, "No pending admin transfer");
+        require(sender() == self.pending_admin!!, "Unauthorized: only proposed admin");
+        require(now() >= self.pending_admin_executable_at, "Timelock not expired: wait 7 days");
+
+        let old_admin: Address = self.admin;
+        let new_admin: Address = self.pending_admin!!;
+
+        self.admin = new_admin;
+        self.pending_admin = null;
+        self.pending_admin_executable_at = 0;
+
+        emit(MerchantAdminTransferExecuted{
+            old_admin: old_admin,
+            new_admin: new_admin,
+            timestamp: now()
+        }.toCell());
+    }
+
+    /// @notice Cancel a pending admin transfer proposal (only current admin)
+    receive(msg: MerchantCancelAdminTransfer) {
+        require(sender() == self.admin, "Unauthorized: only admin");
+        require(self.pending_admin != null, "No pending admin transfer");
+
+        let cancelled: Address = self.pending_admin!!;
+        self.pending_admin = null;
+        self.pending_admin_executable_at = 0;
+
+        emit(MerchantAdminTransferCancelled{
+            admin: self.admin,
+            cancelled_proposed: cancelled,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // ============================================
+    // ADMIN GETTER FUNCTIONS
+    // ============================================
+
+    get fun getAdmin(): Address {
+        return self.admin;
+    }
+
+    get fun getPendingAdmin(): Address? {
+        return self.pending_admin;
+    }
+
+    get fun getPendingAdminExecutableAt(): Int {
+        return self.pending_admin_executable_at;
     }
 }
 

@@ -43,38 +43,73 @@ import {
   hashMetadata,
 } from '../utils/helpers';
 
-/**
- * ⚠️ PRODUCTION WARNING: In-memory storage MUST NOT be used in production.
- *
- * This reference implementation uses in-memory storage which:
- * - Loses all data on server restart
- * - Does not support horizontal scaling
- * - Has no durability guarantees
- *
- * For production, replace with:
- * - PostgreSQL or MongoDB for invoice storage
- * - Redis for idempotency keys (with TTL)
- */
-const invoiceStore = new Map<string, Invoice>();
+import { ApiKeyService, apiKeyService } from './ApiKeyService';
 
-/**
- * ⚠️ PRODUCTION WARNING: Idempotency store needs TTL in production.
- *
- * In production, use Redis with automatic TTL expiration:
- * - Set TTL = invoice expiration time (e.g., 24 hours)
- * - This prevents unbounded memory growth
- * - Enables idempotency across server restarts
- */
-const idempotencyStore = new Map<string, { invoiceId: string; expiresAt: number }>();
+import {
+  IInvoiceStorage,
+  IIdempotencyStorage,
+} from '../storage/IStorage';
+
+import {
+  InMemoryInvoiceStorage,
+  InMemoryIdempotencyStorage,
+} from '../storage/InMemoryStorage';
 
 /** Default TTL for idempotency keys (24 hours in milliseconds) */
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Invoice Service
- * Handles all invoice-related operations
+ * Handles all invoice-related operations.
+ *
+ * ## Storage injection
+ *
+ * The service accepts any implementations of `IInvoiceStorage` and
+ * `IIdempotencyStorage` at construction time, enabling drop-in replacement
+ * of the default in-memory stores with production-grade backends.
+ *
+ * ```typescript
+ * // Development / tests (default — in-memory)
+ * const service = new InvoiceService();
+ *
+ * // Production (PostgreSQL + Redis)
+ * import { Pool } from 'pg';
+ * import Redis from 'ioredis';
+ * import { PostgresInvoiceStorage }    from '../storage/PostgresStorage';
+ * import { RedisIdempotencyStorage }   from '../storage/RedisIdempotencyStorage';
+ *
+ * const pool  = new Pool({ connectionString: process.env.DATABASE_URL });
+ * const redis = new Redis(process.env.REDIS_URL);
+ *
+ * const service = new InvoiceService(
+ *   new PostgresInvoiceStorage(pool),
+ *   new RedisIdempotencyStorage(redis),
+ * );
+ * ```
  */
 export class InvoiceService {
+  private readonly apiKeyService: ApiKeyService;
+  private readonly invoiceStorage: IInvoiceStorage;
+  private readonly idempotencyStorage: IIdempotencyStorage;
+
+  /**
+   * @param keyService         - API key service for merchant authorization.
+   *   Defaults to the module-level singleton.
+   * @param invoiceStorage     - Persistent store for invoices.
+   *   Defaults to `InMemoryInvoiceStorage` (⚠️ not for production).
+   * @param idempotencyStorage - Persistent store for idempotency keys.
+   *   Defaults to `InMemoryIdempotencyStorage` (⚠️ not for production).
+   */
+  constructor(
+    keyService: ApiKeyService = apiKeyService,
+    invoiceStorage: IInvoiceStorage = new InMemoryInvoiceStorage(),
+    idempotencyStorage: IIdempotencyStorage = new InMemoryIdempotencyStorage()
+  ) {
+    this.apiKeyService = keyService;
+    this.invoiceStorage = invoiceStorage;
+    this.idempotencyStorage = idempotencyStorage;
+  }
+
   /**
    * Create a new invoice
    *
@@ -93,39 +128,39 @@ export class InvoiceService {
     // Validate inputs
     this.validateCreateInvoiceRequest(request);
 
-    // TODO: In production, validate merchantApiKey and verify it's authorized
-    // for the merchant_nft address
-    // if (!this.isAuthorizedMerchant(merchantApiKey, request.merchant_nft)) {
-    //   throw new ValidationError(
-    //     ErrorCode.UNAUTHORIZED_MERCHANT,
-    //     'Merchant NFT not authorized for this API key'
-    //   );
-    // }
+    // Verify the API key is authorised for the requested merchant NFT.
+    // This prevents any API key holder from creating invoices on behalf of
+    // a merchant they are not linked to (UNAUTHORIZED_MERCHANT protection).
+    if (!this.apiKeyService.isAuthorizedMerchant(merchantApiKey, request.merchant_nft)) {
+      // Audit-log cross-merchant attempts so operators can detect misuse.
+      console.warn(
+        `[AUDIT] Unauthorized invoice creation attempt: ` +
+        `merchant_nft="${request.merchant_nft}" ` +
+        `api_key_prefix="${merchantApiKey.slice(0, 12)}…" ` +
+        `timestamp="${new Date().toISOString()}"`
+      );
+      throw new ValidationError(
+        ErrorCode.UNAUTHORIZED_MERCHANT,
+        'API key not authorized for this merchant NFT'
+      );
+    }
 
     // Check idempotency (with TTL support)
     const idempotencyKey = generateIdempotencyKey(request);
-    const existingEntry = idempotencyStore.get(idempotencyKey);
+    const existingEntry = await this.idempotencyStorage.get(idempotencyKey);
 
     if (existingEntry) {
-      const now = Date.now();
+      const existingInvoice = await this.invoiceStorage.get(existingEntry.invoiceId);
 
-      // Check if idempotency key has expired (TTL)
-      if (existingEntry.expiresAt < now) {
-        // TTL expired, clean up and allow new invoice creation
-        idempotencyStore.delete(idempotencyKey);
-      } else {
-        const existingInvoice = invoiceStore.get(existingEntry.invoiceId);
+      // Return existing invoice if not expired
+      if (existingInvoice && !isExpired(existingInvoice.expires_at)) {
+        return existingInvoice;
+      }
 
-        // Return existing invoice if not expired
-        if (existingInvoice && !isExpired(existingInvoice.expires_at)) {
-          return existingInvoice;
-        }
-
-        // Clean up expired invoice
-        if (existingInvoice) {
-          idempotencyStore.delete(idempotencyKey);
-          invoiceStore.delete(existingEntry.invoiceId);
-        }
+      // Clean up stale references
+      if (existingInvoice) {
+        await this.idempotencyStorage.delete(idempotencyKey);
+        await this.invoiceStorage.delete(existingEntry.invoiceId);
       }
     }
 
@@ -156,13 +191,13 @@ export class InvoiceService {
     };
 
     // Store invoice
-    invoiceStore.set(invoiceId, invoice);
+    await this.invoiceStorage.set(invoice);
 
     // Store idempotency key with TTL
     // TTL is set to the invoice expiration time, ensuring idempotency
     // is maintained for the lifetime of the invoice
     const expiresAtMs = new Date(invoice.expires_at).getTime();
-    idempotencyStore.set(idempotencyKey, {
+    await this.idempotencyStorage.set(idempotencyKey, {
       invoiceId,
       expiresAt: Math.max(expiresAtMs, Date.now() + IDEMPOTENCY_TTL_MS),
     });
@@ -183,7 +218,7 @@ export class InvoiceService {
   async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
     validateInvoiceId(invoiceId);
 
-    const invoice = invoiceStore.get(invoiceId);
+    const invoice = await this.invoiceStorage.get(invoiceId);
 
     if (!invoice) {
       throw new ValidationError(
@@ -196,7 +231,7 @@ export class InvoiceService {
     // Check if expired
     if (isExpired(invoice.expires_at) && invoice.status === 'pending') {
       invoice.status = 'expired';
-      invoiceStore.set(invoiceId, invoice);
+      await this.invoiceStorage.set(invoice);
     }
 
     return invoice;
@@ -227,7 +262,7 @@ export class InvoiceService {
 
     validateInvoiceId(invoiceId);
 
-    const invoice = invoiceStore.get(invoiceId);
+    const invoice = await this.invoiceStorage.get(invoiceId);
 
     if (!invoice) {
       throw new ValidationError(
@@ -240,7 +275,7 @@ export class InvoiceService {
     // Check if expired
     if (isExpired(invoice.expires_at) && invoice.status === 'pending') {
       invoice.status = 'expired';
-      invoiceStore.set(invoiceId, invoice);
+      await this.invoiceStorage.set(invoice);
     }
 
     // TODO: In production, verify settlement on-chain
@@ -248,7 +283,7 @@ export class InvoiceService {
     // if (settlement) {
     //   invoice.status = 'settled';
     //   invoice.settlement = settlement;
-    //   invoiceStore.set(invoiceId, invoice);
+    //   await this.invoiceStorage.set(invoice);
     // }
 
     return {
@@ -389,7 +424,7 @@ export class InvoiceService {
     //    - payload_hash (computed from invoice metadata)
 
     // For reference implementation, we'll iterate through pending invoices
-    for (const [invoiceId, invoice] of invoiceStore.entries()) {
+    for (const [invoiceId, invoice] of await this.invoiceStorage.entries()) {
       if (invoice.status !== 'pending') {
         continue;
       }
@@ -432,7 +467,7 @@ export class InvoiceService {
 
           invoice.status = 'settled';
           invoice.settlement = settlement;
-          invoiceStore.set(invoiceId, invoice);
+          await this.invoiceStorage.set(invoice);
 
           break;
         }
@@ -446,26 +481,19 @@ export class InvoiceService {
    * Should be called periodically (e.g., every hour) to remove expired invoices
    * and free up memory/storage.
    *
-   * In production with Redis, idempotency keys would auto-expire via TTL.
+   * In production with Redis, idempotency keys are expired automatically via TTL,
+   * so idempotency cleanup here is belt-and-suspenders only.
    */
   async cleanupExpiredInvoices(): Promise<{ invoicesCleaned: number; idempotencyKeysCleaned: number }> {
     let invoicesCleaned = 0;
     let idempotencyKeysCleaned = 0;
     const now = Date.now();
 
-    // Clean up expired idempotency keys (TTL-based)
-    for (const [key, entry] of idempotencyStore.entries()) {
-      if (entry.expiresAt < now) {
-        idempotencyStore.delete(key);
-        idempotencyKeysCleaned++;
-      }
-    }
-
     // Clean up expired invoices
-    for (const [invoiceId, invoice] of invoiceStore.entries()) {
+    for (const [invoiceId, invoice] of await this.invoiceStorage.entries()) {
       if (isExpired(invoice.expires_at) && invoice.status === 'pending') {
         invoice.status = 'expired';
-        invoiceStore.set(invoiceId, invoice);
+        await this.invoiceStorage.set(invoice);
       }
 
       // Remove invoices that have been expired for >7 days
@@ -474,17 +502,18 @@ export class InvoiceService {
         const daysSinceExpiry = (now - expiryDate.getTime()) / (1000 * 60 * 60 * 24);
 
         if (daysSinceExpiry > 7) {
-          invoiceStore.delete(invoiceId);
+          await this.invoiceStorage.delete(invoiceId);
 
-          // Clean up idempotency store (belt-and-suspenders with TTL)
+          // Clean up idempotency store (belt-and-suspenders; Redis TTL handles this automatically)
           const idempotencyKey = generateIdempotencyKey({
             merchant_nft: invoice.merchant_nft,
             amount_tbc: invoice.amount_tbc,
             currency: invoice.currency,
             metadata: invoice.metadata,
           });
-          if (idempotencyStore.has(idempotencyKey)) {
-            idempotencyStore.delete(idempotencyKey);
+          const existing = await this.idempotencyStorage.get(idempotencyKey);
+          if (existing) {
+            await this.idempotencyStorage.delete(idempotencyKey);
             idempotencyKeysCleaned++;
           }
 
@@ -497,5 +526,7 @@ export class InvoiceService {
   }
 }
 
-// Export singleton instance
+// Export singleton instance using in-memory storage (reference/development default).
+// ⚠️  For production, construct InvoiceService with PostgresStorage + RedisIdempotencyStorage
+//    and export that instance instead — see class JSDoc above for an example.
 export const invoiceService = new InvoiceService();

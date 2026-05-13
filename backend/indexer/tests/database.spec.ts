@@ -271,6 +271,153 @@ describe('IndexerDatabase', () => {
       expect(history.totalCount).toBeGreaterThan(0);
     });
 
+    it('should return events sorted by timestamp descending', () => {
+      const history = db.getAccountHistory('EQA...', 10, 0);
+
+      for (let i = 1; i < history.events.length; i++) {
+        expect(history.events[i - 1].timestamp).toBeGreaterThanOrEqual(history.events[i].timestamp);
+      }
+    });
+
+    it('should return correct event types', () => {
+      const history = db.getAccountHistory('EQA...', 10, 0);
+
+      const eventTypes = history.events.map((e) => e.eventType);
+      expect(eventTypes).toContain('transfer');
+      expect(eventTypes).toContain('payment');
+    });
+
+    it('should respect limit parameter', () => {
+      // Insert 5 more events to ensure we have more than 1
+      for (let i = 3; i <= 7; i++) {
+        db.insertBlock(i, `hash${i}`, `hash${i - 1}`, i * 1000, 1);
+        db.insertInternalTransfer({
+          blockNumber: i,
+          transactionHash: `tx_limit_${i}`,
+          logIndex: 0,
+          timestamp: i * 1000,
+          fromNft: 'EQA...',
+          toNft: 'EQZ...',
+          amountTbc: '100',
+          payloadHash: `0xabc${i}`,
+        });
+      }
+
+      const history = db.getAccountHistory('EQA...', 3, 0);
+      expect(history.events.length).toBe(3);
+    });
+
+    it('should support offset-based pagination', () => {
+      for (let i = 3; i <= 7; i++) {
+        db.insertBlock(i, `hash${i}`, `hash${i - 1}`, i * 1000, 1);
+        db.insertInternalTransfer({
+          blockNumber: i,
+          transactionHash: `tx_page_${i}`,
+          logIndex: 0,
+          timestamp: i * 1000,
+          fromNft: 'EQA...',
+          toNft: 'EQZ...',
+          amountTbc: '100',
+          payloadHash: `0xpag${i}`,
+        });
+      }
+
+      const page1 = db.getAccountHistory('EQA...', 3, 0);
+      const page2 = db.getAccountHistory('EQA...', 3, 3);
+
+      // Pages should not overlap
+      const page1Hashes = page1.events.map((e) => e.transactionHash);
+      const page2Hashes = page2.events.map((e) => e.transactionHash);
+      const overlap = page1Hashes.filter((h) => page2Hashes.includes(h));
+      expect(overlap.length).toBe(0);
+    });
+
+    it('should support keyset pagination with beforeTimestamp', () => {
+      for (let i = 3; i <= 7; i++) {
+        db.insertBlock(i, `hash${i}`, `hash${i - 1}`, i * 1000, 1);
+        db.insertInternalTransfer({
+          blockNumber: i,
+          transactionHash: `tx_keyset_${i}`,
+          logIndex: 0,
+          timestamp: i * 1000,
+          fromNft: 'EQA...',
+          toNft: 'EQZ...',
+          amountTbc: '100',
+          payloadHash: `0xkey${i}`,
+        });
+      }
+
+      const allEvents = db.getAccountHistory('EQA...', 100, 0);
+      expect(allEvents.events.length).toBeGreaterThan(0);
+
+      // Get the last event from the first page
+      const firstPage = db.getAccountHistory('EQA...', 3, 0);
+      const lastTimestamp = firstPage.events[firstPage.events.length - 1].timestamp;
+
+      // Keyset page should start after that timestamp
+      const nextPage = db.getAccountHistory('EQA...', 10, 0, lastTimestamp);
+      for (const event of nextPage.events) {
+        expect(event.timestamp).toBeLessThan(lastTimestamp);
+      }
+    });
+
+    it('should return correct totalCount', () => {
+      const history = db.getAccountHistory('EQA...', 1, 0);
+      // totalCount should reflect all matching events, not just the page
+      expect(history.totalCount).toBeGreaterThanOrEqual(history.events.length);
+      expect(history.totalCount).toBe(2); // 1 transfer + 1 payment for EQA...
+    });
+
+    it('should return empty result for unknown account', () => {
+      const history = db.getAccountHistory('UNKNOWN_NFT', 10, 0);
+      expect(history.events.length).toBe(0);
+      expect(history.totalCount).toBe(0);
+    });
+
+    it('should include state_change events', () => {
+      db.insertAccountStateChange({
+        blockNumber: 1,
+        transactionHash: 'tx_state',
+        logIndex: 5,
+        timestamp: 1500,
+        nftAddress: 'EQA...',
+        oldState: AccountState.ACTIVE,
+        newState: AccountState.FROZEN,
+      });
+
+      const history = db.getAccountHistory('EQA...', 10, 0);
+      const stateChangeEvents = history.events.filter((e) => e.eventType === 'state_change');
+      expect(stateChangeEvents.length).toBeGreaterThan(0);
+      expect(stateChangeEvents[0].details.oldState).toBe(AccountState.ACTIVE);
+      expect(stateChangeEvents[0].details.newState).toBe(AccountState.FROZEN);
+    });
+
+    it('should cache repeated queries and return same result', () => {
+      const first = db.getAccountHistory('EQA...', 10, 0);
+      const second = db.getAccountHistory('EQA...', 10, 0);
+      expect(second).toBe(first); // same object reference from cache
+    });
+
+    it('should invalidate cache after new event insertion', () => {
+      const before = db.getAccountHistory('EQA...', 10, 0);
+
+      db.insertBlock(3, 'hash3', 'hash2', 3000, 1);
+      db.insertInternalTransfer({
+        blockNumber: 3,
+        transactionHash: 'tx_new',
+        logIndex: 0,
+        timestamp: 3000,
+        fromNft: 'EQA...',
+        toNft: 'EQZ...',
+        amountTbc: '999',
+        payloadHash: '0xnew',
+      });
+
+      const after = db.getAccountHistory('EQA...', 10, 0);
+      expect(after).not.toBe(before); // different object - cache was invalidated
+      expect(after.totalCount).toBeGreaterThan(before.totalCount);
+    });
+
     it('should get payment by payload hash', () => {
       const payment = db.getPaymentByPayloadHash('0x456');
 

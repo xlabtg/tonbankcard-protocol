@@ -26,10 +26,20 @@ export interface IndexerConfig {
     confirmationBlocks: number;
   };
 
+  // Redis configuration (optional – enables distributed rate limiting)
+  redis?: {
+    host: string;
+    port: number;
+    password?: string;
+    db: number;
+  };
+
   // API configuration
   api: {
     port: number;
     host: string;
+    /** Trust X-Forwarded-For / CF-Connecting-IP headers from a reverse proxy */
+    trustProxy: boolean;
     rateLimit: {
       windowMs: number;
       maxRequests: number;
@@ -93,9 +103,19 @@ export function loadConfig(): IndexerConfig {
       confirmationBlocks: getEnvNumber('INDEXER_CONFIRMATION_BLOCKS', 10),
     },
 
+    redis: process.env.REDIS_HOST
+      ? {
+          host: getEnv('REDIS_HOST', '127.0.0.1'),
+          port: getEnvNumber('REDIS_PORT', 6379),
+          password: process.env.REDIS_PASSWORD,
+          db: getEnvNumber('REDIS_DB', 0),
+        }
+      : undefined,
+
     api: {
       port: getEnvNumber('PORT', 3000),
       host: getEnv('HOST', '0.0.0.0'),
+      trustProxy: getEnvBoolean('API_TRUST_PROXY', false),
       rateLimit: {
         windowMs: getEnvNumber('API_RATE_LIMIT_WINDOW_MS', 60000),
         maxRequests: getEnvNumber('API_RATE_LIMIT_MAX_REQUESTS', 100),

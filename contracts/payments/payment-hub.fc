@@ -12,8 +12,27 @@
 ;; - No admin withdrawal of user funds
 ;; - All operations require user signature
 ;; - NFT ownership = account authority
+;;
+;; ============================================================================
+;; ⚠️  STATUS: REFERENCE STUB — NOT DEPLOYABLE
+;; ============================================================================
+;; Audit findings C-PHF-C1, C-PHF-C2, C-PHF-H1 (see
+;; audit/SMART_CONTRACTS_SECURITY_AUDIT.md §2.8) document that:
+;;   - get_nft_data_raw is a placeholder that returns empty slices, so
+;;     verify_nft_account performs no real ownership check;
+;;   - the contract never integrates with account-locks.fc (lock bypass);
+;;   - handle_internal_transfer / handle_merchant_payment never mutate
+;;     balances — they only emit events.
+;;
+;; To prevent accidental deployment of this stub to mainnet, recv_internal
+;; throws DEPLOY_BLOCKER_NOT_PRODUCTION_READY (0xDEAD) on every entry until
+;; the items above are implemented and the constant is removed.
+;; ============================================================================
 
 #include "stdlib.fc";
+
+;; Deploy blocker — set to 0 only after C-PHF-C1, C-PHF-C2, C-PHF-H1 are fixed.
+const int DEPLOY_BLOCKER_NOT_PRODUCTION_READY = 0xDEAD;
 
 ;; Operation codes
 const int op::internal_transfer = 0x73774302;
@@ -264,6 +283,13 @@ slice get_nft_owner(slice nft_address) inline {
 
 ;; Main message receiver
 () recv_internal(int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    ;; Deploy blocker — refuse every message until the verify_ownership stub
+    ;; (C-PHF-C1), the missing Account Locks integration (C-PHF-C2), and the
+    ;; missing balance updates (C-PHF-H1) are implemented. Remove this throw
+    ;; together with DEPLOY_BLOCKER_NOT_PRODUCTION_READY once the contract is
+    ;; production-ready.
+    throw(DEPLOY_BLOCKER_NOT_PRODUCTION_READY);
+
     ;; Parse incoming message
     if (in_msg_body.slice_empty?()) {
         return ();  ;; Ignore empty messages
