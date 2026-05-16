@@ -174,7 +174,7 @@ This section tracks every external security audit engagement. Mainnet deployment
 | Engagement | Scope | Issue | Phase | Verdict | Plan / Status |
 |------------|-------|-------|-------|---------|---------------|
 | **A1 — Core Contracts** | PaymentHub, MerchantPaymentHub, account-locks, nft-resolver, collateral signal | [#112](https://github.com/xlabtg/tonbankcard-protocol/issues/112) | Engagement preparation complete — awaiting firm selection | ⏳ Pending | [Plan](./audits/A1-core-contracts/ENGAGEMENT.md) · [Status](./audits/A1-core-contracts/STATUS.md) |
-| A2 — Phase 4 Contracts | CrossChainBridge, MultiSigCard, RecurringPayments, LendingProtocolCoordinator | TBD | Not started | — | — |
+| **A2 — Phase 4 Contracts** | CrossChainBridge, MultiSigCard, RecurringPayments, LendingProtocolCoordinator | [#113](https://github.com/xlabtg/tonbankcard-protocol/issues/113) | Engagement preparation complete — awaiting A1 completion and firm selection | ⏳ Pending — gated by A1 verdict | [Plan](./audits/A2-phase4-contracts/ENGAGEMENT.md) · [Status](./audits/A2-phase4-contracts/STATUS.md) |
 | A4 — Off-Chain Services | `api/`, `backend/`, `sdk/` | TBD | Not started | — | — |
 | A5 — Bug Bounty | Public bug bounty program | TBD | Not started | — | — |
 
@@ -187,6 +187,7 @@ The directory [`docs/security/audits/`](./audits/README.md) is the canonical hom
 | Engagement | Audited Commit | Report | Critical Open | High Open | Medium Open | Verdict | Completed |
 |------------|----------------|--------|---------------|-----------|-------------|---------|-----------|
 | A1 — Core Contracts | _pending kickoff_ | _pending_ | — | — | — | ⏳ Pending | — |
+| A2 — Phase 4 Contracts | _pending A1 completion_ | _pending_ | — | — | — | ⏳ Pending (gated by A1) | — |
 
 This table is updated immediately after each engagement's re-verification letter is filed.
 

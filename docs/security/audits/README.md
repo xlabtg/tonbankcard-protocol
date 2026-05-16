@@ -1,7 +1,9 @@
 # TONBANKCARD — External Security Audits
 
 **Document Type:** Index — External Security Audits
-**Issue Reference:** [#112 — A1 Formal Security Audit — Core Contracts](https://github.com/xlabtg/tonbankcard-protocol/issues/112)
+**Issue References:**
+- [#112 — A1 Formal Security Audit — Core Contracts](https://github.com/xlabtg/tonbankcard-protocol/issues/112)
+- [#113 — A2 Formal Security Audit — Phase 4 Contracts](https://github.com/xlabtg/tonbankcard-protocol/issues/113)
 **Track:** A — Security & Audit ([DEVELOPMENT_ROADMAP.md](../../../TEMP/DEVELOPMENT_ROADMAP.md))
 **Status:** Active
 **Last Updated:** 2026-05-16
@@ -30,12 +32,15 @@ docs/security/audits/
 ├── README.md                       — This index
 ├── REMEDIATION_WORKFLOW.md         — How findings are triaged, fixed, and verified
 ├── REPORT_TEMPLATE.md              — Canonical layout for incoming audit reports
-└── A1-core-contracts/              — Issue #112 engagement
-    ├── ENGAGEMENT.md               — Scope, deliverables, candidate firms, evaluation matrix
-    └── STATUS.md                   — Live state of the engagement (firm, dates, findings)
+├── A1-core-contracts/              — Issue #112 engagement
+│   ├── ENGAGEMENT.md               — Scope, deliverables, candidate firms, evaluation matrix
+│   └── STATUS.md                   — Live state of the engagement (firm, dates, findings)
+└── A2-phase4-contracts/            — Issue #113 engagement (gated by A1 completion)
+    ├── ENGAGEMENT.md               — Phase 4 scope with dedicated cross-chain bridge review
+    └── STATUS.md                   — Live state, A1 upstream-gate tracker, threat-ID ledger
 ```
 
-Future engagements (A2 Phase 4 contracts, A4 off-chain pentest, etc.) are added as sibling folders named after the roadmap ID.
+Future engagements (A4 off-chain pentest, A5 bug bounty, etc.) are added as sibling folders named after the roadmap ID.
 
 ---
 
@@ -44,7 +49,7 @@ Future engagements (A2 Phase 4 contracts, A4 off-chain pentest, etc.) are added 
 | ID | Scope | Roadmap | Issue | Status | Firm | Report |
 |----|-------|---------|-------|--------|------|--------|
 | **A1** | Core contracts (PaymentHub, MerchantPaymentHub, account-locks, nft-resolver, collateral signal) | [A1](../../../TEMP/DEVELOPMENT_ROADMAP.md) | [#112](https://github.com/xlabtg/tonbankcard-protocol/issues/112) | Engagement preparation complete — awaiting firm selection | — | — |
-| A2 | Phase 4 contracts (CrossChainBridge, MultiSigCard, RecurringPayments, LendingProtocolCoordinator) | A2 | TBD | Not started | — | — |
+| **A2** | Phase 4 contracts (CrossChainBridge, MultiSigCard, RecurringPayments, LendingProtocolCoordinator) | [A2](../../../TEMP/DEVELOPMENT_ROADMAP.md) | [#113](https://github.com/xlabtg/tonbankcard-protocol/issues/113) | Engagement preparation complete — awaiting A1 completion and firm selection | — | — |
 | A4 | Off-chain services (`api/`, `backend/`, `sdk/`) | A4 | TBD | Not started | — | — |
 | A5 | Bug bounty program | A5 | TBD | Not started | — | — |
 
