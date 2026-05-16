@@ -158,72 +158,171 @@ This document serves as the **single, authoritative, immutable registry** of all
 
 ---
 
-## Protocol Contracts (Not Yet Deployed)
+## Protocol Contracts (Awaiting B2 Mainnet Ceremony)
 
-The following contracts are specified in the protocol but have not yet been deployed to any network:
+The following contracts are specified in the protocol, audited under [A1-core-contracts](../security/audits/A1-core-contracts/ENGAGEMENT.md), and validated on testnet under [B1-testnet](B1-testnet/ENGAGEMENT.md). They are scheduled for mainnet deployment under engagement [B2-mainnet](B2-mainnet/ENGAGEMENT.md).
 
-### Payment Hub
+**Addresses are not yet populated.** They will be added in a single atomic PR alongside the manifest commit at kickoff, per [`docs/deployments/B2-mainnet/MULTISIG_CEREMONY.md`](B2-mainnet/MULTISIG_CEREMONY.md) §3.4. Until the ceremony completes, every row below carries `TBD`.
+
+> **Append-only contract.** Once an address is populated, it is **never** edited in place. Roll-backs are expressed via a new manifest with `supersedes` and a `paused = true` flag on the prior one, per [`ROLLBACK_PROCEDURES.md`](B2-mainnet/ROLLBACK_PROCEDURES.md) §3.
+
+### Payment-block contracts (deterministic deploy order)
+
+#### 1. AccountLocks
 
 | Field | Value |
 |-------|-------|
-| **Contract Name** | Payment Hub |
-| **Contract Purpose** | Core payment routing and account binding |
-| **Status** | Implemented (Tact) |
-| **Source File Path(s)** | `contracts/payments/PaymentHub.tact` |
-| **Deployment Status** | NOT DEPLOYED |
-| **Notes** | Requires testnet verification before mainnet deployment |
+| **Contract Name** | AccountLocks |
+| **Contract Purpose** | Risk-authority gated transfer-out blocking on a per-account basis (invariant I7) |
+| **Source File Path(s)** | `contracts/payments/account-locks.fc` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Bytecode Hash** | `TBD` |
+| **Deployment Transaction Hash** | `TBD` |
+| **Manifest Filename** | `TBD` (will be `deployments/mainnet/<timestamp>.json`) |
+| **Notes** | First contract in the deterministic deploy order; downstream contracts wire its address into init |
 
 ---
 
-### Merchant Payment Hub
+#### 2. NFTAccountResolver
 
 | Field | Value |
 |-------|-------|
-| **Contract Name** | Merchant Payment Hub |
-| **Contract Purpose** | On-chain merchant payment settlement in TBC |
-| **Status** | Implemented (Tact) |
-| **Source File Path(s)** | `contracts/MerchantPaymentHub.tact` |
-| **Deployment Status** | NOT DEPLOYED |
-| **Notes** | Requires testnet verification before mainnet deployment |
+| **Contract Name** | NFTAccountResolver |
+| **Contract Purpose** | NFT ownership → account-address resolution for cards in Series 7777 & 8888 |
+| **Source File Path(s)** | `contracts/nft-resolver/nft_account_resolver.tact`, `contracts/nft-resolver/nft_account_resolver.fc` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Bytecode Hash** | `TBD` |
+| **Deployment Transaction Hash** | `TBD` |
+| **Manifest Filename** | `TBD` |
+| **Notes** | Wires the mainnet TBC and NFT collection addresses (§ "Core Protocol" above) into init |
 
 ---
 
-### NFT Account Resolver
+#### 3. AccountStateMachine
 
 | Field | Value |
 |-------|-------|
-| **Contract Name** | NFT Account Resolver |
-| **Contract Purpose** | NFT ownership verification |
-| **Status** | Implemented (FunC & Tact) |
-| **Source File Path(s)** | `contracts/nft-resolver/nft_account_resolver.fc`, `contracts/nft-resolver/nft_account_resolver.tact` |
-| **Deployment Status** | NOT DEPLOYED |
-| **Notes** | Requires testnet verification before mainnet deployment |
-
----
-
-### Account State Machine
-
-| Field | Value |
-|-------|-------|
-| **Contract Name** | Account State Machine |
-| **Contract Purpose** | Account state management (ACTIVE, FROZEN, COLLATERAL_LOCKED, CLOSED) |
-| **Status** | Implemented (Tact) |
+| **Contract Name** | AccountStateMachine |
+| **Contract Purpose** | Account-state transitions (ACTIVE → FROZEN → COLLATERAL_LOCKED → CLOSED) |
 | **Source File Path(s)** | `contracts/payment-hub/account-state.tact` |
-| **Deployment Status** | NOT DEPLOYED |
-| **Notes** | Integrated with Payment Hub |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Bytecode Hash** | `TBD` |
+| **Deployment Transaction Hash** | `TBD` |
+| **Manifest Filename** | `TBD` |
+| **Notes** | Reads `account_locks` upstream address from row 1 |
 
 ---
 
-### Collateral Signal Contract
+#### 4. PaymentHub
 
 | Field | Value |
 |-------|-------|
-| **Contract Name** | Collateral Signal Contract |
-| **Contract Purpose** | Non-custodial collateral signaling layer for NFT-based accounts |
-| **Status** | Implemented (Tact) |
+| **Contract Name** | PaymentHub |
+| **Contract Purpose** | Core payment routing, NFT-bound account dispatch, internal TBC transfer settlement |
+| **Source File Path(s)** | `contracts/payments/PaymentHub.tact` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Bytecode Hash** | `TBD` |
+| **Deployment Transaction Hash** | `TBD` |
+| **Manifest Filename** | `TBD` |
+| **Notes** | Reads `nft_account_resolver`, `account_state_machine`, `account_locks` from rows 1–3 |
+
+---
+
+#### 5. MerchantPaymentHub
+
+| Field | Value |
+|-------|-------|
+| **Contract Name** | MerchantPaymentHub |
+| **Contract Purpose** | Merchant-facing settlement in TBC; no custody of merchant funds |
+| **Source File Path(s)** | `contracts/MerchantPaymentHub.tact` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Bytecode Hash** | `TBD` |
+| **Deployment Transaction Hash** | `TBD` |
+| **Manifest Filename** | `TBD` |
+| **Notes** | Reads `payment_hub` upstream address from row 4 |
+
+---
+
+#### 6. CollateralSignal
+
+| Field | Value |
+|-------|-------|
+| **Contract Name** | CollateralSignal |
+| **Contract Purpose** | Pure signaling layer for external lending; no custody or fund control |
 | **Source File Path(s)** | `contracts/CollateralSignal.tact` |
-| **Deployment Status** | NOT DEPLOYED |
-| **Notes** | Pure signaling layer, no custody or fund control |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Bytecode Hash** | `TBD` |
+| **Deployment Transaction Hash** | `TBD` |
+| **Manifest Filename** | `TBD` |
+| **Notes** | Reads `nft_account_resolver` upstream address from row 2 |
+
+---
+
+#### 7. PublicCollateralLookup
+
+| Field | Value |
+|-------|-------|
+| **Contract Name** | PublicCollateralLookup |
+| **Contract Purpose** | Read-only on-chain lookup over the collateral signaling state |
+| **Source File Path(s)** | `contracts/collateral-lookup/PublicCollateralLookup.tact` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Bytecode Hash** | `TBD` |
+| **Deployment Transaction Hash** | `TBD` |
+| **Manifest Filename** | `TBD` |
+| **Notes** | Reads `collateral_signal` upstream address from row 6 |
+
+---
+
+### Governance group (deployed inert; activated after 7-day soak)
+
+The three governance contracts below are deployed during the same ceremony but **deliberately inert**. The `activated` flag flips to `yes` only after the 7-day soak window completes and the verification reviewer signs off in [`STATUS.md`](B2-mainnet/STATUS.md) §8, per [`DEPLOYMENT_PLAN.md`](B2-mainnet/DEPLOYMENT_PLAN.md) §3.2.
+
+#### 8. ProposalRegistry
+
+| Field | Value |
+|-------|-------|
+| **Contract Name** | ProposalRegistry |
+| **Contract Purpose** | Governance proposal lifecycle anchor (non-custodial) |
+| **Source File Path(s)** | `contracts/governance/ProposalRegistry.tact` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Activated** | `no` (initial) |
+| **Notes** | No fund-moving authority by design (invariant I3) |
+
+---
+
+#### 9. SnapshotVerifier
+
+| Field | Value |
+|-------|-------|
+| **Contract Name** | SnapshotVerifier |
+| **Contract Purpose** | TBC Diamonds NFT-ownership snapshot verification |
+| **Source File Path(s)** | `contracts/governance/SnapshotVerifier.tact` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Activated** | `no` (initial) |
+| **Notes** | Pairs with the TBC Diamonds collection in § Governance above |
+
+---
+
+#### 10. TransparencyRegistry
+
+| Field | Value |
+|-------|-------|
+| **Contract Name** | TransparencyRegistry |
+| **Contract Purpose** | Anchor for documentation hashes and disclosures |
+| **Source File Path(s)** | `contracts/governance/TransparencyRegistry.tact` |
+| **Deployment Status** | **AWAITING B2 CEREMONY** |
+| **Contract Address** | `TBD` |
+| **Activated** | `no` (initial) |
+| **Notes** | Off-chain consumers must treat this contract as informational only |
 
 ---
 
