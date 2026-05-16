@@ -1,0 +1,366 @@
+{
+  "uid": "tbc-b3-operational",
+  "title": "TONBANKCARD — Operational (B3 D-1)",
+  "tags": ["tonbankcard", "b3", "operational"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "env",
+        "label": "Environment",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(up, env)",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": { "text": "production", "value": "production" }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Alerts",
+        "datasource": "${datasource}",
+        "enable": true,
+        "iconColor": "red",
+        "type": "tags",
+        "tags": ["tonbankcard", "alert"]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Row 1 — Top-of-page health",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Protocol pause status",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "RUNNING", "color": "green" } } },
+            { "type": "value", "options": { "1": { "text": "PAUSED", "color": "red" } } }
+          ]
+        }
+      },
+      "targets": [
+        { "expr": "max(tonbankcard_contract_paused{env=\"$env\"})", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Indexer health",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } },
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        { "expr": "max(up{job=\"indexer\", env=\"$env\"})", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Merchant API health",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } },
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        { "expr": "max(up{job=\"merchant-api\", env=\"$env\"})", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Block-time freshness (s)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 4 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "tonbankcard:chain_head_age_seconds{env=\"$env\"}", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 101,
+      "type": "row",
+      "title": "Row 2 — Indexer",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Indexer sync lag (blocks)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "tonbankcard:indexer_sync_lag_blocks{env=\"$env\"}", "refId": "A", "legendFormat": "lag (blocks)" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Indexer events indexed (rate)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (event_type) (rate(indexer_events_indexed_total{env=\"$env\"}[5m]))", "refId": "A", "legendFormat": "{{event_type}}" }
+      ]
+    },
+
+    {
+      "id": 102,
+      "type": "row",
+      "title": "Row 3 — Merchant API",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 1 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "API request rate by code",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 15, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } } },
+      "targets": [
+        { "expr": "sum by (code) (rate(api_request_total{env=\"$env\"}[5m]))", "refId": "A", "legendFormat": "{{code}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "API latency P50 / P95 / P99",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 8, "y": 15, "w": 8, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "tonbankcard:api_request_duration_seconds:p50_5m{env=\"$env\"}", "refId": "A", "legendFormat": "p50" },
+        { "expr": "tonbankcard:api_request_duration_seconds:p95_5m{env=\"$env\"}", "refId": "B", "legendFormat": "p95" },
+        { "expr": "tonbankcard:api_request_duration_seconds:p99_5m{env=\"$env\"}", "refId": "C", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "API error rate (5xx %)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 16, "y": 15, "w": 8, "h": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.20 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "tonbankcard:api_request_errors:ratio_5m{env=\"$env\"}", "refId": "A", "legendFormat": "5xx ratio" }
+      ]
+    },
+
+    {
+      "id": 103,
+      "type": "row",
+      "title": "Row 4 — Transfer volume + settlement",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "TBC transfer volume (5m) + 24h avg",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard_transfer_volume_tbc_5m{env=\"$env\"}", "refId": "A", "legendFormat": "5m volume" },
+        { "expr": "tonbankcard:transfer_volume_tbc_5m:avg_24h{env=\"$env\"}", "refId": "B", "legendFormat": "24h avg" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Settlement events (rate)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 24, "w": 6, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard:payment_events:rate_5m{env=\"$env\"}", "refId": "A", "legendFormat": "settlements" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Internal transfer events (rate)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 18, "y": 24, "w": 6, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard:transfer_events:rate_5m{env=\"$env\"}", "refId": "A", "legendFormat": "transfers" }
+      ]
+    },
+
+    {
+      "id": 104,
+      "type": "row",
+      "title": "Row 5 — Adapters",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 32, "w": 24, "h": 1 }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Adapter reachability",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 33, "w": 12, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "" }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } },
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        { "expr": "adapter_up{adapter=~\"changenow|nowpayments|coinrabbit\", env=\"$env\"}", "refId": "A", "legendFormat": "{{adapter}}" }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Adapter request P99 (s)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 33, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "tonbankcard:adapter_request_duration_seconds:p99_5m{env=\"$env\"}", "refId": "A", "legendFormat": "{{adapter}}" }
+      ]
+    },
+
+    {
+      "id": 105,
+      "type": "row",
+      "title": "Row 6 — Locks + reorgs",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 39, "w": 24, "h": 1 }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Active fraud locks",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 40, "w": 8, "h": 5 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "expr": "tonbankcard_fraud_locks_active{env=\"$env\"}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Active collateral locks",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 8, "y": 40, "w": 8, "h": 5 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "expr": "tonbankcard_collateral_locks_active{env=\"$env\"}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Recent reorgs (1h)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 16, "y": 40, "w": 8, "h": 5 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "increase(indexer_reorg_detected_total{env=\"$env\"}[1h])", "refId": "A" }
+      ]
+    }
+  ]
+}

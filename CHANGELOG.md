@@ -10,6 +10,16 @@ For SDK-specific changes, see [sdk/CHANGELOG.md](sdk/CHANGELOG.md).
 
 ## [Unreleased]
 
+### Added — B3 Production Monitoring & Alerting (Issue #119)
+- **Engagement package** (`docs/production/B3-monitoring/`): `ENGAGEMENT.md`, `STATUS.md`, `STACK_SELECTION.md`, `ALERT_RULES.md`, `DASHBOARDS.md`, `METRICS_INSTRUMENTATION.md`, `IMPLEMENTATION_RUNBOOK.md`, `INCIDENT_DRILL.md` — mirrors the B1/B2 pattern with upstream gates G-1 … G-8 and a `MONITORING-LIVE` verdict gated on a 24-hour soak window
+- **Alert-rule catalogue** (`docs/production/B3-monitoring/ALERT_RULES.md` + `provisioning/prometheus/alerts.yml`): R-001 … R-019 covering indexer health, Merchant API health, funds-risk signals (large transfers, fraud-lock bursts, unusual TBC volume), governance events, gateway-adapter reachability, and the bridge alert that stays inert until A2 verdict + mainnet bridge deployment
+- **Recording rules** (`provisioning/prometheus/recording.yml`): 24h transfer-volume baseline for R-012, API quantiles for the dashboard, bounded-cardinality top-N of outgoing transfers per `METRICS_INSTRUMENTATION.md` §4
+- **Alertmanager routing** (`provisioning/alertmanager/routes.yml`): severity-based routes (critical / warning / info), security-classified additional fanout to `#tonbankcard-security`, staging mute, and inhibition rules that prevent sub-rule noise when a parent service is down
+- **Grafana dashboards** (`provisioning/grafana/operational-dashboard.json`, `security-dashboard.json`): operational view for the on-call rotation and security audit-trail view; bridge panel ships inert until A2
+- **Metrics instrumentation contract** (`docs/production/B3-monitoring/METRICS_INSTRUMENTATION.md`): code-level contract for `/metrics` exporters in `backend/indexer/` and `api/`, with hard invariants (no contract calls, no private keys, bounded cardinality, authenticated `/metrics`)
+- **Incident-response drill brief** (`docs/production/B3-monitoring/INCIDENT_DRILL.md` + `drills/0000-template.md`): three drill scenarios — indexer-lag injection, fraud-lock burst, API 5xx burst — with a 120-second notification SLA, idempotent rollback, and a post-mortem template that feeds back into `docs/security/INCIDENT_RESPONSE.md`
+- **On-call rotation** (`docs/production/on-call.md`): minimum two-engineer rotation, escalation path with 15/30/45-minute thresholds, secondary contact path (Slack → email → Signal), and explicit list of authorised vs forbidden on-call actions
+
 ### Added — B2 Mainnet Deployment Plan (Issue #118)
 - **Mainnet runbook** (`scripts/deploy/MAINNET_RUNBOOK.md`): step-by-step deployment ceremony with multi-sig discipline, env-var contract, dry-run gating, post-deploy verification, atomic doc-update PR, and roll-back semantics
 - **Engagement package** (`docs/deployments/B2-mainnet/`): `ENGAGEMENT.md`, `STATUS.md`, `DEPLOYMENT_PLAN.md`, `MULTISIG_CEREMONY.md`, `VERIFICATION_PLAN.md`, `IMMUTABILITY_VERIFICATION.md`, `ROLLBACK_PROCEDURES.md`, `MANIFEST_TEMPLATE.json` — mirrors the B1-testnet pattern with mainnet-specific upstream gates G-1 … G-10

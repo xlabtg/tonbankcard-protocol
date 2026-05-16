@@ -1,0 +1,162 @@
+# B3 — Alertmanager Routing
+#
+# Engagement: docs/production/B3-monitoring/ENGAGEMENT.md
+# Runbook: docs/production/B3-monitoring/IMPLEMENTATION_RUNBOOK.md §5
+#
+# This file is a template. Webhook URLs, integration keys, and Slack tokens
+# are referenced by environment variables — the operator's provisioning
+# pipeline must substitute them at deploy time. The repository never carries
+# secrets per STATUS.md §5.
+#
+# Routing model
+#   * `severity=critical` → PagerDuty + #tonbankcard-oncall.
+#   * `severity=critical, category=security` → additionally → #tonbankcard-security.
+#   * `severity=warning` → #tonbankcard-oncall only.
+#   * `severity=info` → #tonbankcard-info (low-noise, no paging).
+#   * `env=staging` → muted (Slack delivery to synthetic channels only;
+#                    PagerDuty integration must be in test mode).
+#
+# Inhibition
+#   * R-001 (IndexerDown) inhibits R-002, R-003, R-015 — if the scraper
+#     cannot reach the indexer, sub-rules are meaningless.
+#   * R-004 (APIDown) inhibits R-005, R-006, R-007 — same reasoning.
+#   * R-006 (APIErrorRateCritical) inhibits R-005 — a critical 5xx storm
+#     covers the warning band.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default-slack-oncall
+  group_by: ["alertname", "category", "env"]
+  group_wait: 30s
+  group_interval: 2m
+  repeat_interval: 4h
+
+  routes:
+    # 1. Staging — never page real on-call carriers. Slack delivery only
+    #    and only to drill channels.
+    - matchers:
+        - env = "staging"
+      receiver: drill-slack
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 1h
+      continue: false
+
+    # 2. Critical security alerts (R-008, R-009, R-010, R-012, R-013) —
+    #    page on-call AND notify #tonbankcard-security.
+    - matchers:
+        - severity = "critical"
+        - category = "security"
+      receiver: critical-security
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 30m
+      continue: false
+
+    # 3. Other critical alerts — page on-call.
+    - matchers:
+        - severity = "critical"
+      receiver: critical-oncall
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 30m
+      continue: false
+
+    # 4. Warnings — Slack only.
+    - matchers:
+        - severity = "warning"
+      receiver: warning-oncall
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      continue: false
+
+    # 5. Info — low-noise channel.
+    - matchers:
+        - severity = "info"
+      receiver: info-channel
+      group_wait: 1m
+      group_interval: 10m
+      repeat_interval: 24h
+      continue: false
+
+inhibit_rules:
+  - source_matchers:
+      - alertname = "IndexerDown"
+    target_matchers:
+      - alertname =~ "ChainSyncStopped|IndexerLagHigh|BlockTimeStalled"
+    equal: ["env"]
+
+  - source_matchers:
+      - alertname = "APIDown"
+    target_matchers:
+      - alertname =~ "APIErrorRateHigh|APIErrorRateCritical|APILatencyP99High"
+    equal: ["env"]
+
+  - source_matchers:
+      - alertname = "APIErrorRateCritical"
+    target_matchers:
+      - alertname = "APIErrorRateHigh"
+    equal: ["env"]
+
+receivers:
+  - name: default-slack-oncall
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_ONCALL}"
+        channel: "#tonbankcard-oncall"
+        send_resolved: true
+        title: '{{ template "tbc.slack.title" . }}'
+        text: '{{ template "tbc.slack.text" . }}'
+
+  - name: critical-oncall
+    pagerduty_configs:
+      - service_key: "${PAGERDUTY_INTEGRATION_KEY_ONCALL}"
+        severity: critical
+        details:
+          firing: "{{ template \"pagerduty.tbc.firing\" . }}"
+        send_resolved: true
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_ONCALL}"
+        channel: "#tonbankcard-oncall"
+        send_resolved: true
+        title: '{{ template "tbc.slack.title" . }}'
+        text: '{{ template "tbc.slack.text" . }}'
+
+  - name: critical-security
+    pagerduty_configs:
+      - service_key: "${PAGERDUTY_INTEGRATION_KEY_ONCALL}"
+        severity: critical
+        details:
+          firing: "{{ template \"pagerduty.tbc.firing\" . }}"
+        send_resolved: true
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_ONCALL}"
+        channel: "#tonbankcard-oncall"
+        send_resolved: true
+      - api_url: "${SLACK_WEBHOOK_SECURITY}"
+        channel: "#tonbankcard-security"
+        send_resolved: true
+
+  - name: warning-oncall
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_ONCALL}"
+        channel: "#tonbankcard-oncall"
+        send_resolved: true
+
+  - name: info-channel
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_INFO}"
+        channel: "#tonbankcard-info"
+        send_resolved: false
+
+  - name: drill-slack
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_DRILL}"
+        channel: "#tonbankcard-oncall-drill"
+        send_resolved: true
+
+# Templates live in a separate file in the operator's Alertmanager config;
+# the names referenced above (tbc.slack.title, tbc.slack.text,
+# pagerduty.tbc.firing) are conventions, not required keys.

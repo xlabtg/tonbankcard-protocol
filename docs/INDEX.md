@@ -108,6 +108,8 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 |----------|-------------|
 | [SLA](production/SLA.md) | Service level agreement |
 | [Monitoring](production/MONITORING.md) | Monitoring and alerting setup |
+| [B3 — Monitoring engagement](production/B3-monitoring/ENGAGEMENT.md) | Production monitoring rollout (alert rules, dashboards, drill brief) |
+| [On-call rotation](production/on-call.md) | Primary/secondary roster, escalation, secondary contact path |
 | [Network Matrix](deployments/network-matrix.md) | Deployment network configuration |
 | [Protocol Registry](registry/protocol-registry.md) | On-chain protocol registry entries |
 

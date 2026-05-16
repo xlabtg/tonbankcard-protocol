@@ -1,0 +1,205 @@
+{
+  "uid": "tbc-b3-security",
+  "title": "TONBANKCARD — Security (B3 D-2)",
+  "tags": ["tonbankcard", "b3", "security"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "env",
+        "label": "Environment",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(up, env)",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": { "text": "production", "value": "production" }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Critical alerts",
+        "datasource": "${datasource}",
+        "enable": true,
+        "iconColor": "red",
+        "type": "tags",
+        "tags": ["tonbankcard", "alert", "critical"]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Row 1 — Fraud locks",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }
+    },
+    {
+      "id": 1,
+      "type": "barchart",
+      "title": "Fraud-lock set events (per hour)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 1, "w": 16, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard:fraud_lock_set_events:rate_1h{env=\"$env\"}", "refId": "A", "legendFormat": "set events/h" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active fraud locks Δ (1h)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 16, "y": 1, "w": 8, "h": 8 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "tonbankcard:fraud_locks_active:delta_1h{env=\"$env\"}", "refId": "A" }
+      ]
+    },
+
+    {
+      "id": 201,
+      "type": "row",
+      "title": "Row 2 — Privileged actions",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 9, "w": 24, "h": 1 }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Risk-authority actions",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "increase(tonbankcard_risk_authority_actions_total{env=\"$env\"}[24h])", "refId": "A", "format": "table", "instant": true, "legendFormat": "{{action}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Admin actions",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "increase(tonbankcard_admin_actions_total{env=\"$env\"}[24h])", "refId": "A", "format": "table", "instant": true, "legendFormat": "{{action}}" }
+      ]
+    },
+
+    {
+      "id": 202,
+      "type": "row",
+      "title": "Row 3 — Large transfers + failed attempts",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 18, "w": 24, "h": 1 }
+    },
+    {
+      "id": 5,
+      "type": "barchart",
+      "title": "Top outgoing transfers (TBC, 1m topK)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard:outgoing_transfer_tbc:topk_1m{env=\"$env\"}", "refId": "A", "legendFormat": "{{payer_nft}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Failed transfer attempts (rate)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (reason) (rate(tonbankcard_transfer_attempt_failed_total{env=\"$env\"}[5m]))", "refId": "A", "legendFormat": "{{reason}}" }
+      ]
+    },
+
+    {
+      "id": 203,
+      "type": "row",
+      "title": "Row 4 — Governance + transparency",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 1 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Governance proposal events (1h increase)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard:governance_proposal_events:rate_1h{env=\"$env\"}", "refId": "A", "legendFormat": "{{kind}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Transparency-report writes (1d increase)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard:transparency_report_writes:rate_1d{env=\"$env\"}", "refId": "A", "legendFormat": "writes/d" }
+      ]
+    },
+
+    {
+      "id": 204,
+      "type": "row",
+      "title": "Row 5 — Bridge (inert until A2) + reorgs",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 1 }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Bridge events (inert until activation)",
+      "description": "This panel is hidden by default. R-013 is wired in alerts.yml but the underlying metric is not exported until A2 verdict = READY and the bridge mainnet address is recorded in docs/existing-contracts.md.",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 0, "y": 37, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "increase(tonbankcard_bridge_events_total{env=\"$env\"}[1m])", "refId": "A", "legendFormat": "{{kind}}" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Reorgs with reverted events (rate)",
+      "datasource": "${datasource}",
+      "gridPos": { "x": 12, "y": 37, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "tonbankcard:reorg_reverted_events:rate_10m{env=\"$env\"}", "refId": "A", "legendFormat": "reverted/s" }
+      ]
+    }
+  ]
+}
