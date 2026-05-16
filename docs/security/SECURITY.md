@@ -174,7 +174,8 @@ Auditors are expected to find and verify the following documented issues:
 | Threat model documented | Complete — [THREAT_MODEL.md](THREAT_MODEL.md) |
 | Audit scope defined | Complete — [docs/audit-scope.md](../audit-scope.md) |
 | Test coverage | Defined in [docs/audit-scope.md](../audit-scope.md) |
-| External audit firm | Not yet selected |
+| External engagement plan (A1 — Core Contracts) | Complete — [audits/A1-core-contracts/ENGAGEMENT.md](audits/A1-core-contracts/ENGAGEMENT.md) |
+| External audit firm | Not yet selected — see [audits/A1-core-contracts/STATUS.md](audits/A1-core-contracts/STATUS.md) |
 
 For the complete audit checklist, scope definitions, and auditor expectations, see [AUDIT_READINESS.md](AUDIT_READINESS.md) and [docs/audit-scope.md](../audit-scope.md).
 
@@ -312,6 +313,9 @@ This framework does not:
 | Incident Response | [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) | Security-focused incident classification, key compromise response, escalation paths |
 | Governance Incident Response | [docs/governance/INCIDENT_RESPONSE.md](../governance/INCIDENT_RESPONSE.md) | Full governance escalation, communication, post-mortem requirements |
 | Audit Readiness | [AUDIT_READINESS.md](AUDIT_READINESS.md) | Audit package location, contracts under audit, known limitations, auditor engagement |
+| External Audits | [audits/README.md](audits/README.md) | Index of external engagements (A1, A2, A4, A5), gating rules, report storage |
+| Remediation Workflow | [audits/REMEDIATION_WORKFLOW.md](audits/REMEDIATION_WORKFLOW.md) | Triage → fix → re-verification → disclosure process for audit findings |
+| Audit Report Template | [audits/REPORT_TEMPLATE.md](audits/REPORT_TEMPLATE.md) | Canonical report layout used by every external auditor |
 | Invariants | [docs/invariants.md](../invariants.md) | Formal invariant definitions and contract mappings |
 | Audit Scope | [docs/audit-scope.md](../audit-scope.md) | In-scope contracts, auditor expectations, test requirements, freeze policy |
 | Architecture | [docs/architecture.md](../architecture.md) | Protocol architecture and component responsibilities |
