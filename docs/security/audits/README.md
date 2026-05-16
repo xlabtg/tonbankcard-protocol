@@ -5,6 +5,7 @@
 - [#112 — A1 Formal Security Audit — Core Contracts](https://github.com/xlabtg/tonbankcard-protocol/issues/112)
 - [#113 — A2 Formal Security Audit — Phase 4 Contracts](https://github.com/xlabtg/tonbankcard-protocol/issues/113)
 - [#115 — A4 Penetration Testing — Off-Chain Services](https://github.com/xlabtg/tonbankcard-protocol/issues/115)
+- [#116 — A5 Bug Bounty Program](https://github.com/xlabtg/tonbankcard-protocol/issues/116)
 **Track:** A — Security & Audit ([DEVELOPMENT_ROADMAP.md](../../../TEMP/DEVELOPMENT_ROADMAP.md))
 **Status:** Active
 **Last Updated:** 2026-05-16
@@ -39,14 +40,21 @@ docs/security/audits/
 ├── A2-phase4-contracts/            — Issue #113 engagement (gated by A1 completion)
 │   ├── ENGAGEMENT.md               — Phase 4 scope with dedicated cross-chain bridge review
 │   └── STATUS.md                   — Live state, A1 upstream-gate tracker, threat-ID ledger
-└── A4-offchain-services/           — Issue #115 engagement (off-chain pentest)
-    ├── ENGAGEMENT.md               — api/ + backend/indexer/ + sdk/ pentest scope, OWASP-driven
-    ├── STATUS.md                   — Live state, D4/D5 upstream-gate tracker, OWASP coverage
-    ├── OWASP_CHECKLIST.md          — OWASP Top 10:2021 category-by-category required tests
-    └── PENTEST_PLAN.md             — Detailed per-component test cases, PoC expectations
+├── A4-offchain-services/           — Issue #115 engagement (off-chain pentest)
+│   ├── ENGAGEMENT.md               — api/ + backend/indexer/ + sdk/ pentest scope, OWASP-driven
+│   ├── STATUS.md                   — Live state, D4/D5 upstream-gate tracker, OWASP coverage
+│   ├── OWASP_CHECKLIST.md          — OWASP Top 10:2021 category-by-category required tests
+│   └── PENTEST_PLAN.md             — Detailed per-component test cases, PoC expectations
+└── A5-bug-bounty/                  — Issue #116 engagement (public bug bounty program)
+    ├── ENGAGEMENT.md               — Engagement plan, platform comparison, SLAs, gating
+    ├── STATUS.md                   — Live state, launch checklist, findings ledger, SLA tracker
+    ├── PROGRAM_BRIEF.md            — Canonical source for the platform-published terms
+    ├── SEVERITY_RUBRIC.md          — Severity classification rubric (I1–I7 + Immunefi v2.3)
+    ├── QUARTERLY_REPORT_TEMPLATE.md — Quarterly public transparency report template
+    └── DRY_RUN.md                  — Internal dry-run / soft-launch plan (gates public launch)
 ```
 
-Future engagements (A5 bug bounty, etc.) are added as sibling folders named after the roadmap ID.
+Future engagements are added as sibling folders named after the roadmap ID.
 
 ---
 
@@ -57,7 +65,7 @@ Future engagements (A5 bug bounty, etc.) are added as sibling folders named afte
 | **A1** | Core contracts (PaymentHub, MerchantPaymentHub, account-locks, nft-resolver, collateral signal) | [A1](../../../TEMP/DEVELOPMENT_ROADMAP.md) | [#112](https://github.com/xlabtg/tonbankcard-protocol/issues/112) | Engagement preparation complete — awaiting firm selection | — | — |
 | **A2** | Phase 4 contracts (CrossChainBridge, MultiSigCard, RecurringPayments, LendingProtocolCoordinator) | [A2](../../../TEMP/DEVELOPMENT_ROADMAP.md) | [#113](https://github.com/xlabtg/tonbankcard-protocol/issues/113) | Engagement preparation complete — awaiting A1 completion and firm selection | — | — |
 | **A4** | Off-chain services (`api/`, `backend/indexer/`, `sdk/`) | [A4](../../../TEMP/DEVELOPMENT_ROADMAP.md) | [#115](https://github.com/xlabtg/tonbankcard-protocol/issues/115) | Engagement preparation complete — awaiting D4 hardening and firm selection | — | — |
-| A5 | Bug bounty program | A5 | TBD | Not started | — | — |
+| **A5** | Bug bounty program (public, Immunefi or HackenProof) | [A5](../../../TEMP/DEVELOPMENT_ROADMAP.md) | [#116](https://github.com/xlabtg/tonbankcard-protocol/issues/116) | Engagement preparation complete — awaiting A1 + A2 completion, platform selection, and dry-run | — | — |
 
 When a new external engagement begins, copy `A1-core-contracts/` as a starting template, update its `ENGAGEMENT.md` for the new scope, and add a row to this table.
 

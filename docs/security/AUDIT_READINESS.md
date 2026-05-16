@@ -176,7 +176,7 @@ This section tracks every external security audit engagement. Mainnet deployment
 | **A1 — Core Contracts** | PaymentHub, MerchantPaymentHub, account-locks, nft-resolver, collateral signal | [#112](https://github.com/xlabtg/tonbankcard-protocol/issues/112) | Engagement preparation complete — awaiting firm selection | ⏳ Pending | [Plan](./audits/A1-core-contracts/ENGAGEMENT.md) · [Status](./audits/A1-core-contracts/STATUS.md) |
 | **A2 — Phase 4 Contracts** | CrossChainBridge, MultiSigCard, RecurringPayments, LendingProtocolCoordinator | [#113](https://github.com/xlabtg/tonbankcard-protocol/issues/113) | Engagement preparation complete — awaiting A1 completion and firm selection | ⏳ Pending — gated by A1 verdict | [Plan](./audits/A2-phase4-contracts/ENGAGEMENT.md) · [Status](./audits/A2-phase4-contracts/STATUS.md) |
 | **A4 — Off-Chain Services** | `api/`, `backend/indexer/`, `sdk/` | [#115](https://github.com/xlabtg/tonbankcard-protocol/issues/115) | Engagement preparation complete — awaiting D4 hardening and firm selection | ⏳ Pending — gated by D4 hardening | [Plan](./audits/A4-offchain-services/ENGAGEMENT.md) · [Status](./audits/A4-offchain-services/STATUS.md) · [OWASP](./audits/A4-offchain-services/OWASP_CHECKLIST.md) · [Test plan](./audits/A4-offchain-services/PENTEST_PLAN.md) |
-| A5 — Bug Bounty | Public bug bounty program | TBD | Not started | — | — |
+| **A5 — Bug Bounty** | Public bug bounty program (Immunefi or HackenProof; smart contracts + off-chain + frontend) | [#116](https://github.com/xlabtg/tonbankcard-protocol/issues/116) | Engagement preparation complete — awaiting A1 + A2 completion, platform selection, and dry-run | ⏳ Pending — gated by A1 + A2 verdicts and dry-run | [Plan](./audits/A5-bug-bounty/ENGAGEMENT.md) · [Status](./audits/A5-bug-bounty/STATUS.md) · [Brief](./audits/A5-bug-bounty/PROGRAM_BRIEF.md) · [Rubric](./audits/A5-bug-bounty/SEVERITY_RUBRIC.md) · [Dry-run](./audits/A5-bug-bounty/DRY_RUN.md) · [Quarterly report template](./audits/A5-bug-bounty/QUARTERLY_REPORT_TEMPLATE.md) |
 
 The directory [`docs/security/audits/`](./audits/README.md) is the canonical home for all external engagement artifacts (engagement plans, frozen packages, reports, re-verification letters).
 
@@ -189,6 +189,7 @@ The directory [`docs/security/audits/`](./audits/README.md) is the canonical hom
 | A1 — Core Contracts | _pending kickoff_ | _pending_ | — | — | — | ⏳ Pending | — |
 | A2 — Phase 4 Contracts | _pending A1 completion_ | _pending_ | — | — | — | ⏳ Pending (gated by A1) | — |
 | A4 — Off-Chain Services | _pending D4 hardening_ | _pending_ | — | — | — | ⏳ Pending (gated by D4) | — |
+| A5 — Bug Bounty | _pending A1 + A2 verdicts and dry-run_ | _ongoing — see [quarterly reports](./audits/A5-bug-bounty/QUARTERLY_REPORT_TEMPLATE.md)_ | — | — | — | ⏳ Pending (gated by A1 + A2) | — |
 
 This table is updated immediately after each engagement's re-verification letter is filed.
 
