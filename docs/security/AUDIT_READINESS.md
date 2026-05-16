@@ -3,8 +3,9 @@
 **Document Type:** Security Documentation
 **Issue Reference:** [#62 — Issue 10.5 Security Documentation Structure](https://github.com/xlabtg/tonbankcard-protocol/issues/62)
 **Related Audit Package:** [audit/SCOPE.md](../../audit/SCOPE.md)
+**External Engagements:** [docs/security/audits/](./audits/README.md)
 **Status:** Active
-**Last Updated:** 2026-03-05
+**Last Updated:** 2026-05-16
 
 ---
 
@@ -161,6 +162,33 @@ Before beginning, auditors must confirm:
 | Reproduction Steps | Each finding includes steps to reproduce |
 | Suggested Fixes | Where applicable |
 | Invariant Attestation | Statement on whether each of I1–I7 holds |
+
+The end-to-end engagement workflow (intake → triage → remediation → re-verification → disclosure) is canonicalised in [docs/security/audits/REMEDIATION_WORKFLOW.md](./audits/REMEDIATION_WORKFLOW.md). The auditor-facing report template is [docs/security/audits/REPORT_TEMPLATE.md](./audits/REPORT_TEMPLATE.md).
+
+---
+
+## External Engagement Status
+
+This section tracks every external security audit engagement. Mainnet deployment of any in-scope contract requires the corresponding engagement to be `READY` (or `READY WITH ACCEPTED RISKS`).
+
+| Engagement | Scope | Issue | Phase | Verdict | Plan / Status |
+|------------|-------|-------|-------|---------|---------------|
+| **A1 — Core Contracts** | PaymentHub, MerchantPaymentHub, account-locks, nft-resolver, collateral signal | [#112](https://github.com/xlabtg/tonbankcard-protocol/issues/112) | Engagement preparation complete — awaiting firm selection | ⏳ Pending | [Plan](./audits/A1-core-contracts/ENGAGEMENT.md) · [Status](./audits/A1-core-contracts/STATUS.md) |
+| A2 — Phase 4 Contracts | CrossChainBridge, MultiSigCard, RecurringPayments, LendingProtocolCoordinator | TBD | Not started | — | — |
+| A4 — Off-Chain Services | `api/`, `backend/`, `sdk/` | TBD | Not started | — | — |
+| A5 — Bug Bounty | Public bug bounty program | TBD | Not started | — | — |
+
+The directory [`docs/security/audits/`](./audits/README.md) is the canonical home for all external engagement artifacts (engagement plans, frozen packages, reports, re-verification letters).
+
+---
+
+## Audit Completion Status
+
+| Engagement | Audited Commit | Report | Critical Open | High Open | Medium Open | Verdict | Completed |
+|------------|----------------|--------|---------------|-----------|-------------|---------|-----------|
+| A1 — Core Contracts | _pending kickoff_ | _pending_ | — | — | — | ⏳ Pending | — |
+
+This table is updated immediately after each engagement's re-verification letter is filed.
 
 ---
 
