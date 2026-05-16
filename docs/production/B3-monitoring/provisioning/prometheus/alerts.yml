@@ -1,0 +1,355 @@
+# B3 — Prometheus Alert Rules (source of truth)
+#
+# Engagement: docs/production/B3-monitoring/ENGAGEMENT.md
+# Human-readable rationale: docs/production/B3-monitoring/ALERT_RULES.md
+# Status ledger: docs/production/B3-monitoring/STATUS.md §7
+#
+# Conventions
+#   * Rule names match ALERT_RULES.md §3.
+#   * The `id` annotation carries the stable R-NNN identifier used in STATUS.md.
+#   * Severity is encoded as a label so Alertmanager routes can match on it
+#     (see provisioning/alertmanager/routes.yml).
+#   * Threshold parameters that may need re-tuning live as comments next to
+#     the expression. Concrete values are coordinated with STATUS.md §11.
+#   * The `env` label is supplied at scrape time (per IMPLEMENTATION_RUNBOOK.md
+#     §2). Staging routing suppresses real paging.
+#   * Rules in the `bridge_gated` group remain in this file with `for: 0m` so
+#     they are syntactically validated by promtool, but the scrape target that
+#     feeds `tonbankcard_bridge_events_total` is only added once A2 verdict =
+#     READY and the bridge mainnet address is recorded in
+#     docs/existing-contracts.md (see ENGAGEMENT.md §4 G-8).
+
+groups:
+  - name: tonbankcard.indexer
+    interval: 30s
+    rules:
+      - alert: IndexerDown
+        expr: up{job="indexer"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          id: R-001
+          summary: "Indexer scrape target unreachable"
+          description: |
+            The indexer `/metrics` endpoint has been unreachable for ≥ 1 minute.
+            The indexer is the data source for every other rule and dashboard
+            panel, so the protocol is effectively unobservable while this fires.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-001--indexerdown--critical"
+
+      - alert: ChainSyncStopped
+        # 500 blocks × ~5s per block = 2500 seconds
+        expr: indexer_sync_lag_seconds > 2500
+        for: 5m
+        labels:
+          severity: critical
+          category: chain-health
+        annotations:
+          id: R-002
+          summary: "Indexer lag exceeds 500 blocks"
+          description: |
+            `indexer_sync_lag_seconds` has been above 2500 (≈ 500 blocks) for
+            the last 5 minutes. Verify upstream RPC, indexer logs, and TON
+            chain status before escalating.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-002--chainsyncstopped--critical"
+
+      - alert: IndexerLagHigh
+        # 100 blocks × ~5s per block = 500 seconds
+        expr: indexer_sync_lag_seconds > 500
+        for: 5m
+        labels:
+          severity: warning
+          category: chain-health
+        annotations:
+          id: R-003
+          summary: "Indexer lag exceeds 100 blocks"
+          description: |
+            `indexer_sync_lag_seconds` has been above 500 (≈ 100 blocks) for
+            the last 5 minutes. Triage during business hours; if monotonic,
+            escalate before R-002 fires.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-003--indexerlaghigh--warning"
+
+      - alert: BlockTimeStalled
+        expr: (time() - indexer_last_chain_head_timestamp_seconds) > 60
+        for: 2m
+        labels:
+          severity: warning
+          category: chain-health
+        annotations:
+          id: R-015
+          summary: "Latest seen block is older than 60 seconds"
+          description: |
+            The indexer has not seen a new block head for at least 60 seconds.
+            Cross-check public TON status; this can fire without R-001/R-002
+            if the chain itself is paused.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-015--blocktimestalled--warning"
+
+      - alert: ReorgDetected
+        expr: increase(indexer_reorg_detected_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: chain-health
+        annotations:
+          id: R-016
+          summary: "Chain reorg detected"
+          description: |
+            One or more reorgs were observed in the last 10 minutes. Inspect
+            `indexer_reorg_reverted_events_total` for reverted settlement
+            events.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-016--reorgdetected--warning"
+
+      - alert: DBWriteErrors
+        expr: increase(indexer_db_write_errors_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          id: R-019
+          summary: "Indexer DB write errors observed"
+          description: |
+            One or more DB write errors in the last 10 minutes. An indexed
+            event may have been silently dropped; check disk, DB process,
+            and the indexer error log.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-019--dbwriteerrors--warning"
+
+  - name: tonbankcard.merchant_api
+    interval: 30s
+    rules:
+      - alert: APIDown
+        expr: up{job="merchant-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          id: R-004
+          summary: "Merchant API scrape target unreachable"
+          description: |
+            The Merchant API `/metrics` endpoint has been unreachable for ≥ 1
+            minute. Merchant invoice / settlement flows are offline.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-004--apidown--critical"
+
+      - alert: APIErrorRateHigh
+        expr: |
+          sum(rate(api_request_total{code=~"5.."}[5m]))
+            /
+          sum(rate(api_request_total[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          id: R-005
+          summary: "API 5xx rate > 5% (5m)"
+          description: |
+            The 5-minute average 5xx ratio has exceeded 5%. Inspect API logs
+            for the dominant error class.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-005--apierroratehigh--warning"
+
+      - alert: APIErrorRateCritical
+        expr: |
+          sum(rate(api_request_total{code=~"5.."}[5m]))
+            /
+          sum(rate(api_request_total[5m]))
+          > 0.20
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          id: R-006
+          summary: "API 5xx rate > 20% (5m) — effective outage"
+          description: |
+            Sustained 20% 5xx rate over 5 minutes. From the merchant's view
+            this is indistinguishable from an outage. Page on-call.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-006--apierroratecritical--critical"
+
+      - alert: APILatencyP99High
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(api_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          id: R-007
+          summary: "API P99 latency > 2s (5m)"
+          description: |
+            P99 latency over the last 5 minutes exceeds 2 seconds. Merchant
+            integrations time out at higher latencies; profile the slowest
+            route and indexer query path.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-007--apilatencyp99high--warning"
+
+  - name: tonbankcard.funds_risk
+    interval: 30s
+    rules:
+      # R-008 — LargeOutgoingTransfer
+      # Parameter: LARGE_TRANSFER_TBC_THRESHOLD — see STATUS.md §11 Q-2.
+      # The placeholder is interpolated by the operator at provisioning time
+      # (e.g., via envsubst or a Helm value). promtool check rules requires
+      # a concrete numeric value, so operators replace ${LARGE_TRANSFER_TBC_THRESHOLD}
+      # with a real number before reloading Prometheus.
+      - alert: LargeOutgoingTransfer
+        expr: tonbankcard_outgoing_transfer_tbc > ${LARGE_TRANSFER_TBC_THRESHOLD}
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          id: R-008
+          summary: "Outgoing transfer exceeds large-transfer threshold"
+          description: |
+            A single outgoing transfer crossed `LARGE_TRANSFER_TBC_THRESHOLD`.
+            **No on-chain action.** Notify #tonbankcard-security and trigger
+            human review of the source NFT and destination address.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-008--largeoutgoingtransfer--critical"
+
+      - alert: FraudLockBurst
+        expr: increase(tonbankcard_fraud_locks_active[1h]) > 10
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          id: R-009
+          summary: "Fraud-lock burst (> 10 in 1 hour)"
+          description: |
+            More than 10 fraud locks set in the last hour. Treat as potential
+            risk-authority key compromise per docs/security/INCIDENT_RESPONSE.md §2.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-009--fraudlockburst--critical"
+
+      - alert: AnyFraudLockEvent
+        expr: increase(tonbankcard_fraud_lock_events_total{action="set"}[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          id: R-010
+          summary: "Fraud-lock event observed"
+          description: |
+            Any single `FRAUD_LOCK` set event triggers an immediate
+            notification per issue #119 §5. Validate against the risk
+            authority's expected operations log.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-010--anyfraudlockevent--critical"
+
+      - alert: CollateralLockBurst
+        expr: increase(tonbankcard_collateral_locks_active[1h]) > 20
+        for: 0m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          id: R-011
+          summary: "Collateral-lock burst (> 20 in 1 hour)"
+          description: |
+            A surge of `COLLATERAL_LOCK` events likely reflects a lending-
+            adapter signal. Triage with the lending-adapter operator.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-011--collaterallockburst--warning"
+
+      # R-012 — UnusualTBCVolume
+      # Parameter: UNUSUAL_VOLUME_MULTIPLIER (default 2). The recording rule
+      # tonbankcard:transfer_volume_tbc_5m:avg_24h (provisioning/prometheus/recording.yml)
+      # supplies the 24-hour baseline used here.
+      - alert: UnusualTBCVolume
+        expr: |
+          tonbankcard_transfer_volume_tbc_5m
+            >
+          ${UNUSUAL_VOLUME_MULTIPLIER}
+            *
+          tonbankcard:transfer_volume_tbc_5m:avg_24h
+        for: 10m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          id: R-012
+          summary: "Unusual TBC volume (> Nx 24h average)"
+          description: |
+            5-minute TBC transfer volume has exceeded the 24-hour average by
+            UNUSUAL_VOLUME_MULTIPLIER for 10 minutes. Cross-reference R-008
+            to determine whether a single large transfer dominates.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-012--unusualtbcvolume--critical"
+
+  - name: tonbankcard.governance
+    interval: 60s
+    rules:
+      - alert: GovernanceProposalCreated
+        expr: increase(tonbankcard_governance_proposal_events_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: info
+          category: governance
+        annotations:
+          id: R-014
+          summary: "Governance event observed"
+          description: |
+            A proposal / vote / execution event was indexed in the last 5
+            minutes. No action required — surfaced on the security dashboard
+            as an audit trail.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-014--governanceproposalcreated--info"
+
+  - name: tonbankcard.bridge_gated
+    interval: 30s
+    rules:
+      # R-013 — BridgeEventDetected
+      # Inert until A2 verdict = READY and a mainnet CrossChainBridge address
+      # is recorded in docs/existing-contracts.md. Until then, the metric
+      # tonbankcard_bridge_events_total is not exported, so this rule cannot
+      # fire even if loaded. The `gate` label is informational.
+      - alert: BridgeEventDetected
+        expr: increase(tonbankcard_bridge_events_total[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+          gate: phase4_active
+        annotations:
+          id: R-013
+          summary: "Bridge event observed"
+          description: |
+            A CrossChainBridge event was indexed. Page on-call AND
+            #tonbankcard-security. No reactive on-chain action without a
+            documented decision from maintainer + security lead
+            (ENGAGEMENT.md §7 #5).
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-013--bridgeeventdetected--critical-inert-until-a2--bridge-deploy"
+
+  - name: tonbankcard.adapters
+    interval: 60s
+    rules:
+      - alert: AdapterUnreachable
+        expr: adapter_up{adapter=~"changenow|nowpayments|coinrabbit"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: adapter
+        annotations:
+          id: R-017
+          summary: "Gateway adapter unreachable"
+          description: |
+            One of the configured gateway adapters has been unreachable for
+            ≥ 5 minutes. Confirm via the third-party status page; no SLA on
+            third-party uptime.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-017--adapterunreachable--warning"
+
+      - alert: AllAdaptersUnreachable
+        expr: sum(adapter_up) == 0
+        for: 5m
+        labels:
+          severity: critical
+          category: adapter
+        annotations:
+          id: R-018
+          summary: "All gateway adapters unreachable"
+          description: |
+            Every configured gateway adapter has been unreachable for ≥ 5
+            minutes. Verify network egress before contacting providers.
+            Internal TBC operations are unaffected.
+          runbook: "docs/production/B3-monitoring/ALERT_RULES.md#r-018--alladaptersunreachable--critical"

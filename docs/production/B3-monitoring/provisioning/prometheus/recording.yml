@@ -1,0 +1,117 @@
+# B3 — Prometheus Recording Rules
+#
+# Engagement: docs/production/B3-monitoring/ENGAGEMENT.md
+# Source of truth: this file is referenced by ALERT_RULES.md §3.3 (R-012)
+# and DASHBOARDS.md §2 (operational) / §3 (security).
+#
+# Recording rules keep dashboard queries cheap and supply rolling baselines
+# for anomaly-style alerts. They are pure derived series — no rule here
+# observes the chain or the application directly.
+#
+# Naming convention: `<namespace>:<base-metric>:<aggregation>`
+#   (matches Prometheus best-practice — see https://prometheus.io/docs/practices/rules/)
+
+groups:
+  - name: tonbankcard.recording.transfer_volume
+    interval: 30s
+    rules:
+      # 24-hour rolling average of 5-minute transfer volume. Drives R-012.
+      - record: tonbankcard:transfer_volume_tbc_5m:avg_24h
+        expr: avg_over_time(tonbankcard_transfer_volume_tbc_5m[24h])
+
+      # 5-minute rate of payment events — surfaced on D-1 row 4.
+      - record: tonbankcard:payment_events:rate_5m
+        expr: rate(tonbankcard_payment_events_total[5m])
+
+      # 5-minute rate of internal transfer events — surfaced on D-1 row 4.
+      - record: tonbankcard:transfer_events:rate_5m
+        expr: rate(tonbankcard_transfer_events_total[5m])
+
+  - name: tonbankcard.recording.api
+    interval: 30s
+    rules:
+      - record: tonbankcard:api_request:rate_5m
+        expr: sum by (code) (rate(api_request_total[5m]))
+
+      - record: tonbankcard:api_request_errors:ratio_5m
+        expr: |
+          sum(rate(api_request_total{code=~"5.."}[5m]))
+            /
+          sum(rate(api_request_total[5m]))
+
+      - record: tonbankcard:api_request_duration_seconds:p50_5m
+        expr: |
+          histogram_quantile(
+            0.50,
+            sum(rate(api_request_duration_seconds_bucket[5m])) by (le)
+          )
+
+      - record: tonbankcard:api_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(api_request_duration_seconds_bucket[5m])) by (le)
+          )
+
+      - record: tonbankcard:api_request_duration_seconds:p99_5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(api_request_duration_seconds_bucket[5m])) by (le)
+          )
+
+  - name: tonbankcard.recording.adapters
+    interval: 60s
+    rules:
+      - record: tonbankcard:adapter_request_duration_seconds:p99_5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (adapter, le)
+              (rate(adapter_request_duration_seconds_bucket[5m]))
+          )
+
+  - name: tonbankcard.recording.security
+    interval: 60s
+    rules:
+      # Hourly count of fraud-lock set events for the security dashboard
+      # (D-2 row 1). Keeps dashboard queries to a single-series lookup.
+      - record: tonbankcard:fraud_lock_set_events:rate_1h
+        expr: increase(tonbankcard_fraud_lock_events_total{action="set"}[1h])
+
+      # Hourly delta of active fraud locks (D-2 row 1 stat panel).
+      - record: tonbankcard:fraud_locks_active:delta_1h
+        expr: delta(tonbankcard_fraud_locks_active[1h])
+
+      # Top-N outgoing transfers in the last 1 minute. Bounds the per-NFT
+      # label cardinality used by `tonbankcard_outgoing_transfer_tbc` per
+      # METRICS_INSTRUMENTATION.md §4 #4.
+      #
+      # The bound (N = 25) is conservative; raise via a B3.x follow-up if
+      # the security dashboard needs deeper history.
+      - record: tonbankcard:outgoing_transfer_tbc:topk_1m
+        expr: topk(25, tonbankcard_outgoing_transfer_tbc)
+
+      # Hourly count of governance events for D-2 row 4.
+      - record: tonbankcard:governance_proposal_events:rate_1h
+        expr: increase(tonbankcard_governance_proposal_events_total[1h])
+
+      # Daily count of transparency-report writes for D-2 row 4.
+      - record: tonbankcard:transparency_report_writes:rate_1d
+        expr: increase(tonbankcard_transparency_report_writes_total[1d])
+
+  - name: tonbankcard.recording.chain
+    interval: 30s
+    rules:
+      # Time since the indexer last saw a chain head. Surfaced on D-1 row 1.
+      - record: tonbankcard:chain_head_age_seconds
+        expr: time() - indexer_last_chain_head_timestamp_seconds
+
+      # Sync lag expressed in approximate blocks — easier to reason about on
+      # the operational dashboard than raw seconds. ~5s per block on TON.
+      - record: tonbankcard:indexer_sync_lag_blocks
+        expr: indexer_sync_lag_seconds / 5
+
+      # 10-minute rate of reverted events from a reorg — D-2 row 5.
+      - record: tonbankcard:reorg_reverted_events:rate_10m
+        expr: rate(indexer_reorg_reverted_events_total[10m])
