@@ -21,6 +21,63 @@ These invariants form the basis for:
 
 ---
 
+## Proof Status
+
+Each invariant is backed by one or more of the following layers:
+
+1. **Property-based tests** — randomised TypeScript model in
+   `tests/invariants/property/` driven by `fast-check`. These are the
+   **authoritative** machine-checked statements of I1–I7 and run on every
+   pull request via the `test-invariants` CI job. See
+   [Test Tooling](#test-tooling) below for how to run them.
+2. **Adversarial unit tests** — deterministic attack scenarios for I4 and
+   I7 in `tests/invariants/property/I4-adversarial.spec.ts` and
+   `tests/invariants/property/I7-adversarial.spec.ts`.
+3. **Bounded TLA+ model** — formal state-machine model in
+   `docs/formal-verification/Protocol.tla` checked by TLC against the
+   configuration in `Protocol.cfg`. This is a stretch-goal artifact (see
+   [Issue #114](https://github.com/xlabtg/tonbankcard-protocol/issues/114))
+   for documentation and explorability; the TypeScript property tests are
+   authoritative.
+4. **On-chain contract enforcement** — the production Tact / FunC contracts
+   referenced in each invariant's "Contract Mapping" subsection.
+
+| Invariant | Property tests | Adversarial tests | TLA+ predicate | Status |
+| --------- | -------------- | ----------------- | -------------- | ------ |
+| I1 — Non-Custodial Ownership      | `property/I1-non-custodial.spec.ts`       | — (covered by I7 adversarial) | `OwnerOnlyTransferInv`     | ✅ enforced |
+| I2 — NFT = Account Authority      | `property/I2-nft-authority.spec.ts`       | — | structural (encoded as `owner[nft]`) | ✅ enforced |
+| I3 — No Admin Fund Control        | `property/I3-no-admin-fund-control.spec.ts` | — | `AdminCannotMoveFundsInv`  | ✅ enforced |
+| I4 — Atomic Transfers             | `property/I4-atomic-transfers.spec.ts`    | `property/I4-adversarial.spec.ts` | `AtomicityInv`             | ✅ enforced |
+| I5 — Ledger Conservation          | `property/I5-ledger-conservation.spec.ts` | — | `ConservationInv`          | ✅ enforced |
+| I6 — Lock ≠ Confiscation          | `property/I6-lock-not-confiscation.spec.ts` | — | `LockPreservesBalanceInv`  | ✅ enforced |
+| I7 — Lock Enforcement / Adapter Isolation | `property/I7-lock-enforcement.spec.ts` | `property/I7-adversarial.spec.ts` | `LockedCannotSendInv`      | ✅ enforced |
+
+### Test Tooling
+
+The property-based suite is a standalone npm project at `tests/invariants/`.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full developer workflow.
+
+```bash
+cd tests/invariants
+npm install
+npm test           # runs all property-based + adversarial tests
+npm run typecheck  # validates TypeScript model
+```
+
+CI runs both of the above commands on every pull request via the
+`test-invariants` job in `.github/workflows/ci.yml`. The full suite is
+budgeted to complete in well under 60 seconds; current wall-clock is
+≈4 seconds on a clean clone.
+
+The formal-verification stretch goal is in `docs/formal-verification/`:
+
+```bash
+cd docs/formal-verification
+java -jar tla2tools.jar -deadlock -config Protocol.cfg Protocol.tla
+```
+
+---
+
 ## Core Protocol Invariants
 
 ### I1 — Non-Custodial Ownership
@@ -205,10 +262,13 @@ The same two-phase timelock pattern applies to `risk_authority` and `lending_ada
 - `MerchantPaymentHub.tact`: Atomic debit/credit (lines 134-135)
 
 **Test Coverage:**
-- `tests/invariants/I4-atomic-transfers.spec.ts`
-- Test: Successful transfer updates both balances atomically
-- Test: Failed transfer leaves both balances unchanged
-- Test: Reentrancy attempt is blocked
+- `tests/invariants/property/I4-atomic-transfers.spec.ts` — property-based
+  invariant check (300 random runs).
+- `tests/invariants/property/I4-adversarial.spec.ts` — deterministic
+  adversarial scenarios: replay, race, reentrancy, closed destination,
+  mid-flight lock, negative amount.
+- `docs/formal-verification/Protocol.tla` — `AtomicityInv` predicate
+  (Transfer is a single TLA+ action).
 
 ---
 
@@ -330,10 +390,16 @@ WHERE:
 - All transfers require NFT owner signature
 
 **Test Coverage:**
-- `tests/invariants/I7-external-adapter-isolation.spec.ts`
-- Test: External services cannot initiate transfers
-- Test: All transfers require valid user signature
-- Architectural review: No external adapter privileged access
+- `tests/invariants/property/I7-lock-enforcement.spec.ts` — property-based
+  check that locks block sends and that no role outside the NFT owner can
+  initiate a transfer.
+- `tests/invariants/property/I7-adversarial.spec.ts` — adversarial
+  scenarios: wrong-role lock clearing, NFT transfer while locked, replay
+  after unlock, collateral-lock isolation.
+- `docs/formal-verification/Protocol.tla` — `LockedCannotSendInv` predicate
+  (Transfer action is gated on `~ fraud[from] /\ ~ collat[from]`).
+- Architectural review: No external adapter privileged access in Payment
+  Hub contracts.
 
 ---
 
@@ -414,19 +480,41 @@ For auditors reviewing the TONBANKCARD protocol:
 
 ## Test Suite Summary
 
-Comprehensive test coverage for all invariants:
+Comprehensive machine-checked coverage for all invariants. The
+**authoritative** layer is the property-based suite under
+`tests/invariants/property/`, run on every pull request by the
+`test-invariants` CI job.
 
-### Unit Tests
-- `tests/invariants/I1-non-custodial-ownership.spec.ts`
-- `tests/invariants/I2-nft-account-authority.spec.ts`
-- `tests/invariants/I3-no-admin-fund-control.spec.ts`
-- `tests/invariants/I4-atomic-transfers.spec.ts`
-- `tests/invariants/I5-ledger-conservation.spec.ts`
-- `tests/invariants/I6-lock-not-confiscation.spec.ts`
-- `tests/invariants/I7-external-adapter-isolation.spec.ts`
+### Property-Based Invariant Tests (`tests/invariants/property/`)
+- `I1-non-custodial.spec.ts` — only NFT owner can debit.
+- `I2-nft-authority.spec.ts` — previous owner loses authority after NFT transfer.
+- `I3-no-admin-fund-control.spec.ts` — privileged operations never modify balances.
+- `I4-atomic-transfers.spec.ts` — every transfer fully applied or reverted (300 runs).
+- `I5-ledger-conservation.spec.ts` — sum of balances preserved across any sequence.
+- `I6-lock-not-confiscation.spec.ts` — locks do not change balance or ownership.
+- `I7-lock-enforcement.spec.ts` — locked accounts cannot send; non-owner roles cannot initiate.
 
-### Negative Tests (Attempted Violations)
-Each invariant test file includes negative test cases that attempt to violate the invariant and verify the violation is prevented.
+### Adversarial Scenarios (`tests/invariants/property/`)
+Deterministic unit tests targeting concrete attack vectors from
+`docs/threat-model.md`:
+- `I4-adversarial.spec.ts` — replay, race, reentrancy, closed destination,
+  mid-flight lock, negative amount.
+- `I7-adversarial.spec.ts` — wrong-role lock clearing, NFT transfer while
+  locked, replay after unlock, collateral-lock isolation.
+
+### Formal Verification Artifacts (`docs/formal-verification/`)
+- `Protocol.tla` — TLA+ state-machine model encoding I1, I3, I4, I5, I6, I7
+  as named invariants (`OwnerOnlyTransferInv`, `AdminCannotMoveFundsInv`,
+  `AtomicityInv`, `ConservationInv`, `LockPreservesBalanceInv`,
+  `LockedCannotSendInv`).
+- `Protocol.cfg` — TLC configuration with bounded constants.
+
+### Pre-Existing Stub Specs (`tests/invariants/`)
+The flat `I*-*.spec.ts` files at the root of `tests/invariants/` are
+legacy aspirational specs that depend on contract wrappers not yet
+generated by the Tact build. They are kept as documentation of intended
+coverage; the executable, CI-enforced replacement is the
+property-based suite above.
 
 ---
 

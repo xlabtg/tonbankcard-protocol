@@ -295,6 +295,30 @@ jobs:
         working-directory: contracts/payment-hub
         run: npm test
 
+  test-invariants:
+    name: Test (Protocol Invariants)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install invariants dependencies
+        working-directory: tests/invariants
+        run: npm install --no-audit --no-fund
+
+      - name: TypeScript check invariants
+        working-directory: tests/invariants
+        run: npm run typecheck
+
+      - name: Property-based invariant tests (I1–I7)
+        working-directory: tests/invariants
+        run: npm test
+
   deploy:
     name: Deploy to Vercel
     runs-on: ubuntu-latest
