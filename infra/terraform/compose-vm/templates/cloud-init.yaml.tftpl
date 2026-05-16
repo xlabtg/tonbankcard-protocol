@@ -1,0 +1,148 @@
+#cloud-config
+# Provisions a Tonbankcard off-chain stack on a fresh Ubuntu 22.04 host.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - ufw
+  - unattended-upgrades
+  - jq
+
+users:
+  - name: tonbankcard
+    sudo: false
+    groups: docker
+    shell: /bin/bash
+    ssh_authorized_keys:
+%{ for key in ssh_authorized_keys ~}
+      - ${key}
+%{ endfor ~}
+
+write_files:
+  - path: /etc/tonbankcard/.env
+    permissions: "0644"
+    owner: "root:root"
+    encoding: b64
+    content: ${env_file_b64}
+  - path: /etc/tonbankcard/secrets.env
+    permissions: "0600"
+    owner: "root:root"
+    encoding: b64
+    content: ${secrets_file_b64}
+  - path: /etc/tonbankcard/docker-compose.yml
+    permissions: "0644"
+    owner: "root:root"
+    content: |
+      name: tonbankcard
+      services:
+        api:
+          image: ${api_image}
+          restart: unless-stopped
+          env_file:
+            - /etc/tonbankcard/.env
+            - /etc/tonbankcard/secrets.env
+          environment:
+            NODE_ENV: production
+            PORT: "3000"
+            HOST: 0.0.0.0
+          ports:
+            - "3001:3000"
+          deploy:
+            replicas: ${api_replica_count}
+          healthcheck:
+            test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/v1/health"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+        indexer:
+          image: ${indexer_image}
+          restart: unless-stopped
+          env_file:
+            - /etc/tonbankcard/.env
+            - /etc/tonbankcard/secrets.env
+          environment:
+            NODE_ENV: production
+            PORT: "3000"
+            HOST: 0.0.0.0
+            DB_PATH: /app/data/indexer.db
+          ports:
+            - "3002:3000"
+          volumes:
+            - indexer-data:/app/data
+          healthcheck:
+            test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+      volumes:
+        indexer-data:
+          driver: local
+  - path: /etc/systemd/system/tonbankcard.service
+    permissions: "0644"
+    owner: "root:root"
+    content: |
+      [Unit]
+      Description=Tonbankcard off-chain stack
+      Requires=docker.service
+      After=docker.service network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/etc/tonbankcard
+      ExecStart=/usr/bin/docker compose up -d --remove-orphans
+      ExecStop=/usr/bin/docker compose down
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # Install Docker Engine + compose plugin from the upstream repo.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - chmod a+r /etc/apt/keyrings/docker.gpg
+  - |
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+
+  # Firewall: allow ssh + http(s) only.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+  # Automatic security updates.
+  - dpkg-reconfigure -plow unattended-upgrades
+
+  # Start the tonbankcard stack.
+  - systemctl daemon-reload
+  - systemctl enable --now tonbankcard.service
+
+%{ if letsencrypt_email != "" && domain != "" ~}
+  # Optional: Caddy as TLS termination in front of the API.
+  - apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+  - curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - |
+    echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update
+  - apt-get install -y caddy
+  - |
+    cat > /etc/caddy/Caddyfile <<EOF
+    {
+      email ${letsencrypt_email}
+    }
+    ${domain} {
+      reverse_proxy 127.0.0.1:3001
+    }
+    EOF
+  - systemctl restart caddy
+%{ endif ~}

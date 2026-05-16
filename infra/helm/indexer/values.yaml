@@ -1,0 +1,119 @@
+# Default values for the Tonbankcard Payment Status Indexer chart.
+
+# Two replicas satisfy the availability requirement from issue #120. Each
+# replica owns its own SQLite database (via volumeClaimTemplates); the
+# database is rebuilt from on-chain state, so eventual consistency is fine.
+replicaCount: 2
+
+image:
+  repository: tonbankcard/indexer
+  tag: 1.0.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: indexer.tonbankcard.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+probes:
+  liveness:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 20
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /health
+      port: 3000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Non-secret environment. Secrets must come from the Secret referenced by
+# `existingSecret` (TON_API_KEY, REDIS_PASSWORD, …).
+env:
+  NODE_ENV: production
+  PORT: "3000"
+  HOST: 0.0.0.0
+  DB_PATH: /app/data/indexer.db
+  TON_NETWORK: testnet
+  TON_API_ENDPOINT: https://testnet.toncenter.com/api/v2
+  INDEXER_POLL_INTERVAL_MS: "5000"
+  INDEXER_BATCH_SIZE: "100"
+  INDEXER_CONFIRMATION_BLOCKS: "10"
+  LOG_LEVEL: info
+  LOG_PRETTY: "false"
+  PAYMENT_HUB_ADDRESS: ""
+  MERCHANT_PAYMENT_HUB_ADDRESS: ""
+  NFT_COLLECTION_7777_ADDRESS: ""
+  NFT_COLLECTION_8888_ADDRESS: ""
+  REDIS_HOST: ""
+  REDIS_PORT: "6379"
+  API_TRUST_PROXY: "true"
+
+existingSecret: tonbankcard-indexer
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

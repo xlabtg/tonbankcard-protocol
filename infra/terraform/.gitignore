@@ -1,0 +1,17 @@
+# Terraform working files
+.terraform/
+.terraform.lock.hcl
+
+# State files MUST live in remote backend (S3/GCS/etc), not in git.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Secrets — never commit.
+terraform.tfvars
+*.auto.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

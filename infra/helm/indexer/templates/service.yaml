@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "indexer.fullname" . }}
+  labels:
+    {{- include "indexer.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "indexer.selectorLabels" . | nindent 4 }}
+---
+# Headless companion Service required by the StatefulSet for stable DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "indexer.fullname" . }}-headless
+  labels:
+    {{- include "indexer.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "indexer.selectorLabels" . | nindent 4 }}

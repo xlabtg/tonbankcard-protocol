@@ -1,0 +1,22 @@
+apiVersion: v2
+name: merchant-api
+description: |
+  Tonbankcard non-custodial Merchant API. Stateless Express service that
+  issues invoices and exposes a read-only payment-status proxy. The chart
+  deploys a Deployment, Service, Ingress and HorizontalPodAutoscaler with
+  sensible production defaults (non-root, two replicas minimum, readiness
+  and liveness probes against /v1/health).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - tonbankcard
+  - ton
+  - payments
+  - merchant-api
+home: https://github.com/xlabtg/tonbankcard-protocol
+sources:
+  - https://github.com/xlabtg/tonbankcard-protocol
+maintainers:
+  - name: Tonbankcard Protocol Team
+    url: https://github.com/xlabtg/tonbankcard-protocol

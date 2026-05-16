@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/xlabtg/tonbankcard-protocol/schemas/service-config-v1.json",
+  "title": "Tonbankcard Service Configuration v1",
+  "description": "Declarative description of the environment variables consumed by every off-chain service that ships in this repository. The schema is intended to be used by Helm/Terraform templates, by docker-compose validation and by onboarding tooling that wants to surface missing configuration before a service starts.",
+  "type": "object",
+  "required": ["services"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "$ref": "#/definitions/serviceConfig"
+        },
+        "indexer": {
+          "$ref": "#/definitions/serviceConfig"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "envVar": {
+      "type": "object",
+      "required": ["name", "required", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the value MUST be sourced from a secret manager (never committed)."
+        },
+        "default": {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        "example": {
+          "type": ["string", "number", "boolean"]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enum": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "serviceConfig": {
+      "type": "object",
+      "required": ["image", "port", "healthcheck", "env"],
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Container image reference (without tag), e.g. tonbankcard/merchant-api."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "healthcheck": {
+          "type": "object",
+          "required": ["path"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 30
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 5
+            },
+            "startPeriodSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 15
+            },
+            "retries": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 3
+            }
+          }
+        },
+        "minReplicas": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 2
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/envVar"
+          }
+        }
+      }
+    }
+  }
+}
