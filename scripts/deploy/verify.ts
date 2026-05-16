@@ -73,21 +73,43 @@ function verifyCodeHash(
 function verifyInvariants(contractName: string): { passed: boolean; details: string[] } {
   const details: string[] = [];
 
-  // Check that no admin withdrawal functions exist in contract source
-  const contractFiles: Record<string, string> = {
-    PaymentHub: 'contracts/payments/PaymentHub.tact',
-    MerchantPaymentHub: 'contracts/MerchantPaymentHub.tact',
-    AccountLocks: 'contracts/payments/account-locks.fc',
-    NFTAccountResolver: 'contracts/nft-resolver/nft_account_resolver.fc',
+  // Mainnet B2 scope (docs/deployments/B2-mainnet/IMMUTABILITY_VERIFICATION.md §3).
+  // Each contract resolves to one OR MORE source files; every file is scanned.
+  const contractFiles: Record<string, string[]> = {
+    AccountLocks: ['contracts/payments/account-locks.fc'],
+    NFTAccountResolver: [
+      'contracts/nft-resolver/nft_account_resolver.fc',
+      'contracts/nft-resolver/nft_account_resolver.tact',
+    ],
+    AccountStateMachine: ['contracts/payment-hub/account-state.tact'],
+    PaymentHub: [
+      'contracts/payments/PaymentHub.tact',
+      'contracts/payments/payment-hub.fc',
+    ],
+    MerchantPaymentHub: ['contracts/MerchantPaymentHub.tact'],
+    CollateralSignal: ['contracts/CollateralSignal.tact'],
+    PublicCollateralLookup: [
+      'contracts/collateral-lookup/PublicCollateralLookup.tact',
+      'contracts/collateral-lookup/public-collateral-lookup.fc',
+    ],
+    ProposalRegistry: ['contracts/governance/ProposalRegistry.tact'],
+    SnapshotVerifier: ['contracts/governance/SnapshotVerifier.tact'],
+    TransparencyRegistry: ['contracts/governance/TransparencyRegistry.tact'],
   };
 
-  const file = contractFiles[contractName];
-  if (!file || !fs.existsSync(file)) {
-    details.push(`Source file not found for ${contractName}`);
+  const files = contractFiles[contractName];
+  if (!files || files.length === 0) {
+    details.push(`Source file mapping not found for ${contractName}`);
     return { passed: false, details };
   }
 
-  const source = fs.readFileSync(file, 'utf8');
+  const existingFiles = files.filter(f => fs.existsSync(f));
+  if (existingFiles.length === 0) {
+    details.push(`No source files exist on disk for ${contractName}: ${files.join(', ')}`);
+    return { passed: false, details };
+  }
+
+  const source = existingFiles.map(f => fs.readFileSync(f, 'utf8')).join('\n');
 
   // Check absence of dangerous patterns
   const forbiddenPatterns = [

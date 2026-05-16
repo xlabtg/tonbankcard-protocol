@@ -10,6 +10,13 @@ For SDK-specific changes, see [sdk/CHANGELOG.md](sdk/CHANGELOG.md).
 
 ## [Unreleased]
 
+### Added — B2 Mainnet Deployment Plan (Issue #118)
+- **Mainnet runbook** (`scripts/deploy/MAINNET_RUNBOOK.md`): step-by-step deployment ceremony with multi-sig discipline, env-var contract, dry-run gating, post-deploy verification, atomic doc-update PR, and roll-back semantics
+- **Engagement package** (`docs/deployments/B2-mainnet/`): `ENGAGEMENT.md`, `STATUS.md`, `DEPLOYMENT_PLAN.md`, `MULTISIG_CEREMONY.md`, `VERIFICATION_PLAN.md`, `IMMUTABILITY_VERIFICATION.md`, `ROLLBACK_PROCEDURES.md`, `MANIFEST_TEMPLATE.json` — mirrors the B1-testnet pattern with mainnet-specific upstream gates G-1 … G-10
+- **Three-layer immutability scanner** (`scripts/deploy/check-immutability.ts`): source-level forbidden-pattern scan, compiled-cell `SETCODE` opcode scan, and persistent-state schema check across all 10 in-scope Phase 2 + governance contracts
+- **Extended `verifyInvariants` coverage** (`scripts/deploy/verify.ts`): the source-level scan now reaches `AccountStateMachine`, `CollateralSignal`, `PublicCollateralLookup`, `ProposalRegistry`, `SnapshotVerifier`, `TransparencyRegistry` (previously only 4 of 10 contracts were scanned)
+- **Placeholder mainnet protocol-contracts sections**: `docs/existing-contracts.md`, `docs/deployments/network-matrix.md`, and `README.md` carry `TBD` rows for each in-scope contract until the multi-sig ceremony completes; manifests remain append-only per `ROLLBACK_PROCEDURES.md` §3
+
 ### Added — Phase 3: User Experience (Issue #80)
 - **Wallet UI** (`wallet-ui/`): Non-custodial wallet interface with balance view, transaction history, and account settings. Vanilla DOM rendering with light/dark theme support. Package: `@tonbankcard/wallet-ui` v1.0.0
 - **Mobile App Core** (`mobile/`): Platform-agnostic TypeScript business logic layer for mobile apps. Includes AccountService, PaymentService, and SyncService. No DOM dependencies. Package: `@tonbankcard/mobile-core` v1.0.0

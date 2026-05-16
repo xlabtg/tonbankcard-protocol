@@ -95,6 +95,18 @@ tonbankcard-protocol/
 - Decentralized price discovery
 - Enables external on/off ramps
 
+### Payment-Block Contracts (Awaiting B2 Mainnet Ceremony)
+
+The Phase 2 protocol contracts (`AccountLocks`, `NFTAccountResolver`, `AccountStateMachine`, `PaymentHub`, `MerchantPaymentHub`, `CollateralSignal`, `PublicCollateralLookup`) plus the governance group are scheduled for mainnet deployment under engagement **[B2-mainnet](docs/deployments/B2-mainnet/ENGAGEMENT.md)**.
+
+- **Runbook:** [`scripts/deploy/MAINNET_RUNBOOK.md`](scripts/deploy/MAINNET_RUNBOOK.md) — step-by-step deploy ceremony
+- **Multi-sig discipline:** [`docs/deployments/B2-mainnet/MULTISIG_CEREMONY.md`](docs/deployments/B2-mainnet/MULTISIG_CEREMONY.md) — ≥ 2-of-3 hardware-wallet signers, distinct from B1 testnet
+- **Verification:** [`docs/deployments/B2-mainnet/VERIFICATION_PLAN.md`](docs/deployments/B2-mainnet/VERIFICATION_PLAN.md) — code-hash, initial-state, and end-to-end tx checks
+- **Immutability:** [`docs/deployments/B2-mainnet/IMMUTABILITY_VERIFICATION.md`](docs/deployments/B2-mainnet/IMMUTABILITY_VERIFICATION.md) — three-layer scan (source / compiled cell / state)
+- **Roll-back posture:** [`docs/deployments/B2-mainnet/ROLLBACK_PROCEDURES.md`](docs/deployments/B2-mainnet/ROLLBACK_PROCEDURES.md) — manifests are append-only; "roll-back" means pause + supersede, never delete-and-redeploy
+
+Addresses populate `docs/existing-contracts.md` and `docs/deployments/network-matrix.md` **atomically** once the ceremony completes.
+
 ## Architecture
 
 For detailed architecture documentation, see [docs/architecture.md](docs/architecture.md).

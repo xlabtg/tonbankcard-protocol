@@ -1,0 +1,434 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/xlabtg/tonbankcard-protocol/docs/deployments/B2-mainnet/MANIFEST_TEMPLATE.json",
+  "title": "Tonbankcard Mainnet Deployment Manifest (B2)",
+  "description": "Canonical, append-only layout for `deployments/mainnet/<timestamp>.json` files written by `scripts/deploy/deploy.ts` during engagement B2. Mainnet manifests are never edited or deleted — corrections add new manifests that reference the prior one via `supersedes`. The manifest is the source of truth referenced by `STATUS.md` §7/§8, `docs/existing-contracts.md`, `docs/deployments/network-matrix.md`, and `README.md`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "manifestType",
+    "network",
+    "environment",
+    "phase",
+    "timestamp",
+    "commit",
+    "compilers",
+    "deployer",
+    "configuration",
+    "deploymentOrder",
+    "contracts",
+    "dryRun",
+    "paused",
+    "supersedes",
+    "supersededBy",
+    "verification"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Schema version; bump only via a new B2 cycle."
+    },
+    "manifestType": {
+      "type": "string",
+      "const": "tonbankcard.deploy.manifest",
+      "description": "Static type tag used by `verify.ts` to reject foreign files."
+    },
+    "network": {
+      "type": "string",
+      "enum": ["mainnet"],
+      "description": "B2 manifests target TON mainnet only. The testnet schema is governed by B1."
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["mainnet"],
+      "description": "Always `mainnet` for B2. A manifest with `environment = testnet-only` is rejected by mainnet tooling."
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["phase2"],
+      "description": "B2 deploys only Phase 2. Phase 4 entries are rejected; they will be governed by a future engagement B4."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the manifest was finalised; matches the filename."
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full git SHA of the deploy commit; must equal `audit/FREEZE_METADATA.md` `freezeCommit` and the B1 manifest commit."
+    },
+    "compilers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tact", "func", "blueprint"],
+      "properties": {
+        "tact": {
+          "type": "string",
+          "description": "Tact compiler version exactly as reported by `npx tact --version` on the deploy machine."
+        },
+        "func": {
+          "type": "string",
+          "description": "FunC compiler version exactly as reported by `func -V` on the deploy machine."
+        },
+        "blueprint": {
+          "type": "string",
+          "description": "@ton/blueprint version pinned in `package.json` at the deploy commit."
+        }
+      },
+      "description": "Toolchain versions used for the build; verified against `audit/FREEZE_METADATA.md`."
+    },
+    "deployer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["multiSigAddress", "signers", "threshold", "hardwareWalletOnly", "testnetKeyReuse"],
+      "properties": {
+        "multiSigAddress": {
+          "type": "string",
+          "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+          "description": "Mainnet multi-sig address that signed every deploy transaction in this manifest. Must start with `EQ` (mainnet)."
+        },
+        "signers": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^EQ[A-Za-z0-9_-]{46}$"
+          },
+          "description": "Hardware-wallet signer addresses (cold storage). Minimum 3 signers; threshold ≥ 2."
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Multi-sig threshold; single-key deployment is forbidden by NFR-3 and `MULTISIG_CEREMONY.md` §2.2."
+        },
+        "hardwareWalletOnly": {
+          "type": "boolean",
+          "const": true,
+          "description": "Must be `true`. Software / hot wallets are rejected."
+        },
+        "testnetKeyReuse": {
+          "type": "boolean",
+          "const": false,
+          "description": "Must be `false`. `verify.ts` aborts if any mainnet signer appears in the B1 testnet manifest."
+        }
+      },
+      "description": "Deployer multi-sig — its signers must be distinct from any B1 testnet signer and from the risk authority custodian."
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adminAddress", "riskAuthority", "lendingAdapter"],
+      "properties": {
+        "adminAddress": {
+          "type": "string",
+          "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+          "description": "Value of `ADMIN_ADDRESS` env var at deploy time. Bound to parameter-only authority (no fund control) by invariant I3."
+        },
+        "riskAuthority": {
+          "type": "string",
+          "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+          "description": "Value of `RISK_AUTHORITY_ADDRESS` env var at deploy time. Must NOT equal `adminAddress` and MUST NOT appear in `deployer.signers`."
+        },
+        "lendingAdapter": {
+          "type": "null",
+          "description": "Always `null` on B2 — `LendingProtocolCoordinator` is a Phase 4 contract, out of scope of B2."
+        }
+      }
+    },
+    "deploymentOrder": {
+      "type": "array",
+      "minItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "AccountLocks",
+          "NFTAccountResolver",
+          "AccountStateMachine",
+          "PaymentHub",
+          "MerchantPaymentHub",
+          "CollateralSignal",
+          "PublicCollateralLookup",
+          "ProposalRegistry",
+          "SnapshotVerifier",
+          "TransparencyRegistry"
+        ]
+      },
+      "description": "Names of the contracts deployed, in the deterministic order produced by `DEPLOYMENT_PLAN.md` §3."
+    },
+    "contracts": {
+      "type": "object",
+      "minProperties": 7,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "codeHash",
+          "deployTx",
+          "deployBlock",
+          "deployedAt",
+          "initParameters",
+          "verification",
+          "governanceActivated"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+            "description": "Deployed mainnet contract address."
+          },
+          "codeHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the deployed contract code cell; must equal the value in `DEPLOYMENT_PLAN.md` §7."
+          },
+          "deployTx": {
+            "type": "string",
+            "description": "Deploy transaction hash on mainnet."
+          },
+          "deployBlock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Masterchain seqno at which the deploy transaction landed."
+          },
+          "deployedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 UTC timestamp of the deploy transaction (immutable across re-runs by idempotency)."
+          },
+          "initParameters": {
+            "type": "object",
+            "description": "Map of init-parameter name → value, mirroring `DEPLOYMENT_PLAN.md` §3.1.",
+            "additionalProperties": true
+          },
+          "verification": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "report", "verifiedAt"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["pending", "passed", "failed"],
+                "description": "Result of the `verify.ts` run for this contract."
+              },
+              "report": {
+                "type": "string",
+                "description": "Relative path to the verification report (`<manifest>.verification.json`)."
+              },
+              "verifiedAt": {
+                "oneOf": [
+                  { "type": "null" },
+                  { "type": "string", "format": "date-time" }
+                ]
+              },
+              "immutabilityScan": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["source", "bytecode", "state"],
+                    "properties": {
+                      "source": { "type": "boolean" },
+                      "bytecode": { "type": "boolean" },
+                      "state": { "type": "boolean" }
+                    },
+                    "description": "Three-layer immutability scan result per `IMMUTABILITY_VERIFICATION.md`."
+                  }
+                ]
+              }
+            }
+          },
+          "governanceActivated": {
+            "type": "boolean",
+            "description": "Set `true` only after the 7-day soak window completes for `ProposalRegistry`, `SnapshotVerifier`, `TransparencyRegistry`. Other contracts always carry `false` (no activation gate)."
+          },
+          "tonviewerUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Convenience URL to TONviewer for human reviewers."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free-form notes — typically invariant references (I1–I7) or trust assumptions."
+          }
+        }
+      },
+      "description": "Per-contract deployment records. Keys are the canonical contract names from `DEPLOYMENT_PLAN.md`."
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allPassed", "report", "endToEnd"],
+      "properties": {
+        "allPassed": {
+          "type": "boolean",
+          "description": "Mirror of the verification report top-level `allPassed`."
+        },
+        "report": {
+          "type": "string",
+          "description": "Relative path to the verification report file."
+        },
+        "endToEnd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "scenarios"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["pending", "passed", "failed"],
+              "description": "Outcome of the end-to-end test transaction (`VERIFICATION_PLAN.md` §3)."
+            },
+            "scenarios": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "status"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "enum": ["V-7", "V-8", "V-9"]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending", "passed", "failed", "skipped"]
+                  },
+                  "txHash": { "type": "string" },
+                  "notes": { "type": "string" }
+                }
+              },
+              "description": "Per-scenario results — V-7 NFT resolve, V-8 internal transfer, V-9 lock blocks transfer."
+            },
+            "soakWindowStart": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "string", "format": "date-time" }
+              ],
+              "description": "ISO-8601 UTC timestamp when the 24-hour soak window began."
+            },
+            "soakWindowEnd": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "string", "format": "date-time" }
+              ],
+              "description": "ISO-8601 UTC timestamp when the soak window completed without Critical/High findings."
+            }
+          }
+        }
+      },
+      "description": "Aggregate verification record — `VERIFICATION_PLAN.md` outcomes summarised."
+    },
+    "dryRun": {
+      "type": "boolean",
+      "description": "`true` if produced by `--dry-run`; such manifests are never committed under `deployments/mainnet/`."
+    },
+    "paused": {
+      "type": "boolean",
+      "description": "`true` if `ROLLBACK_PROCEDURES.md` §3 has paused this manifest. Append-only — paused manifests stay in the audit trail; corrections add new manifests."
+    },
+    "supersedes": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "description": "Filename of the prior manifest this one supersedes, or `null` for the first mainnet manifest."
+    },
+    "supersededBy": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "description": "Filename of the follow-up manifest that supersedes this one. `null` while this manifest is current."
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0.0",
+      "manifestType": "tonbankcard.deploy.manifest",
+      "network": "mainnet",
+      "environment": "mainnet",
+      "phase": "phase2",
+      "timestamp": "2026-06-15T10-00-00Z",
+      "commit": "0000000000000000000000000000000000000000",
+      "compilers": {
+        "tact": "TBD",
+        "func": "TBD",
+        "blueprint": "TBD"
+      },
+      "deployer": {
+        "multiSigAddress": "EQTBD000000000000000000000000000000000000000000",
+        "signers": [
+          "EQSIGNER1000000000000000000000000000000000000000",
+          "EQSIGNER2000000000000000000000000000000000000000",
+          "EQSIGNER3000000000000000000000000000000000000000"
+        ],
+        "threshold": 2,
+        "hardwareWalletOnly": true,
+        "testnetKeyReuse": false
+      },
+      "configuration": {
+        "adminAddress": "EQADMIN0000000000000000000000000000000000000000",
+        "riskAuthority": "EQRISK00000000000000000000000000000000000000000",
+        "lendingAdapter": null
+      },
+      "deploymentOrder": [
+        "AccountLocks",
+        "NFTAccountResolver",
+        "AccountStateMachine",
+        "PaymentHub",
+        "MerchantPaymentHub",
+        "CollateralSignal",
+        "PublicCollateralLookup",
+        "ProposalRegistry",
+        "SnapshotVerifier",
+        "TransparencyRegistry"
+      ],
+      "contracts": {
+        "AccountLocks": {
+          "address": "EQADDR_ACCOUNT_LOCKS00000000000000000000000000",
+          "codeHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "deployTx": "TBD",
+          "deployBlock": 0,
+          "deployedAt": "2026-06-15T10:05:00Z",
+          "initParameters": {
+            "admin": "EQADMIN0000000000000000000000000000000000000000",
+            "risk_authority": "EQRISK00000000000000000000000000000000000000000"
+          },
+          "verification": {
+            "status": "pending",
+            "report": "2026-06-15T10-00-00Z.verification.json",
+            "verifiedAt": null,
+            "immutabilityScan": null
+          },
+          "governanceActivated": false,
+          "tonviewerUrl": "https://tonviewer.com/EQADDR_ACCOUNT_LOCKS00000000000000000000000000",
+          "notes": "Invariant I3 — admin cannot move funds; only set/clear locks."
+        }
+      },
+      "verification": {
+        "allPassed": false,
+        "report": "2026-06-15T10-00-00Z.verification.json",
+        "endToEnd": {
+          "status": "pending",
+          "scenarios": [
+            { "id": "V-7", "status": "pending" },
+            { "id": "V-8", "status": "pending" },
+            { "id": "V-9", "status": "pending" }
+          ],
+          "soakWindowStart": null,
+          "soakWindowEnd": null
+        }
+      },
+      "dryRun": false,
+      "paused": false,
+      "supersedes": null,
+      "supersededBy": null
+    }
+  ]
+}
