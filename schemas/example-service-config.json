@@ -1,0 +1,190 @@
+{
+  "version": "1.0.0",
+  "services": {
+    "api": {
+      "image": "tonbankcard/merchant-api",
+      "port": 3000,
+      "healthcheck": {
+        "path": "/v1/health",
+        "intervalSeconds": 30,
+        "timeoutSeconds": 5,
+        "startPeriodSeconds": 15,
+        "retries": 3
+      },
+      "minReplicas": 2,
+      "env": [
+        {
+          "name": "NODE_ENV",
+          "required": true,
+          "default": "production",
+          "enum": ["development", "test", "production"],
+          "description": "Express runtime mode; controls verbose error output."
+        },
+        {
+          "name": "PORT",
+          "required": false,
+          "default": 3000,
+          "description": "TCP port the HTTP server binds to."
+        },
+        {
+          "name": "HOST",
+          "required": false,
+          "default": "0.0.0.0",
+          "description": "Network interface to bind. Use 0.0.0.0 inside containers."
+        },
+        {
+          "name": "ALLOWED_ORIGINS",
+          "required": true,
+          "example": "https://merchant.example.com",
+          "description": "Comma-separated list of CORS origins permitted to call the API."
+        },
+        {
+          "name": "API_KEY_SECRET",
+          "required": true,
+          "secret": true,
+          "description": "32-byte random secret used to sign issued API keys. Rotate periodically."
+        },
+        {
+          "name": "DATABASE_URL",
+          "required": false,
+          "secret": true,
+          "example": "postgres://user:pass@postgres:5432/tonbankcard",
+          "description": "PostgreSQL connection string. When unset the in-memory storage backend is used (development only)."
+        },
+        {
+          "name": "REDIS_URL",
+          "required": false,
+          "secret": true,
+          "example": "redis://redis:6379/0",
+          "description": "Redis connection string for distributed idempotency storage."
+        }
+      ]
+    },
+    "indexer": {
+      "image": "tonbankcard/indexer",
+      "port": 3000,
+      "healthcheck": {
+        "path": "/health",
+        "intervalSeconds": 30,
+        "timeoutSeconds": 5,
+        "startPeriodSeconds": 20,
+        "retries": 3
+      },
+      "minReplicas": 2,
+      "env": [
+        {
+          "name": "NODE_ENV",
+          "required": true,
+          "default": "production",
+          "enum": ["development", "test", "production"],
+          "description": "Pino transport selection and verbose logging gating."
+        },
+        {
+          "name": "PORT",
+          "required": false,
+          "default": 3000,
+          "description": "Read-only payment-status API port."
+        },
+        {
+          "name": "HOST",
+          "required": false,
+          "default": "0.0.0.0",
+          "description": "Bind interface."
+        },
+        {
+          "name": "TON_NETWORK",
+          "required": true,
+          "default": "testnet",
+          "enum": ["mainnet", "testnet"],
+          "description": "Selects the TON network the indexer subscribes to."
+        },
+        {
+          "name": "TON_API_ENDPOINT",
+          "required": true,
+          "default": "https://testnet.toncenter.com/api/v2",
+          "description": "TonCenter (or compatible) JSON-RPC endpoint."
+        },
+        {
+          "name": "TON_API_KEY",
+          "required": false,
+          "secret": true,
+          "description": "TonCenter API key. Required for production rate limits."
+        },
+        {
+          "name": "PAYMENT_HUB_ADDRESS",
+          "required": true,
+          "description": "Bech32-encoded address of the deployed PaymentHub contract."
+        },
+        {
+          "name": "MERCHANT_PAYMENT_HUB_ADDRESS",
+          "required": true,
+          "description": "Address of the deployed MerchantPaymentHub contract."
+        },
+        {
+          "name": "NFT_COLLECTION_7777_ADDRESS",
+          "required": true,
+          "description": "Address of the 7777 (consumer) NFT collection."
+        },
+        {
+          "name": "NFT_COLLECTION_8888_ADDRESS",
+          "required": true,
+          "description": "Address of the 8888 (merchant) NFT collection."
+        },
+        {
+          "name": "DB_PATH",
+          "required": false,
+          "default": "/app/data/indexer.db",
+          "description": "Filesystem path for the SQLite database. Must reside on a persistent volume in production."
+        },
+        {
+          "name": "INDEXER_POLL_INTERVAL_MS",
+          "required": false,
+          "default": 5000,
+          "description": "Interval in milliseconds between RPC poll cycles."
+        },
+        {
+          "name": "INDEXER_BATCH_SIZE",
+          "required": false,
+          "default": 100,
+          "description": "Maximum number of blocks fetched per poll cycle."
+        },
+        {
+          "name": "INDEXER_CONFIRMATION_BLOCKS",
+          "required": false,
+          "default": 10,
+          "description": "Number of additional blocks required before an event is marked confirmed (reorg protection)."
+        },
+        {
+          "name": "REDIS_HOST",
+          "required": false,
+          "description": "Hostname of Redis used for distributed rate limiting. Leave blank to disable."
+        },
+        {
+          "name": "REDIS_PORT",
+          "required": false,
+          "default": 6379,
+          "description": "Redis TCP port."
+        },
+        {
+          "name": "REDIS_PASSWORD",
+          "required": false,
+          "secret": true,
+          "description": "Redis AUTH password (optional)."
+        },
+        {
+          "name": "LOG_LEVEL",
+          "required": false,
+          "default": "info",
+          "enum": ["fatal", "error", "warn", "info", "debug", "trace"],
+          "description": "Pino log level."
+        },
+        {
+          "name": "LOG_PRETTY",
+          "required": false,
+          "default": false,
+          "description": "Enable pino-pretty transport. MUST be false in production for JSON logs."
+        }
+      ]
+    }
+  }
+}

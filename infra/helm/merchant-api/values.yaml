@@ -1,0 +1,114 @@
+# Default values for the Tonbankcard Merchant API chart.
+# Override with `--set` or `-f my-values.yaml`.
+
+replicaCount: 2
+
+image:
+  repository: tonbankcard/merchant-api
+  tag: 1.0.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod-level security context — non-root, read-only root filesystem.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "32k"
+  hosts:
+    - host: api.tonbankcard.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: merchant-api-tls
+      hosts:
+        - api.tonbankcard.example.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+probes:
+  liveness:
+    httpGet:
+      path: /v1/health
+      port: 3000
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /v1/health
+      port: 3000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Non-secret environment. Secrets live in `existingSecret` below.
+env:
+  NODE_ENV: production
+  PORT: "3000"
+  HOST: 0.0.0.0
+  ALLOWED_ORIGINS: https://merchant.tonbankcard.example.com
+  LOG_LEVEL: info
+  LOG_PRETTY: "false"
+
+# Pre-existing Secret that contains sensitive values such as
+# API_KEY_SECRET, DATABASE_URL and REDIS_URL. Create it ahead of time:
+#   kubectl create secret generic tonbankcard-api \
+#     --from-literal=API_KEY_SECRET=$(openssl rand -hex 32) \
+#     --from-literal=DATABASE_URL=postgres://...
+existingSecret: tonbankcard-api
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,145 @@
+# docker-compose.yml — Local development environment for Tonbankcard Protocol
+#
+# Brings up the Merchant API, the Payment Status Indexer, an optional Redis
+# instance for distributed rate limiting / idempotency, and an optional
+# PostgreSQL instance for the API's PostgresStorage backend. The indexer
+# defaults to SQLite-on-volume so the database is persisted between restarts.
+#
+# Usage:
+#   cp .env.example .env                       # adjust values as needed
+#   docker compose up --build                  # foreground, with logs
+#   docker compose up -d                       # detached
+#   docker compose --profile postgres up -d    # also start PostgreSQL
+#   docker compose down                        # stop and remove containers
+#   docker compose down -v                     # also remove named volumes
+#
+# Services expose ports on the host so the developer can hit them with curl:
+#   curl http://localhost:3001/v1/health       # api
+#   curl http://localhost:3002/health          # indexer
+
+name: tonbankcard
+
+services:
+  api:
+    image: tonbankcard/merchant-api:local
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: tonbankcard-api
+    restart: unless-stopped
+    env_file:
+      - .env
+      - path: ./api/.env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      HOST: 0.0.0.0
+      # When PostgresStorage is enabled, connect over the docker network.
+      DATABASE_URL: ${DATABASE_URL:-postgres://tonbankcard:tonbankcard@postgres:5432/tonbankcard}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    ports:
+      - "${API_HOST_PORT:-3001}:3000"
+    networks:
+      - tonbankcard
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  indexer:
+    image: tonbankcard/indexer:local
+    build:
+      context: ./backend/indexer
+      dockerfile: Dockerfile
+    container_name: tonbankcard-indexer
+    restart: unless-stopped
+    env_file:
+      - .env
+      - path: ./backend/indexer/.env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      HOST: 0.0.0.0
+      DB_PATH: /app/data/indexer.db
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PRETTY: ${LOG_PRETTY:-false}
+    ports:
+      - "${INDEXER_HOST_PORT:-3002}:3000"
+    volumes:
+      - indexer-data:/app/data
+    networks:
+      - tonbankcard
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: tonbankcard-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - tonbankcard
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # PostgreSQL is optional — the API can run against InMemoryStorage. Enable
+  # this profile when you need persistent invoice storage:
+  #   docker compose --profile postgres up -d
+  postgres:
+    image: postgres:16-alpine
+    container_name: tonbankcard-postgres
+    restart: unless-stopped
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tonbankcard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tonbankcard}
+      POSTGRES_DB: ${POSTGRES_DB:-tonbankcard}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - tonbankcard
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tonbankcard}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  tonbankcard:
+    driver: bridge
+
+volumes:
+  indexer-data:
+    driver: local
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local

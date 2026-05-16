@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and replace placeholders. NEVER commit the
+# resulting file — terraform.tfvars is ignored by the repo .gitignore.
+
+hcloud_token = "<your-hetzner-token>"
+
+ssh_authorized_keys = [
+  "ssh-ed25519 AAAA... user@example.com",
+]
+
+api_image     = "ghcr.io/xlabtg/tonbankcard/merchant-api:1.0.0"
+indexer_image = "ghcr.io/xlabtg/tonbankcard/indexer:1.0.0"
+
+api_key_secret = "REPLACE_WITH_openssl_rand_hex_32"
+ton_api_key    = "REPLACE_WITH_TONCENTER_KEY"
+
+payment_hub_address           = "EQA..."
+merchant_payment_hub_address  = "EQB..."
+nft_collection_7777_address   = "EQC..."
+nft_collection_8888_address   = "EQD..."
+
+allowed_origins = "https://merchant.tonbankcard.example.com"
+
+letsencrypt_email = "ops@example.com"
+domain            = "api.tonbankcard.example.com"
