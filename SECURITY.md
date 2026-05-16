@@ -3,7 +3,7 @@
 **Document Type:** Security Policy
 **Issue Reference:** [#66 — Issue 10.7 — Responsible Disclosure & Vulnerability Reporting Policy](https://github.com/xlabtg/tonbankcard-protocol/issues/66)
 **Status:** Active
-**Last Updated:** 2026-03-05
+**Last Updated:** 2026-05-16
 
 ---
 
@@ -15,6 +15,7 @@
 4. [Response Timeline](#4-response-timeline)
 5. [Disclosure Policy](#5-disclosure-policy)
 6. [Safe Harbor Statement](#6-safe-harbor-statement)
+7. [Bug Bounty Program](#7-bug-bounty-program)
 
 ---
 
@@ -31,6 +32,8 @@ Earlier versions and pre-release deployments are not covered by this policy.
 ## 1. Reporting Channels
 
 **DO NOT** disclose security vulnerabilities publicly. Public disclosure before a patch is available puts all users at risk.
+
+> **Once the A5 bug bounty program is launched**, the bounty platform is the preferred channel for in-scope components and is the **only** channel eligible for monetary rewards. See [Section 7 — Bug Bounty Program](#7-bug-bounty-program). The channels below remain available for out-of-scope reports and as a fallback if the platform is unavailable.
 
 The preferred channel is GitHub's private security advisory feature:
 
@@ -172,6 +175,22 @@ This safe harbor applies to research conducted under these terms. It does not ex
 - Any activity that violates applicable law
 
 This statement is not legal advice and does not constitute a legal agreement. Researchers are responsible for understanding and complying with all applicable laws.
+
+---
+
+## 7. Bug Bounty Program
+
+TONBANKCARD operates a public bug bounty program (engagement **A5**) on a third-party platform. The program is the **only** channel eligible for monetary rewards.
+
+- **Engagement plan:** [`docs/security/audits/A5-bug-bounty/ENGAGEMENT.md`](docs/security/audits/A5-bug-bounty/ENGAGEMENT.md)
+- **Program brief (canonical source for the platform-published terms):** [`docs/security/audits/A5-bug-bounty/PROGRAM_BRIEF.md`](docs/security/audits/A5-bug-bounty/PROGRAM_BRIEF.md)
+- **Severity rubric:** [`docs/security/audits/A5-bug-bounty/SEVERITY_RUBRIC.md`](docs/security/audits/A5-bug-bounty/SEVERITY_RUBRIC.md)
+- **Engagement status (live):** [`docs/security/audits/A5-bug-bounty/STATUS.md`](docs/security/audits/A5-bug-bounty/STATUS.md)
+- **Quarterly transparency reports:** [`docs/security/audits/A5-bug-bounty/reports/`](docs/security/audits/A5-bug-bounty/) (published every calendar quarter while the program is active)
+
+Reward tiers, scope, SLAs, safe-harbor terms, and the duplicate / out-of-scope policy are all defined in the program brief. The brief in this repository is the canonical source — if the platform listing diverges from the repository version, the discrepancy is treated as a documentation bug and the repository version applies.
+
+**Launch gate:** the program goes public only after both [A1 — Core Contracts Audit](docs/security/audits/A1-core-contracts/) and [A2 — External Adapters Audit](docs/security/audits/A2-external-adapters/) are closed with a passing gating decision and after the internal dry-run defined in [`DRY_RUN.md`](docs/security/audits/A5-bug-bounty/DRY_RUN.md) completes successfully. Until launch, the program page is private / unlisted and submissions should continue to use the channels in [Section 1](#1-reporting-channels).
 
 ---
 
