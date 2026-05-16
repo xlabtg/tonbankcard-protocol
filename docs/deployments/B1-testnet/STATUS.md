@@ -253,3 +253,4 @@ If any validation scenario cannot be completed on testnet (for example a gateway
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-05-16 | Initial engagement plan committed (this file) | `@konard` |
+| 2026-05-16 | Added `GATEWAY_VALIDATION.md`, `INDEXER_VALIDATION.md`, and `MANIFEST_TEMPLATE.json` to complete the engagement package referenced in [`ENGAGEMENT.md`](./ENGAGEMENT.md) §5 | `@konard` |
