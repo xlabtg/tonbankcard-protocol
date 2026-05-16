@@ -94,6 +94,68 @@ Violations result in immediate PR rejection.
 
 ---
 
+### 6.1 Property-Based Invariant Tests
+
+The protocol invariants I1–I7 defined in [docs/invariants.md](docs/invariants.md)
+are continuously verified by a property-based test suite using
+[`fast-check`](https://fast-check.dev/) on a TypeScript state-machine
+model. The suite lives at `tests/invariants/` as a standalone npm
+project and is the **authoritative machine-checked verification** of
+the protocol invariants.
+
+**Layout:**
+
+```
+tests/invariants/
+├── model/
+│   └── protocol-model.ts          # state-machine model mirroring the on-chain contracts
+└── property/
+    ├── arbitraries.ts             # fast-check generators (NFTs, users, amounts, roles)
+    ├── helpers.ts                 # snapshot + caller helpers
+    ├── I1-non-custodial.spec.ts
+    ├── I2-nft-authority.spec.ts
+    ├── I3-no-admin-fund-control.spec.ts
+    ├── I4-atomic-transfers.spec.ts
+    ├── I4-adversarial.spec.ts     # deterministic attack scenarios
+    ├── I5-ledger-conservation.spec.ts
+    ├── I6-lock-not-confiscation.spec.ts
+    ├── I7-lock-enforcement.spec.ts
+    └── I7-adversarial.spec.ts     # deterministic attack scenarios
+```
+
+**Running locally:**
+
+```bash
+cd tests/invariants
+npm install        # one-off
+npm test           # runs property-based + adversarial specs
+npm run typecheck  # validates the TypeScript model under strict mode
+```
+
+The full suite must complete in well under 60 seconds (current wall
+clock ≈4 seconds). CI runs both commands above on every pull request
+via the `test-invariants` job in `.github/workflows/ci.yml`.
+
+**When to add tests:**
+
+* Any new protocol operation (transfer-like action, lock, or admin role
+  change) MUST extend the model in `tests/invariants/model/protocol-model.ts`
+  and add property-based coverage proving the relevant invariants still
+  hold.
+* Any new threat-model entry MUST add a deterministic adversarial spec
+  under `tests/invariants/property/*-adversarial.spec.ts`.
+* If a new invariant Ik is introduced, add `Ik-<slug>.spec.ts` and
+  update `docs/invariants.md` proof-status table.
+
+**Formal-verification artifacts (stretch goal):**
+
+A bounded TLA+ model lives in `docs/formal-verification/Protocol.tla`
+and `Protocol.cfg` (see the `README.md` in that directory). It mirrors
+the same invariants and is intended as documentation of the protocol
+state machine — the property-based suite remains authoritative.
+
+---
+
 ### 7. Review & Merge Process
 
 All Pull Requests:
