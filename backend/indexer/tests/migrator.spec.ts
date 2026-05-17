@@ -28,6 +28,17 @@ function writeMigration(
   fs.writeFileSync(path.join(dir, 'down.sqlite.sql'), down);
 }
 
+// Discover the actual list of shipped migrations from disk so this suite
+// adapts to new migrations being added (e.g. 002_transparency). The
+// foundational 001_initial migration is always present and the suite
+// pins its semantics; subsequent versions are exercised generically.
+const SHIPPED_VERSIONS: string[] = fs
+  .readdirSync(PROJECT_MIGRATIONS, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && /^\d{3,}_/.test(entry.name))
+  .map((entry) => entry.name.split('_')[0])
+  .sort();
+const LATEST_VERSION = SHIPPED_VERSIONS[SHIPPED_VERSIONS.length - 1];
+
 describe('Migrator (SQLite)', () => {
   let workDir: string;
   let dbPath: string;
@@ -44,25 +55,26 @@ describe('Migrator (SQLite)', () => {
     fs.rmSync(workDir, { recursive: true, force: true });
   });
 
-  describe('with the shipped migration 001_initial', () => {
-    it('starts with a single pending migration', async () => {
+  describe('with the shipped migrations', () => {
+    it('starts with every shipped migration pending', async () => {
       const migrator = new Migrator({ driver, migrationsDir: PROJECT_MIGRATIONS });
       const status = await migrator.status();
       expect(status.dialect).toBe('sqlite');
       expect(status.applied).toEqual([]);
-      expect(status.pending.map((m) => m.version)).toEqual(['001']);
+      expect(status.pending.map((m) => m.version)).toEqual(SHIPPED_VERSIONS);
     });
 
     it('applies migration 001_initial and records it', async () => {
       const migrator = new Migrator({ driver, migrationsDir: PROJECT_MIGRATIONS });
       const applied = await migrator.up();
-      expect(applied.length).toBe(1);
-      expect(applied[0].version).toBe('001');
-      expect(applied[0].name).toBe('initial');
-      expect(applied[0].checksum).toMatch(/^[a-f0-9]{64}$/);
+      expect(applied.map((m) => m.version)).toEqual(SHIPPED_VERSIONS);
+      const initial = applied.find((m) => m.version === '001');
+      expect(initial).toBeDefined();
+      expect(initial!.name).toBe('initial');
+      expect(initial!.checksum).toMatch(/^[a-f0-9]{64}$/);
 
       const status = await migrator.status();
-      expect(status.applied.map((m) => m.version)).toEqual(['001']);
+      expect(status.applied.map((m) => m.version)).toEqual(SHIPPED_VERSIONS);
       expect(status.pending).toEqual([]);
       expect(status.drift).toEqual([]);
     });
@@ -111,24 +123,21 @@ describe('Migrator (SQLite)', () => {
       await migrator.up();
       const rolledBack = await migrator.down();
       expect(rolledBack.length).toBe(1);
-      expect(rolledBack[0].version).toBe('001');
-
-      const tables = (await driver.query<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-      )).map((row) => row.name);
-      expect(tables).toEqual(['schema_migrations']);
+      expect(rolledBack[0].version).toBe(LATEST_VERSION);
 
       const status = await migrator.status();
-      expect(status.applied).toEqual([]);
-      expect(status.pending.map((m) => m.version)).toEqual(['001']);
+      expect(status.applied.map((m) => m.version)).toEqual(
+        SHIPPED_VERSIONS.slice(0, -1)
+      );
+      expect(status.pending.map((m) => m.version)).toEqual([LATEST_VERSION]);
     });
 
     it('survives apply → rollback → re-apply cycle', async () => {
       const migrator = new Migrator({ driver, migrationsDir: PROJECT_MIGRATIONS });
       await migrator.up();
-      await migrator.down();
+      await migrator.down(SHIPPED_VERSIONS.length);
       const reapplied = await migrator.up();
-      expect(reapplied.map((m) => m.version)).toEqual(['001']);
+      expect(reapplied.map((m) => m.version)).toEqual(SHIPPED_VERSIONS);
 
       const tables = (await driver.query<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type='table'"
