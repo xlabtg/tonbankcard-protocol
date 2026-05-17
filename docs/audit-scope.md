@@ -224,6 +224,8 @@ The following components are **explicitly excluded** from the audit:
   - Reason: Not implemented yet
 - ❌ **Recurring Payments**
   - Reason: Not implemented yet
+- ❌ **Cross-Chain Bridge (production-hardened)** — `contracts/CrossChainBridge.tact`
+  - Reason: Issue #138 (F3) documents production-readiness requirements (validators, replay protection, circuit breakers, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/bridge/` for the full F3 specification.
 
 ---
 
@@ -763,6 +765,13 @@ tests/
 | **Contract README** | Contract specifications | `contracts/README.md` |
 | **Payment Hub README** | Payment Hub details | `contracts/payments/README.md` |
 | **Account Locks README** | Lock system details | `contracts/payments/ACCOUNT_LOCKS.md` |
+| **F3 Bridge — Supported Chains** | Priority chains, constants, rollout (#138) | `docs/bridge/SUPPORTED_CHAINS.md` |
+| **F3 Bridge — Validators** | 5-of-9 validator set, BLS aggregation | `docs/bridge/VALIDATORS.md` |
+| **F3 Bridge — Replay Protection** | Canonical hash, intent state machine, T-RP-1..T-RP-5 | `docs/bridge/REPLAY_PROTECTION.md` |
+| **F3 Bridge — Circuit Breakers** | TVL/outflow caps, AP-1..AP-5, DR drills | `docs/bridge/CIRCUIT_BREAKERS.md` |
+| **F3 Bridge — Contract Hardening** | CH-1..CH-7 backlog and R-CH-1..R-CH-5 guardrails | `docs/bridge/CONTRACT_HARDENING.md` |
+| **F3 Bridge — Monitoring** | Alerts BR-M01..BR-M20 (B3 integration) | `docs/bridge/MONITORING.md` |
+| **F3 Bridge — Bug Bounty** | Bridge-specific bounty (A5 integration) | `docs/bridge/BUG_BOUNTY.md` |
 
 ---
 

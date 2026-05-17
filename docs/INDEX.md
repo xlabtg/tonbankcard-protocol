@@ -115,6 +115,20 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 
 ---
 
+## Cross-Chain Bridge (F3)
+
+| Document | Description |
+|----------|-------------|
+| [Supported Chains](bridge/SUPPORTED_CHAINS.md) | Priority chains (Ethereum, BSC, Polygon), constants and rollout plan |
+| [Validators](bridge/VALIDATORS.md) | 5-of-9 validator set, BLS aggregation, governance handover |
+| [Replay Protection](bridge/REPLAY_PROTECTION.md) | Canonical hash, intent state machine, anti-replay guarantees (T-RP-1..T-RP-5) |
+| [Circuit Breakers](bridge/CIRCUIT_BREAKERS.md) | TVL/outflow caps, auto-pause rules (AP-1..AP-5), DR drills |
+| [Contract Hardening](bridge/CONTRACT_HARDENING.md) | Hardening backlog (CH-1..CH-7) and CI guardrails (R-CH-1..R-CH-5) |
+| [Bridge Monitoring](bridge/MONITORING.md) | Alert catalogue BR-M01..BR-M20 and B3 integration |
+| [Bridge Bug Bounty](bridge/BUG_BOUNTY.md) | Bridge-specific bounty tiers and A5 integration |
+
+---
+
 ## Integrations
 
 | Document | Description |
