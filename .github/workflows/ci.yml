@@ -85,6 +85,33 @@ jobs:
         working-directory: mobile
         run: npm run build
 
+  build-mobile-app:
+    name: Build (Mobile App)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install mobile-core dependencies
+        working-directory: mobile
+        run: npm install
+
+      - name: Build mobile-core (provides typings for mobile-app)
+        working-directory: mobile
+        run: npm run build
+
+      - name: Install mobile-app dependencies
+        working-directory: mobile-app
+        run: npm install
+
+      - name: Typecheck Mobile App (platform-agnostic core)
+        working-directory: mobile-app
+        run: npm run build
+
   build-dashboard:
     name: Build (Merchant Dashboard)
     runs-on: ubuntu-latest
@@ -148,6 +175,18 @@ jobs:
         working-directory: mobile
         run: npm run lint
 
+      - name: Build mobile-core (provides typings for mobile-app)
+        working-directory: mobile
+        run: npm run build
+
+      - name: Install mobile-app dependencies
+        working-directory: mobile-app
+        run: npm install
+
+      - name: Lint mobile-app
+        working-directory: mobile-app
+        run: npm run lint
+
       - name: Install dashboard dependencies
         working-directory: dashboard
         run: npm install
@@ -203,6 +242,18 @@ jobs:
         working-directory: mobile
         run: npm test
 
+      - name: Build mobile-core (provides typings for mobile-app)
+        working-directory: mobile
+        run: npm run build
+
+      - name: Install mobile-app dependencies
+        working-directory: mobile-app
+        run: npm install
+
+      - name: Test mobile-app
+        working-directory: mobile-app
+        run: npm test
+
       - name: Install dashboard dependencies
         working-directory: dashboard
         run: npm install
@@ -256,6 +307,18 @@ jobs:
 
       - name: TypeScript check mobile-core
         working-directory: mobile
+        run: npm run typecheck
+
+      - name: Build mobile-core (provides typings for mobile-app)
+        working-directory: mobile
+        run: npm run build
+
+      - name: Install mobile-app dependencies
+        working-directory: mobile-app
+        run: npm install
+
+      - name: TypeScript check mobile-app
+        working-directory: mobile-app
         run: npm run typecheck
 
       - name: Install dashboard dependencies

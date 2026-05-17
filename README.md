@@ -102,6 +102,8 @@ tonbankcard-protocol/
 │                       # Package: @tonbankcard/wallet-ui
 ├── mobile/             # Mobile app core logic (Phase 3)
 │                       # Package: @tonbankcard/mobile-core
+├── mobile-app/         # React Native wrapper for mobile-core (Track F2)
+│                       # Package: @tonbankcard/mobile-app
 ├── dashboard/          # Merchant dashboard (Phase 3)
 │                       # Package: @tonbankcard/merchant-dashboard
 │

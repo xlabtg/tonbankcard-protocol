@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>TONBANKCARD</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key>
+  <string>app.tonbankcard.mobile</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>TONBANKCARD</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSRequiresIPhoneOS</key>
+  <true/>
+  <key>MinimumOSVersion</key>
+  <string>14.0</string>
+  <key>NSCameraUsageDescription</key>
+  <string>TONBANKCARD scans wallet QR codes to receive payment intents. Camera frames are processed on-device and never leave it.</string>
+  <key>NSFaceIDUsageDescription</key>
+  <string>Face ID protects TONBANKCARD app access and confirms payments before they are sent to your wallet.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>TONBANKCARD can import a QR-code image to construct a payment intent locally.</string>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+  <key>LSApplicationQueriesSchemes</key>
+  <array>
+    <string>tonkeeper</string>
+    <string>tonhub</string>
+    <string>mytonwallet</string>
+    <string>openmask</string>
+    <string>ton</string>
+  </array>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>app.tonbankcard.mobile</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>tonbankcard</string>
+      </array>
+    </dict>
+  </array>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
+  </dict>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+</dict>
+</plist>

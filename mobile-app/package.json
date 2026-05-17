@@ -1,0 +1,100 @@
+{
+  "name": "@tonbankcard/mobile-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "React Native wrapper for the TONBANKCARD non-custodial mobile experience (iOS + Android).",
+  "main": "index.js",
+  "scripts": {
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "start": "react-native start",
+    "build": "tsc --noEmit -p tsconfig.lib.json",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "audit:ci": "npm audit --omit=dev --audit-level=high"
+  },
+  "keywords": [
+    "ton",
+    "tonbankcard",
+    "react-native",
+    "mobile-app",
+    "non-custodial",
+    "tbc"
+  ],
+  "author": "Tonbankcard Protocol Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol.git",
+    "directory": "mobile-app"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@tonbankcard/mobile-core": "file:../mobile"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0",
+    "react-native": ">=0.74.0",
+    "@react-navigation/native": ">=6.1.0",
+    "@react-navigation/native-stack": ">=6.9.0",
+    "react-native-camera": ">=4.2.0",
+    "react-native-keychain": ">=8.2.0",
+    "react-native-biometrics": ">=3.0.0",
+    "react-native-safe-area-context": ">=4.10.0",
+    "react-native-screens": ">=3.31.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-native": { "optional": true },
+    "@react-navigation/native": { "optional": true },
+    "@react-navigation/native-stack": { "optional": true },
+    "react-native-camera": { "optional": true },
+    "react-native-keychain": { "optional": true },
+    "react-native-biometrics": { "optional": true },
+    "react-native-safe-area-context": { "optional": true },
+    "react-native-screens": { "optional": true }
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.4.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.8.0",
+    "@types/react": "^18.3.5",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "eslint": "^8.57.1",
+    "jest": "^30.4.2",
+    "prettier": "^3.4.2",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "axios": "^1.16.1",
+    "handlebars": "^4.7.9",
+    "minimatch": "^9.0.7",
+    "brace-expansion": "^2.0.3",
+    "flatted": "^3.4.2",
+    "follow-redirects": "^1.16.0",
+    "picomatch": "^2.3.2",
+    "rollup": "^4.60.4",
+    "ajv": "^6.15.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/tests/**/*.spec.ts"
+    ],
+    "moduleNameMapper": {
+      "^@lib/(.*)$": "<rootDir>/src/lib/$1"
+    },
+    "collectCoverageFrom": [
+      "src/lib/**/*.ts"
+    ]
+  }
+}

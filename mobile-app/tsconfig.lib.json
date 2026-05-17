@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "lib": ["ES2020"],
+    "rootDir": "./src/lib"
+  },
+  "include": [
+    "src/lib/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "ios",
+    "android",
+    "src/screens",
+    "src/navigation",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ]
+}

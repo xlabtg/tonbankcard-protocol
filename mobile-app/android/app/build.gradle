@@ -1,0 +1,58 @@
+// TONBANKCARD Android module — application-level Gradle build.
+
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+android {
+    namespace "app.tonbankcard.mobile"
+    compileSdk rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId "app.tonbankcard.mobile"
+        minSdk rootProject.ext.minSdkVersion
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        // Release signing is configured per-environment by CI/CD or developers
+        // populating `gradle.properties` with TONBANKCARD_RELEASE_*. Never
+        // commit keystores or passwords to source control.
+        release {
+            if (project.hasProperty('TONBANKCARD_RELEASE_KEYSTORE')) {
+                storeFile file(TONBANKCARD_RELEASE_KEYSTORE)
+                storePassword TONBANKCARD_RELEASE_STORE_PASSWORD
+                keyAlias TONBANKCARD_RELEASE_KEY_ALIAS
+                keyPassword TONBANKCARD_RELEASE_KEY_PASSWORD
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            signingConfig signingConfigs.release
+        }
+    }
+}
+
+dependencies {
+    implementation("com.facebook.react:react-android")
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+}
+
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
