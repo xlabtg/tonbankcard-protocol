@@ -1,0 +1,583 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/xlabtg/tonbankcard-protocol/docs/governance/E1-activation/MANIFEST_TEMPLATE.json",
+  "title": "Tonbankcard Governance Activation Manifest (E1)",
+  "description": "Canonical, append-only layout for `docs/governance/E1-activation/activations/<timestamp>.json` files committed at the close of E1 Phase 4. The manifest records the single on-chain write that activates governance — the `SnapshotVerifier.set_registry` binding — together with the upstream-gate evidence required to consider that write safe. Mainnet activation manifests are never edited or deleted; corrections add a new manifest that references the prior one via `supersedes`. The file is the source of truth referenced by `STATUS.md` §6, `docs/deployments/network-matrix.md` (governance group `activated: yes`), and `docs/existing-contracts.md`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "manifestType",
+    "network",
+    "environment",
+    "engagementId",
+    "timestamp",
+    "commit",
+    "upstreamGates",
+    "contracts",
+    "setRegistry",
+    "indexerActivation",
+    "verification",
+    "networkMatrixUpdate",
+    "dryRun",
+    "paused",
+    "supersedes",
+    "supersededBy"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Schema version; bump only via a new E-track engagement."
+    },
+    "manifestType": {
+      "type": "string",
+      "const": "tonbankcard.governance.activation.manifest",
+      "description": "Static type tag used by tooling to reject foreign files. Distinct from B2's `tonbankcard.deploy.manifest`."
+    },
+    "network": {
+      "type": "string",
+      "enum": ["mainnet"],
+      "description": "E1 mainnet activation only. Testnet round-trip evidence lives in `TESTNET_VALIDATION.md` §4 — not in this manifest."
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["mainnet"],
+      "description": "Always `mainnet`. Tooling rejects any other value for E1 activations."
+    },
+    "engagementId": {
+      "type": "string",
+      "const": "E1",
+      "description": "Fixed for the first activation cycle. Subsequent engagement IDs use new manifest schemas, not new values here."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the activation manifest was finalised; matches the filename."
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full git SHA of the commit that introduces this manifest. Used by `scripts/governance/verify-parameters.ts` to pin the `PARAMETERS.md` / `SNAPSHOT.md` content this manifest ratifies."
+    },
+    "upstreamGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "G1_a1AuditReady",
+        "G2_b2MainnetLive",
+        "G3_b2ManifestGovernanceInert",
+        "G4_paymentSoakClean",
+        "G5_testnetRoundTrip",
+        "G6_paramsSnapshotReview",
+        "G7_indexerStaging",
+        "G8_proposalCooldown",
+        "G9_setRegistryBinding",
+        "G10_atomicMatrixUpdate"
+      ],
+      "properties": {
+        "G1_a1AuditReady": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "evidence"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "evidence": { "type": "string", "description": "Path or URL to A1 STATUS attestation showing verdict `READY` for Phase 2 contracts (incl. governance group)." }
+          }
+        },
+        "G2_b2MainnetLive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "evidence"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "evidence": { "type": "string", "description": "Path or URL to B2 STATUS showing verdict `MAINNET-LIVE` after the 24-hour soak window." }
+          }
+        },
+        "G3_b2ManifestGovernanceInert": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "manifestPath", "manifestCommit"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "manifestPath": { "type": "string", "description": "Path of the B2 mainnet manifest that records the governance group with `governanceActivated: false`." },
+            "manifestCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+          }
+        },
+        "G4_paymentSoakClean": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "soakWindowStart", "soakWindowEnd", "criticalFindings"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "soakWindowStart": { "type": "string", "format": "date-time" },
+            "soakWindowEnd": { "type": "string", "format": "date-time" },
+            "criticalFindings": { "type": "integer", "minimum": 0, "maximum": 0, "description": "Must be exactly 0 — any Critical finding aborts the engagement (verdict `ABORTED`)." }
+          }
+        },
+        "G5_testnetRoundTrip": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reportPath", "auditScriptExitCode"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "reportPath": { "type": "string", "description": "Path of the testnet round-trip report (typically `audit/governance-snapshots/E1-PROP-000-testnet.json`)." },
+            "auditScriptExitCode": { "type": "integer", "const": 0, "description": "Must be exactly 0 — `scripts/governance/audit-snapshot.ts` exit code." }
+          }
+        },
+        "G6_paramsSnapshotReview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reviewerGithubLogin", "reviewUrl"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "reviewerGithubLogin": { "type": "string", "description": "GitHub login of the second pair of eyes. Must NOT equal the maintainer." },
+            "reviewUrl": { "type": "string", "format": "uri", "description": "URL of the PR review marking `PARAMETERS.md` + `SNAPSHOT.md` as approved." }
+          }
+        },
+        "G7_indexerStaging": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "dashboardUrl", "alertRulesArmed"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "dashboardUrl": { "type": "string", "description": "URL or path to the B3 staging dashboard screenshot proving governance events mirror end-to-end." },
+            "alertRulesArmed": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string" },
+              "description": "Names of armed alert rules. Must include `R-014 GovernanceEventGap`."
+            }
+          }
+        },
+        "G8_proposalCooldown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "draftUrl", "draftPostedAt", "cooldownEndAt"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "draftUrl": { "type": "string", "format": "uri", "description": "GitHub Discussions URL of `E1-PROP-001` draft." },
+            "draftPostedAt": { "type": "string", "format": "date-time", "description": "`T₀` per `SNAPSHOT.md` §3.2." },
+            "cooldownEndAt": { "type": "string", "format": "date-time", "description": "`T₀ + 24h`. The snapshot block must have `gen_utime >= cooldownEndAt`." }
+          }
+        },
+        "G9_setRegistryBinding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "txHash"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "txHash": { "type": "string", "description": "Mainnet transaction hash of the `set_registry` send. Must equal `setRegistry.txHash` below." }
+          }
+        },
+        "G10_atomicMatrixUpdate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "prUrl"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "pending"] },
+            "prUrl": { "type": "string", "format": "uri", "description": "URL of the PR that introduces THIS manifest AND flips governance group `activated: yes` in `network-matrix.md` in the same commit." }
+          }
+        }
+      },
+      "description": "Evidence for the ten upstream gates of `ENGAGEMENT.md` §4 and `STATUS.md` §2. All ten must be `passed` at activation time; any `pending` entry indicates an aborted manifest (`paused: true`)."
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposalRegistry", "snapshotVerifier", "transparencyRegistry"],
+      "properties": {
+        "proposalRegistry": {
+          "$ref": "#/$defs/governanceContractReference"
+        },
+        "snapshotVerifier": {
+          "$ref": "#/$defs/governanceContractReference"
+        },
+        "transparencyRegistry": {
+          "$ref": "#/$defs/governanceContractReference"
+        }
+      },
+      "description": "Mainnet addresses for the three governance contracts. All three are read from the active B2 mainnet manifest — E1 does NOT redeploy; it activates."
+    },
+    "setRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["txHash", "block", "submittedAt", "confirmedAt", "from", "to", "value", "intentBody", "signers", "confirmations"],
+      "properties": {
+        "txHash": {
+          "type": "string",
+          "description": "Mainnet transaction hash of the `set_registry` send. Identical to `upstreamGates.G9_setRegistryBinding.txHash`."
+        },
+        "block": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Masterchain seqno at which the `set_registry` transaction landed."
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC timestamp the transaction was broadcast."
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC timestamp of the chosen confirmation threshold (≥ 32 mc-blocks per RUNBOOK §4.4)."
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+          "description": "Sender address. MUST equal the B2 deployer multi-sig (`deployer.multiSigAddress` of the B2 manifest). Anti-foot-gun rule AF-E1-1."
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+          "description": "Recipient address. MUST equal `contracts.snapshotVerifier.address`. Anti-foot-gun rule AF-E1-2."
+        },
+        "value": {
+          "type": "string",
+          "description": "Attached TON value in nanograms. MUST be ≤ 100_000_000 (0.1 TON). Anti-foot-gun rule AF-E1-4."
+        },
+        "intentBody": {
+          "type": "string",
+          "const": "set_registry",
+          "description": "Plain-text comment body. MUST be exactly `set_registry`. Anti-foot-gun rule AF-E1-3."
+        },
+        "signers": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^EQ[A-Za-z0-9_-]{46}$"
+          },
+          "description": "Hardware-wallet signer addresses that countersigned the multi-sig intent. MUST be a subset of the B2 mainnet manifest `deployer.signers` (E1 does NOT introduce new keys)."
+        },
+        "confirmations": {
+          "type": "integer",
+          "minimum": 32,
+          "description": "Masterchain block confirmations observed before declaring the binding successful. RUNBOOK §4.4 mandates ≥ 32."
+        }
+      },
+      "description": "The single mainnet write performed by the engagement. The contract correctly rejects any second `set_registry` send with `Registry already set` — accidental re-call is a CRITICAL incident per RUNBOOK §8."
+    },
+    "indexerActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "mirroredEvents", "dashboardUrl"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "const": true,
+          "description": "Indexer governance pipeline flipped from `staging` to `mainnet`. Must be `true` for a passing activation."
+        },
+        "mirroredEvents": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 4,
+          "items": {
+            "type": "string",
+            "enum": ["ProposalSubmitted", "SnapshotRegistered", "VoteCast", "ProposalFinalized"]
+          },
+          "description": "Event types the mainnet indexer is now subscribed to. Must include all four — partial coverage is rejected."
+        },
+        "dashboardUrl": {
+          "type": "string",
+          "description": "Path or URL to the production B3 dashboard panel `Governance — events / hour`."
+        }
+      },
+      "description": "Indexer state immediately after activation. The indexer is the only off-chain consumer that maintains the `TransparencyRegistry` mirror; without it `governanceActivated: yes` would be a lie."
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["getProposalRegistry", "doubleBindRejected", "alertSilenceWindow", "reviewerAttestation"],
+      "properties": {
+        "getProposalRegistry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "expected", "observed"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "failed"] },
+            "expected": {
+              "type": "string",
+              "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+              "description": "Must equal `contracts.proposalRegistry.address`."
+            },
+            "observed": {
+              "type": "string",
+              "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+              "description": "Value returned by `SnapshotVerifier.getProposalRegistry()` after confirmation."
+            }
+          },
+          "description": "RUNBOOK §4.5 row 1 — proves the binding landed where intended. A mismatch is CRITICAL."
+        },
+        "doubleBindRejected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "errorMessage"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "failed"] },
+            "errorMessage": { "type": "string", "const": "Registry already set" }
+          },
+          "description": "RUNBOOK §4.5 row 2 — proves the contract enforces one-time binding. Result obtained via RPC dry-run; no second on-chain send is performed."
+        },
+        "alertSilenceWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "windowStart", "windowEnd"],
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "failed"] },
+            "windowStart": { "type": "string", "format": "date-time" },
+            "windowEnd": { "type": "string", "format": "date-time", "description": "Must be ≥ `windowStart + 1h`. No B3 alerts fire during this window for the activation to be considered clean." }
+          },
+          "description": "RUNBOOK §4.5 row 3 — silent dashboard during the binding."
+        },
+        "reviewerAttestation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reviewerGithubLogin", "attestationCommit"],
+          "properties": {
+            "reviewerGithubLogin": { "type": "string", "description": "Verification reviewer. MUST be distinct from the maintainer and from any multi-sig signer." },
+            "attestationCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "Commit SHA of the reviewer's `Reviewed-by` trailer in the activation PR." }
+          },
+          "description": "Two-reviewer attestation — append-only manifests have no edit path post-merge."
+        }
+      },
+      "description": "Aggregate verification record proving the binding is wired correctly and that the off-chain pipeline is observing the right contracts."
+    },
+    "networkMatrixUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prUrl", "commit", "before", "after"],
+      "properties": {
+        "prUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the PR that introduces this manifest. MUST be the same PR that flips the matrix; gate G-10 is `atomic`."
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Commit SHA of the atomic update. Equal to top-level `commit` if a single commit is used."
+        },
+        "before": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["proposalRegistry", "snapshotVerifier", "transparencyRegistry"],
+          "properties": {
+            "proposalRegistry": { "type": "string", "const": "no" },
+            "snapshotVerifier": { "type": "string", "const": "no" },
+            "transparencyRegistry": { "type": "string", "const": "no" }
+          },
+          "description": "All three rows MUST show `activated: no` immediately before the matrix update."
+        },
+        "after": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["proposalRegistry", "snapshotVerifier", "transparencyRegistry"],
+          "properties": {
+            "proposalRegistry": { "type": "string", "const": "yes" },
+            "snapshotVerifier": { "type": "string", "const": "yes" },
+            "transparencyRegistry": { "type": "string", "const": "yes" }
+          },
+          "description": "All three rows MUST show `activated: yes` immediately after. Partial flips are forbidden — `network-matrix.md` updates atomically per gate G-10."
+        }
+      },
+      "description": "The matrix flip is part of the manifest, not a follow-up commit, so reviewers can verify the two changes against each other in a single diff."
+    },
+    "dryRun": {
+      "type": "boolean",
+      "description": "`true` if produced by a dry-run of the activation runbook. Dry-run manifests are NEVER committed under `docs/governance/E1-activation/activations/`."
+    },
+    "paused": {
+      "type": "boolean",
+      "description": "`true` if a CRITICAL incident is detected after merge. Append-only — paused manifests stay in the audit trail; corrections add new manifests via `supersededBy`."
+    },
+    "supersedes": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "description": "Filename of the prior activation manifest this one supersedes, or `null` for the first activation."
+    },
+    "supersededBy": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ],
+      "description": "Filename of the follow-up manifest that supersedes this one. `null` while this manifest is current."
+    }
+  },
+  "$defs": {
+    "governanceContractReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address", "codeHash", "deployManifest", "tonviewerUrl"],
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^EQ[A-Za-z0-9_-]{46}$",
+          "description": "Mainnet contract address copied verbatim from the active B2 manifest. E1 must NOT alter this value."
+        },
+        "codeHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the deployed contract code cell. Must equal the value recorded in the B2 manifest under the same contract name."
+        },
+        "deployManifest": {
+          "type": "string",
+          "description": "Path of the B2 mainnet manifest that originally recorded this contract. Used by tooling to back-link to the deployment evidence."
+        },
+        "tonviewerUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Convenience URL to TONviewer for human reviewers."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0.0",
+      "manifestType": "tonbankcard.governance.activation.manifest",
+      "network": "mainnet",
+      "environment": "mainnet",
+      "engagementId": "E1",
+      "timestamp": "2026-07-20T12-00-00Z",
+      "commit": "0000000000000000000000000000000000000000",
+      "upstreamGates": {
+        "G1_a1AuditReady": {
+          "status": "passed",
+          "evidence": "docs/security/audits/A1-core-contracts/STATUS.md"
+        },
+        "G2_b2MainnetLive": {
+          "status": "passed",
+          "evidence": "docs/deployments/B2-mainnet/STATUS.md"
+        },
+        "G3_b2ManifestGovernanceInert": {
+          "status": "passed",
+          "manifestPath": "deployments/mainnet/2026-06-15T10-00-00Z.json",
+          "manifestCommit": "1111111111111111111111111111111111111111"
+        },
+        "G4_paymentSoakClean": {
+          "status": "passed",
+          "soakWindowStart": "2026-06-15T11:00:00Z",
+          "soakWindowEnd": "2026-06-22T11:00:00Z",
+          "criticalFindings": 0
+        },
+        "G5_testnetRoundTrip": {
+          "status": "passed",
+          "reportPath": "audit/governance-snapshots/E1-PROP-000-testnet.json",
+          "auditScriptExitCode": 0
+        },
+        "G6_paramsSnapshotReview": {
+          "status": "passed",
+          "reviewerGithubLogin": "TBD-reviewer",
+          "reviewUrl": "https://github.com/xlabtg/tonbankcard-protocol/pull/164#pullrequestreview-TBD"
+        },
+        "G7_indexerStaging": {
+          "status": "passed",
+          "dashboardUrl": "docs/production/B3-monitoring/screenshots/governance-staging.png",
+          "alertRulesArmed": ["R-014 GovernanceEventGap"]
+        },
+        "G8_proposalCooldown": {
+          "status": "passed",
+          "draftUrl": "https://github.com/xlabtg/tonbankcard-protocol/discussions/TBD",
+          "draftPostedAt": "2026-07-18T00:00:00Z",
+          "cooldownEndAt": "2026-07-19T00:00:00Z"
+        },
+        "G9_setRegistryBinding": {
+          "status": "passed",
+          "txHash": "TBD-set-registry-tx-hash"
+        },
+        "G10_atomicMatrixUpdate": {
+          "status": "passed",
+          "prUrl": "https://github.com/xlabtg/tonbankcard-protocol/pull/TBD"
+        }
+      },
+      "contracts": {
+        "proposalRegistry": {
+          "address": "EQADDR_PROPOSAL_REGISTRY000000000000000000000000",
+          "codeHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "deployManifest": "deployments/mainnet/2026-06-15T10-00-00Z.json",
+          "tonviewerUrl": "https://tonviewer.com/EQADDR_PROPOSAL_REGISTRY000000000000000000000000"
+        },
+        "snapshotVerifier": {
+          "address": "EQADDR_SNAPSHOT_VERIFIER000000000000000000000000",
+          "codeHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "deployManifest": "deployments/mainnet/2026-06-15T10-00-00Z.json",
+          "tonviewerUrl": "https://tonviewer.com/EQADDR_SNAPSHOT_VERIFIER000000000000000000000000"
+        },
+        "transparencyRegistry": {
+          "address": "EQADDR_TRANSPARENCY_REG0000000000000000000000000",
+          "codeHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "deployManifest": "deployments/mainnet/2026-06-15T10-00-00Z.json",
+          "tonviewerUrl": "https://tonviewer.com/EQADDR_TRANSPARENCY_REG0000000000000000000000000"
+        }
+      },
+      "setRegistry": {
+        "txHash": "TBD-set-registry-tx-hash",
+        "block": 0,
+        "submittedAt": "2026-07-20T11:50:00Z",
+        "confirmedAt": "2026-07-20T11:55:00Z",
+        "from": "EQTBD000000000000000000000000000000000000000000",
+        "to": "EQADDR_SNAPSHOT_VERIFIER000000000000000000000000",
+        "value": "100000000",
+        "intentBody": "set_registry",
+        "signers": [
+          "EQSIGNER1000000000000000000000000000000000000000",
+          "EQSIGNER2000000000000000000000000000000000000000"
+        ],
+        "confirmations": 32
+      },
+      "indexerActivation": {
+        "enabled": true,
+        "mirroredEvents": [
+          "ProposalSubmitted",
+          "SnapshotRegistered",
+          "VoteCast",
+          "ProposalFinalized"
+        ],
+        "dashboardUrl": "docs/production/B3-monitoring/screenshots/governance-mainnet.png"
+      },
+      "verification": {
+        "getProposalRegistry": {
+          "status": "passed",
+          "expected": "EQADDR_PROPOSAL_REGISTRY000000000000000000000000",
+          "observed": "EQADDR_PROPOSAL_REGISTRY000000000000000000000000"
+        },
+        "doubleBindRejected": {
+          "status": "passed",
+          "errorMessage": "Registry already set"
+        },
+        "alertSilenceWindow": {
+          "status": "passed",
+          "windowStart": "2026-07-20T11:50:00Z",
+          "windowEnd": "2026-07-20T12:50:00Z"
+        },
+        "reviewerAttestation": {
+          "reviewerGithubLogin": "TBD-reviewer",
+          "attestationCommit": "2222222222222222222222222222222222222222"
+        }
+      },
+      "networkMatrixUpdate": {
+        "prUrl": "https://github.com/xlabtg/tonbankcard-protocol/pull/TBD",
+        "commit": "0000000000000000000000000000000000000000",
+        "before": {
+          "proposalRegistry": "no",
+          "snapshotVerifier": "no",
+          "transparencyRegistry": "no"
+        },
+        "after": {
+          "proposalRegistry": "yes",
+          "snapshotVerifier": "yes",
+          "transparencyRegistry": "yes"
+        }
+      },
+      "dryRun": false,
+      "paused": false,
+      "supersedes": null,
+      "supersededBy": null
+    }
+  ]
+}
