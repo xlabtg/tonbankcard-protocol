@@ -62,6 +62,43 @@ contract TransparencyRegistry with ITransparencyRegistry {
     quorum_threshold: Int as uint16;
 
     // ========================================
+    // E4 AGGREGATE CHECKSUM STORAGE
+    // (Issue #135 - On-Chain Transparency Reporting)
+    //
+    // Append-only checksums for monthly protocol/lock/parameter
+    // aggregates. Only the LATEST period and cumulative counters are
+    // kept on-chain - the full series lives in the off-chain indexer
+    // (TRANSPARENCY_REPORTING.md §3). Storing only the latest period
+    // keeps the contract footprint bounded while still anchoring an
+    // on-chain checksum for the indexer to verify against.
+    // ========================================
+
+    // Latest protocol metrics period (one checksum at a time)
+    latest_metrics_period_start: Int as uint32;
+    latest_metrics_period_end: Int as uint32;
+    latest_metrics_active_accounts: Int as uint32;
+    latest_metrics_tbc_volume_transferred: Int as coins;
+    latest_metrics_transfer_count: Int as uint32;
+
+    // Latest lock activity period (one checksum at a time)
+    latest_lock_period_start: Int as uint32;
+    latest_lock_period_end: Int as uint32;
+    latest_lock_locks_set: Int as uint32;
+    latest_lock_locks_cleared: Int as uint32;
+    latest_lock_locks_active: Int as uint32;
+    latest_lock_appeals_filed: Int as uint32;
+    latest_lock_appeals_overturned: Int as uint32;
+    latest_lock_appeals_upheld: Int as uint32;
+
+    // Parameter change audit anchor
+    total_parameter_changes: Int as uint32;
+    latest_parameter_effective_block: Int as uint64;
+
+    // Cumulative E4 event counters
+    total_metric_periods: Int as uint32;
+    total_lock_periods: Int as uint32;
+
+    // ========================================
     // INITIALIZATION
     // ========================================
 
@@ -80,6 +117,28 @@ contract TransparencyRegistry with ITransparencyRegistry {
 
         // Default quorum: >50% of 222 = 112 votes
         self.quorum_threshold = quorum_threshold;
+
+        // E4 aggregate checksums (zero-initialized until first record)
+        self.latest_metrics_period_start = 0;
+        self.latest_metrics_period_end = 0;
+        self.latest_metrics_active_accounts = 0;
+        self.latest_metrics_tbc_volume_transferred = 0;
+        self.latest_metrics_transfer_count = 0;
+
+        self.latest_lock_period_start = 0;
+        self.latest_lock_period_end = 0;
+        self.latest_lock_locks_set = 0;
+        self.latest_lock_locks_cleared = 0;
+        self.latest_lock_locks_active = 0;
+        self.latest_lock_appeals_filed = 0;
+        self.latest_lock_appeals_overturned = 0;
+        self.latest_lock_appeals_upheld = 0;
+
+        self.total_parameter_changes = 0;
+        self.latest_parameter_effective_block = 0;
+
+        self.total_metric_periods = 0;
+        self.total_lock_periods = 0;
     }
 
     // ========================================
@@ -308,6 +367,132 @@ contract TransparencyRegistry with ITransparencyRegistry {
             timestamp: now()
         }.toCell());
     }
+
+    // ========================================
+    // E4 ADDITIVE RECEIVE HANDLERS
+    // (Issue #135 - On-Chain Transparency Reporting)
+    //
+    // These handlers anchor monthly aggregates on-chain so the
+    // off-chain indexer can cross-check its derived counters. Each
+    // handler is append-only: it overwrites the LATEST checksum and
+    // increments a cumulative counter; nothing is deleted, and no
+    // governance state is altered (TRANSPARENCY_REPORTING.md §2.4).
+    // ========================================
+
+    receive(msg: RecordProtocolMetrics) {
+        // Period must be well-formed (end strictly after start) and
+        // monotonically non-decreasing relative to the previous period
+        // end (append-only timeline).
+        require(msg.period_end > msg.period_start, "Invalid metrics period");
+        require(msg.period_end >= self.latest_metrics_period_end, "Metrics period regression");
+
+        self.latest_metrics_period_start = msg.period_start;
+        self.latest_metrics_period_end = msg.period_end;
+        self.latest_metrics_active_accounts = msg.active_accounts;
+        self.latest_metrics_tbc_volume_transferred = msg.tbc_volume_transferred;
+        self.latest_metrics_transfer_count = msg.transfer_count;
+        self.total_metric_periods = self.total_metric_periods + 1;
+
+        emit(ProtocolMetricsRecorded{
+            period_start: msg.period_start,
+            period_end: msg.period_end,
+            active_accounts: msg.active_accounts,
+            tbc_volume_transferred: msg.tbc_volume_transferred,
+            transfer_count: msg.transfer_count,
+            timestamp: now()
+        }.toCell());
+    }
+
+    receive(msg: RecordLockActivity) {
+        require(msg.period_end > msg.period_start, "Invalid lock period");
+        require(msg.period_end >= self.latest_lock_period_end, "Lock period regression");
+        // Appeal book-keeping integrity: filed >= overturned + upheld
+        require(msg.appeals_filed >= msg.appeals_overturned + msg.appeals_upheld, "Appeals book-keeping mismatch");
+
+        self.latest_lock_period_start = msg.period_start;
+        self.latest_lock_period_end = msg.period_end;
+        self.latest_lock_locks_set = msg.locks_set;
+        self.latest_lock_locks_cleared = msg.locks_cleared;
+        self.latest_lock_locks_active = msg.locks_active;
+        self.latest_lock_appeals_filed = msg.appeals_filed;
+        self.latest_lock_appeals_overturned = msg.appeals_overturned;
+        self.latest_lock_appeals_upheld = msg.appeals_upheld;
+        self.total_lock_periods = self.total_lock_periods + 1;
+
+        emit(LockActivityRecorded{
+            period_start: msg.period_start,
+            period_end: msg.period_end,
+            locks_set: msg.locks_set,
+            locks_cleared: msg.locks_cleared,
+            locks_active: msg.locks_active,
+            appeals_filed: msg.appeals_filed,
+            appeals_overturned: msg.appeals_overturned,
+            appeals_upheld: msg.appeals_upheld,
+            timestamp: now()
+        }.toCell());
+    }
+
+    receive(msg: RecordParameterChange) {
+        // Effective block must be monotonic (append-only audit trail)
+        require(msg.effective_block >= self.latest_parameter_effective_block, "Parameter effective block regression");
+        // Hash must actually differ - rejecting no-op records prevents
+        // a benign log being mis-attributed to a real parameter change
+        require(msg.old_value_hash != msg.new_value_hash, "Parameter change is a no-op");
+
+        self.total_parameter_changes = self.total_parameter_changes + 1;
+        self.latest_parameter_effective_block = msg.effective_block;
+
+        emit(ParameterChangeRecorded{
+            parameter_id: msg.parameter_id,
+            proposal_id: msg.proposal_id,
+            old_value_hash: msg.old_value_hash,
+            new_value_hash: msg.new_value_hash,
+            effective_block: msg.effective_block,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // ========================================
+    // E4 AGGREGATE GETTERS
+    // ========================================
+
+    get fun getLatestProtocolMetrics(): ProtocolMetricsCheckpoint {
+        return ProtocolMetricsCheckpoint{
+            period_start: self.latest_metrics_period_start,
+            period_end: self.latest_metrics_period_end,
+            active_accounts: self.latest_metrics_active_accounts,
+            tbc_volume_transferred: self.latest_metrics_tbc_volume_transferred,
+            transfer_count: self.latest_metrics_transfer_count
+        };
+    }
+
+    get fun getLatestLockActivity(): LockActivityCheckpoint {
+        return LockActivityCheckpoint{
+            period_start: self.latest_lock_period_start,
+            period_end: self.latest_lock_period_end,
+            locks_set: self.latest_lock_locks_set,
+            locks_cleared: self.latest_lock_locks_cleared,
+            locks_active: self.latest_lock_locks_active,
+            appeals_filed: self.latest_lock_appeals_filed,
+            appeals_overturned: self.latest_lock_appeals_overturned,
+            appeals_upheld: self.latest_lock_appeals_upheld
+        };
+    }
+
+    get fun getParameterChangeSummary(): ParameterChangeSummary {
+        return ParameterChangeSummary{
+            total_parameter_changes: self.total_parameter_changes,
+            latest_effective_block: self.latest_parameter_effective_block
+        };
+    }
+
+    get fun getMetricPeriodsCount(): Int {
+        return self.total_metric_periods;
+    }
+
+    get fun getLockPeriodsCount(): Int {
+        return self.total_lock_periods;
+    }
 }
 
 // ============================================
@@ -360,5 +545,75 @@ message VotingResultRecorded {
 message SnapshotRecorded {
     block_height: Int as uint64;
     snapshot_hash: Int as uint256;
+    timestamp: Int as uint32;
+}
+
+// ============================================
+// E4 ADDITIVE MESSAGES (INBOUND)
+// (Issue #135 - On-Chain Transparency Reporting)
+//
+// Sent by the E1 / E3 multi-sig writers when publishing the monthly
+// transparency report. The sender is the multi-sig writer; no
+// individual user addresses are persisted by these messages.
+// ============================================
+
+message RecordProtocolMetrics {
+    period_start: Int as uint32;
+    period_end: Int as uint32;
+    active_accounts: Int as uint32;
+    tbc_volume_transferred: Int as coins;
+    transfer_count: Int as uint32;
+}
+
+message RecordLockActivity {
+    period_start: Int as uint32;
+    period_end: Int as uint32;
+    locks_set: Int as uint32;
+    locks_cleared: Int as uint32;
+    locks_active: Int as uint32;
+    appeals_filed: Int as uint32;
+    appeals_overturned: Int as uint32;
+    appeals_upheld: Int as uint32;
+}
+
+message RecordParameterChange {
+    parameter_id: Int as uint64;
+    proposal_id: Int as uint64;
+    old_value_hash: Int as uint256;
+    new_value_hash: Int as uint256;
+    effective_block: Int as uint64;
+}
+
+// ============================================
+// E4 ADDITIVE EVENTS (OUTBOUND - for indexing)
+// ============================================
+
+message ProtocolMetricsRecorded {
+    period_start: Int as uint32;
+    period_end: Int as uint32;
+    active_accounts: Int as uint32;
+    tbc_volume_transferred: Int as coins;
+    transfer_count: Int as uint32;
+    timestamp: Int as uint32;
+}
+
+message LockActivityRecorded {
+    period_start: Int as uint32;
+    period_end: Int as uint32;
+    locks_set: Int as uint32;
+    locks_cleared: Int as uint32;
+    locks_active: Int as uint32;
+    appeals_filed: Int as uint32;
+    appeals_overturned: Int as uint32;
+    appeals_upheld: Int as uint32;
+    timestamp: Int as uint32;
+}
+
+message ParameterChangeRecorded {
+    parameter_id: Int as uint64;
+    proposal_id: Int as uint64;
+    old_value_hash: Int as uint256;
+    new_value_hash: Int as uint256;
+    effective_block: Int as uint64;
     timestamp: Int as uint32;
 }

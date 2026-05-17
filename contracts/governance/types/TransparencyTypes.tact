@@ -87,6 +87,43 @@ struct CategoryStats {
 }
 
 // ============================================
+// E4 ADDITIVE AGGREGATE STRUCTS
+// (Issue #135 - On-Chain Transparency Reporting)
+//
+// Anchored aggregates that the off-chain indexer cross-checks against
+// its own derived counters; mismatch is a CI-blocking drift alarm
+// (see docs/governance/TRANSPARENCY_REPORTING.md §§ 2.4, 3.3, 3.4).
+// PRIVACY: aggregate counters only - no addresses, no per-account state.
+// ============================================
+
+// E4 - Latest protocol metrics period checksum
+struct ProtocolMetricsCheckpoint {
+    period_start: Int as uint32;          // Period start (unix timestamp, UTC)
+    period_end: Int as uint32;            // Period end (unix timestamp, UTC)
+    active_accounts: Int as uint32;       // Aggregate active account count (>= 10 cohort)
+    tbc_volume_transferred: Int as coins; // Aggregate volume in nanocoins
+    transfer_count: Int as uint32;        // Aggregate internal transfer count
+}
+
+// E4 - Latest lock activity period checksum
+struct LockActivityCheckpoint {
+    period_start: Int as uint32;          // Period start (unix timestamp, UTC)
+    period_end: Int as uint32;            // Period end (unix timestamp, UTC)
+    locks_set: Int as uint32;             // FRAUD_LOCKs set in the period
+    locks_cleared: Int as uint32;         // FRAUD_LOCKs cleared in the period
+    locks_active: Int as uint32;          // FRAUD_LOCKs active at period_end snapshot
+    appeals_filed: Int as uint32;         // Appeals filed in the period
+    appeals_overturned: Int as uint32;    // Appeals overturned in the period
+    appeals_upheld: Int as uint32;        // Appeals upheld in the period
+}
+
+// E4 - Parameter change audit summary
+struct ParameterChangeSummary {
+    total_parameter_changes: Int as uint32; // Cumulative count since deployment
+    latest_effective_block: Int as uint64;  // Effective block of most recent change
+}
+
+// ============================================
 // HELPER FUNCTIONS
 // ============================================
 

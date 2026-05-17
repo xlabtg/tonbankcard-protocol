@@ -231,9 +231,12 @@
           "enum": [
             "ProposalRecorded",
             "VotingResultRecorded",
-            "SnapshotRecorded"
+            "SnapshotRecorded",
+            "ProtocolMetricsRecorded",
+            "LockActivityRecorded",
+            "ParameterChangeRecorded"
           ],
-          "description": "Type of governance event"
+          "description": "Type of governance/transparency event. ProtocolMetricsRecorded, LockActivityRecorded, and ParameterChangeRecorded are E4 additions (Issue #135)."
         },
         "block_height": {
           "type": "integer",
@@ -344,9 +347,14 @@
       "nft_holder_identities",
       "individual_votes",
       "vote_timestamps",
-      "delegation_graphs"
+      "delegation_graphs",
+      "per_account_tbc_balances",
+      "per_account_lock_state",
+      "per_account_merchant_settlement_history"
     ],
-    "note": "This schema intentionally excludes any fields that could expose voter identity or individual voting behavior."
+    "minimum_cohort_size": 10,
+    "minimum_cohort_rule": "Any aggregate exposed by the transparency layer MUST cover >=10 distinct accounts at the snapshot block. Smaller aggregates are returned as '<10' and the dashboard renders them as 'low cohort - masked' (TRANSPARENCY_REPORTING.md §7).",
+    "note": "This schema intentionally excludes any fields that could expose voter identity, individual voting behavior, or per-account protocol state. E4 (Issue #135) extends the forbidden-fields list to cover transparency-layer aggregates."
   },
   "_disclaimer": "This schema defines data that is explicitly non-authoritative. All data must mirror on-chain truth. Governance outcomes are advisory only. TONBANKCARD protocol behavior is immutable and non-custodial."
 }
