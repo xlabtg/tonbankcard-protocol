@@ -69,6 +69,17 @@ export {
   PaymentWidgetConfig,
 } from './widget';
 
+export {
+  // Webhook signature verification
+  verifyWebhook,
+  computeWebhookSignature,
+  SIGNATURE_HEADER,
+  SIGNATURE_VERSION,
+  DEFAULT_TOLERANCE_SECONDS,
+  WebhookVerificationResult,
+  VerifyWebhookOptions,
+} from './webhook';
+
 /**
  * SDK Version
  */

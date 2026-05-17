@@ -10,6 +10,7 @@
 import express from 'express';
 import cors from 'cors';
 import { setupInvoiceRoutes, corsOptions } from './routes/invoiceRoutes';
+import { setupApiKeyRoutes } from './routes/apiKeyRoutes';
 import { installSandboxMode, isSandboxMode } from './middleware/sandbox';
 
 const PORT = process.env.PORT || 3000;
@@ -29,7 +30,9 @@ app.disable('x-powered-by');
 // `TONBANKCARD_SANDBOX` / `NODE_ENV=sandbox` are not set.
 const sandboxInstalled = installSandboxMode(app);
 
-// Set up routes
+// API key management endpoints must be mounted before the invoice
+// routes so their 404 handler does not swallow `/v1/keys/*`.
+setupApiKeyRoutes(app);
 setupInvoiceRoutes(app);
 
 // Start server

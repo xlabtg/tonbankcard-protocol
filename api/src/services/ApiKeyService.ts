@@ -204,6 +204,35 @@ export class ApiKeyService {
   }
 
   /**
+   * Look up a registered API key by its public `key_id`.
+   *
+   * Used by the revocation endpoint (DELETE /v1/keys/:keyId) which must
+   * resolve a key without ever seeing the plaintext value.
+   *
+   * @param keyId - Public key identifier (e.g. `key_tbc_live_a1b2c3d4`)
+   * @returns Matching ApiKey or `null` if no key has that identifier
+   */
+  findByKeyId(keyId: string): ApiKey | null {
+    for (const apiKey of apiKeyRegistry.values()) {
+      if (apiKey.key_id === keyId) return apiKey;
+    }
+    return null;
+  }
+
+  /**
+   * Deactivate (revoke) a key by its public `key_id`.
+   *
+   * Idempotent: returns `false` if the id is unknown, `true` after a
+   * successful revocation. Re-revoking an already inactive key is a no-op.
+   */
+  revokeByKeyId(keyId: string): boolean {
+    const apiKey = this.findByKeyId(keyId);
+    if (!apiKey) return false;
+    this.deactivateKey(apiKey.key_hash);
+    return true;
+  }
+
+  /**
    * Return the number of registered keys (useful for tests).
    */
   size(): number {

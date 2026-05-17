@@ -1,9 +1,10 @@
 # Merchant API Specification
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Status:** Draft
-**Date:** 2025-12-27
+**Date:** 2026-05-17
 **Issue:** [#24 — Merchant API (Non-Custodial Payment Orchestration)](https://github.com/xlabtg/tonbankcard-protocol/issues/24)
+**Hardening:** [#130 — D4 Rate Limiting & DDoS Protection](https://github.com/xlabtg/tonbankcard-protocol/issues/130)
 
 ---
 
@@ -184,11 +185,35 @@ Testnet:     https://api-testnet.tonbankcard.io/v1
 
 ### Authentication
 
-All endpoints require API key authentication:
+All merchant endpoints require API key authentication via a Bearer header:
 
 ```http
 Authorization: Bearer <MERCHANT_API_KEY>
 ```
+
+**Canonical key format**:
+
+```
+tbc_<env>_<32 lowercase hex>
+```
+
+| Component | Value | Purpose |
+|-----------|-------|---------|
+| `tbc_` | literal prefix | unambiguous identification in logs/leak scanners |
+| `<env>` | `live` or `test` | hard-fails cross-environment use of a key |
+| `<32 hex>` | 128 bits of CSPRNG entropy | unguessable secret |
+
+Total length is **41 characters**. Anything outside this shape MUST be rejected by the
+authentication middleware before any DB lookup.
+
+**Storage model**:
+- API server stores only `HMAC-SHA256(API_KEY_SECRET, plaintext)` plus a public `key_id`.
+- The plaintext key is returned to the issuer **exactly once** (response of `POST /v1/keys`)
+  and is never persisted.
+- All log lines redact the plaintext after the first 12 visible characters
+  (`tbc_live_abc***...`) — wide enough to disambiguate but narrow enough to be unusable.
+
+**Endpoints for issuing and revoking keys** are documented in §5.4 and §5.5.
 
 ---
 
@@ -449,6 +474,120 @@ Authorization: Bearer <MERCHANT_API_KEY>
 
 ---
 
+### 5.4 Issue API Key
+
+**Purpose**: Mint a new API key for a merchant NFT.
+
+**Endpoint**:
+```http
+POST /v1/keys
+```
+
+**Authentication**: Deployment-time bootstrap token. The caller MUST supply
+`Authorization: Bearer <API_KEY_ADMIN_TOKEN>`, where the expected value is
+configured server-side via the `API_KEY_ADMIN_TOKEN` environment variable.
+The token comparison is constant-time. When the variable is unset, both
+key management endpoints respond with `403 UNAUTHORIZED_MERCHANT` so the
+route is inert in deployments that have not opted in.
+
+The bootstrap token model is intentionally minimal — it does not introduce
+a user/role system. Production deployments are expected to layer their own
+identity provider (SSO, dashboard session, etc.) in front of these
+endpoints.
+
+**Request Headers**:
+```http
+Content-Type: application/json
+Authorization: Bearer <API_KEY_ADMIN_TOKEN>
+```
+
+**Request Body**:
+```json
+{
+  "merchant_nft": "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le",
+  "environment": "live",
+  "permissions": ["invoice:create", "invoice:read", "invoice:status"],
+  "expires_at": "2026-12-31T23:59:59Z"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `merchant_nft` | `string` | Yes | TON address that owns the key |
+| `environment` | `"live"` \| `"test"` | No | Default `"live"`. Selects the `tbc_live_` / `tbc_test_` prefix |
+| `permissions` | `string[]` | No | Subset of `invoice:create`, `invoice:read`, `invoice:status`. Default: all three |
+| `expires_at` | ISO 8601 | No | Optional hard expiry. Default: no expiry |
+
+**Response** (`201 Created`):
+```json
+{
+  "api_key": "tbc_live_9a3f8d2c0e1b4a5d6f7e8c9d0a1b2c3d",
+  "key_id": "key_a1b2c3d4",
+  "merchant_nft": "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le",
+  "environment": "live",
+  "permissions": ["invoice:create", "invoice:read", "invoice:status"],
+  "created_at": "2026-05-17T10:00:00Z",
+  "expires_at": "2026-12-31T23:59:59Z"
+}
+```
+
+> **The plaintext `api_key` is returned exactly once.** Subsequent reads will
+> not include it. Lost keys must be revoked (§5.5) and re-issued.
+
+**Audit log** — each issuance writes a structured `api_key.issued` entry to
+stderr containing the `key_id`, the `merchant_nft`, the environment, the
+permissions, and a redacted preview of the plaintext (first 12 chars only).
+
+**HTTP Status Codes**:
+- `201 Created` — key issued, plaintext returned
+- `400 Bad Request` — invalid `merchant_nft`, `environment`, `permissions`, or `expires_at`
+- `401 Unauthorized` — missing or malformed `Authorization` header
+- `403 Forbidden` — bootstrap token unset (`UNAUTHORIZED_MERCHANT`) or bootstrap token mismatch
+- `429 Too Many Requests` — per-IP rate limit on `/v1/keys/*`
+
+---
+
+### 5.5 Revoke API Key
+
+**Purpose**: Deactivate an existing key so all subsequent requests presenting
+it return `401 INVALID_API_KEY`.
+
+**Endpoint**:
+```http
+DELETE /v1/keys/{key_id}
+```
+
+**Authentication**: Same bootstrap token as §5.4.
+
+**Path Parameters**:
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key_id` | `string` | Yes | Public id returned by `POST /v1/keys` |
+
+**Response** (`200 OK`):
+```json
+{
+  "key_id": "key_a1b2c3d4",
+  "revoked": true
+}
+```
+
+**HTTP Status Codes**:
+- `200 OK` — key deactivated
+- `401 Unauthorized` — `key_id` not found or already revoked (`INVALID_API_KEY`)
+- `403 Forbidden` — bootstrap token unset or mismatch
+- `429 Too Many Requests` — per-IP rate limit on `/v1/keys/*`
+
+**Security**:
+- Revocation is immediate — the in-memory registry drops the active flag
+  and the next authenticated call by that key fails authentication.
+- The endpoint is rate-limited per IP to defeat enumeration of `key_id`s.
+- Both key management endpoints share the per-IP limiter so a leaked
+  bootstrap token cannot be used to bulk-issue keys at high rate.
+
+---
+
 ## 6. Data Models
 
 ### 6.1 Invoice
@@ -525,15 +664,35 @@ interface ErrorResponse {
 
 ### 7.1 Authentication & Authorization
 
-**API Key Management**:
-- Merchants receive API keys via secure channel
-- Keys are scoped to merchant NFT address
-- Rotation supported via dashboard
-- Rate limits enforced per key
+**API Key Lifecycle**:
+- Keys are issued via `POST /v1/keys` (§5.4), gated by the deployment-time
+  `API_KEY_ADMIN_TOKEN`. The plaintext is returned exactly once.
+- Keys are scoped to a single merchant NFT address (`merchant_nft`).
+- Each key carries an explicit permission set (`invoice:create`,
+  `invoice:read`, `invoice:status`). The authentication middleware checks
+  the route's required permission against the key's permissions on every
+  request.
+- Keys are revoked via `DELETE /v1/keys/{key_id}` (§5.5). Revocation is
+  immediate and irreversible.
+- Rotation is performed by issuing a new key and revoking the old one.
+
+**Storage**:
+- Plaintext keys are **never** persisted server-side. Storage holds only
+  `HMAC-SHA256(API_KEY_SECRET, plaintext)` plus a public `key_id`.
+- Authentication is constant-time: the middleware HMACs the presented
+  bearer and compares the digest byte-for-byte to the stored value.
+
+**Logging**:
+- Every log line that mentions a plaintext key redacts it after the first
+  12 characters (`tbc_live_abc***...`). The 12-char prefix is wide enough
+  to disambiguate while the suffix carries the secret entropy.
 
 **Authorization Model**:
 ```
-API Key → Merchant NFT → Invoice Ownership
+API Key  →  Merchant NFT  →  Invoice Ownership
+   │            │
+   │            └── enforced by permission scopes on every route
+   └── checked by HMAC equality against the hashed registry
 ```
 
 ### 7.2 Replay Protection
@@ -550,13 +709,33 @@ API Key → Merchant NFT → Invoice Ownership
 
 ### 7.3 Rate Limiting
 
-| Endpoint | Limit | Window |
-|----------|-------|--------|
-| `POST /invoice/create` | 100 requests | 1 minute |
-| `GET /invoice/{id}` | 1000 requests | 1 minute |
-| `GET /invoice/{id}/status` | 500 requests | 1 minute |
+Rate limiting is enforced by `express-rate-limit` mounted as per-route
+middleware. Authenticated routes key on `req.apiKey.key_id` so two
+merchants sharing a NAT egress do not interfere with each other; the public
+unauthenticated route keys on `req.ip`.
 
-**Exceeded**: HTTP 429 with `Retry-After` header
+| Endpoint | Limit (per minute) | Key | Env var |
+|----------|-------------------|-----|---------|
+| `POST /v1/invoice/create` | 60 | API key | `RATE_LIMIT_INVOICE_CREATE_PER_MIN` |
+| `GET /v1/invoice/{id}/status` | 300 | API key | `RATE_LIMIT_INVOICE_STATUS_PER_MIN` |
+| `GET /v1/invoice/{id}` (authenticated read) | 1000 | API key | `RATE_LIMIT_INVOICE_READ_PER_MIN` |
+| `GET /v1/invoice/{id}` (unauthenticated wallet read) | 10 | IP | `RATE_LIMIT_PUBLIC_PER_MIN` |
+| `POST /v1/keys`, `DELETE /v1/keys/{key_id}` | 10 | IP | `RATE_LIMIT_PUBLIC_PER_MIN` |
+
+The window length defaults to 60 seconds and is configurable via
+`RATE_LIMIT_WINDOW_MS` (milliseconds).
+
+**Response on 429**:
+- Body: standard error envelope with
+  `error.code = "RATE_LIMIT_EXCEEDED"` and
+  `error.details = { limit, window, retryAfter }`.
+- Headers:
+  - `Retry-After` — seconds until the next request is allowed
+  - `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` — IETF draft-7
+  - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` — legacy aliases for clients that have not migrated
+
+Clients SHOULD honour `Retry-After`; repeated requests that ignore it will
+continue to receive 429 until the window expires.
 
 ### 7.4 Input Validation
 
@@ -752,9 +931,85 @@ API → Merchant Website: 200 OK
 Merchant Website: Fulfill order (ship product, grant access, etc.)
 ```
 
-### 9.2 Webhook Support (Future)
+### 9.2 Webhook Support
 
-**Not included in v1.0.0** - To be specified in future version.
+The API can push settlement events to a merchant-supplied URL as soon as the
+indexer confirms an on-chain `MerchantPayment`. Each delivery is signed so
+the merchant can verify the message originated from the API and was not
+modified in transit or replayed.
+
+**Endpoint registration** (deployment-time): the API server reads the
+signing secret from `WEBHOOK_SIGNING_SECRET` (or a per-endpoint secret
+configured by the operator). Merchants receive the secret over the same
+out-of-band channel that delivers their API key.
+
+**Delivery semantics**:
+- Transport: `POST <merchant URL>`
+- Headers:
+  - `Content-Type: application/json`
+  - `X-Tonbankcard-Signature: t=<unix-seconds>,v1=<hex-hmac-sha256>`
+- Body: the raw JSON payload that was signed — bytes are **not**
+  re-serialised between signing and transmission.
+- Timeout: 5 seconds. Non-2xx responses are reported in the audit log; the
+  delivery contract is at-least-once.
+
+**Signature scheme** (Stripe-compatible):
+
+```
+signed_payload = "<timestamp>.<raw_body>"
+signature       = HMAC_SHA256(secret, signed_payload)         # hex, lowercase
+header          = "t=<timestamp>,v1=<signature>"
+```
+
+**Verification algorithm** (mirrored exactly by the SDK helper —
+`verifyWebhook(secret, body, header)` — and the server helper
+`verifyWebhookSignature`):
+1. Parse the header into `key=value` pairs. If parsing fails, reject as
+   `malformed_signature`.
+2. Require a `t=` timestamp and at least one `v1=` signature. If `v1` is
+   absent but other versions are present, reject as `unsupported_version`.
+3. Reject as `timestamp_out_of_tolerance` when `|now − t| > 300` seconds
+   (configurable, default 5 minutes).
+4. Recompute `HMAC_SHA256(secret, "<t>.<raw_body>")` and compare against
+   the `v1` digest using a constant-time comparator. A mismatch is
+   reported as `signature_mismatch`.
+
+**Replay protection**: the 5-minute tolerance window plus the constant-time
+HMAC comparison defeat both naive replay and timing oracles. Merchants
+that need stricter de-duplication should additionally track the
+`invoice_id` field already present in every settlement payload.
+
+**SDK helper** — TypeScript/JavaScript merchants can use the bundled
+helper instead of re-implementing the scheme:
+
+```typescript
+import { verifyWebhook } from "@tonbankcard/sdk";
+
+app.post("/webhooks/tbc", (req, res) => {
+  const result = verifyWebhook(
+    process.env.WEBHOOK_SIGNING_SECRET!,
+    req.rawBody,                              // Buffer or string — MUST be the raw bytes
+    req.headers["x-tonbankcard-signature"]!,
+  );
+  if (!result.valid) {
+    // result.reason ∈ {
+    //   "missing_signature", "malformed_signature",
+    //   "unsupported_version", "timestamp_out_of_tolerance",
+    //   "signature_mismatch",
+    // }
+    return res.status(401).send(result.reason);
+  }
+  // Safe to process settlement event…
+});
+```
+
+**Common pitfalls**:
+- Frameworks that re-serialise JSON before handing the body to a handler
+  will silently break verification. Always sign over and verify against
+  the raw bytes (`express.raw({ type: "application/json" })`).
+- Clock skew larger than 5 minutes between the API and the merchant
+  triggers `timestamp_out_of_tolerance`. NTP-sync your webhook receiver.
+- Never log or echo the `X-Tonbankcard-Signature` header.
 
 ---
 
@@ -956,9 +1211,9 @@ function matchEventToInvoice(event: MerchantPayment, invoices: Invoice[]): Invoi
 
 ## Appendix C: Future Enhancements
 
-The following features are **out of scope** for v1.0.0 but may be considered for future versions:
+The following features are **out of scope** for the current specification
+but may be considered for future versions:
 
-- ❌ Webhooks (real-time settlement notifications)
 - ❌ Refunds (on-chain refund support)
 - ❌ Partial payments
 - ❌ Multi-currency invoices
@@ -974,6 +1229,7 @@ The following features are **out of scope** for v1.0.0 but may be considered for
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2025-12-27 | Initial specification |
+| 1.1.0 | 2026-05-17 | Add canonical `tbc_<env>_<32 hex>` API key format, `POST/DELETE /v1/keys` endpoints with bootstrap-token gating, per-route rate limiting tied to the API key (or IP when unauthenticated), and HMAC-SHA256 webhook signatures with a 5-minute replay window plus a matching SDK verification helper. |
 
 ---
 
