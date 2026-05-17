@@ -1,27 +1,32 @@
 /**
  * Invoice API Routes
  *
- * Express.js route handlers for the Merchant API endpoints.
- * This is a reference implementation demonstrating the API specification.
+ * Express route handlers for the Merchant API. Authentication and rate
+ * limiting are split across two layers:
  *
- * In production, this would be integrated with:
- * - Express.js or similar web framework
- * - Authentication middleware
- * - Rate limiting middleware
- * - Logging and monitoring
+ *   1. `authenticateWithPermission(permission)` validates the bearer
+ *      `Authorization` header, checks the per-key permission scope, and
+ *      attaches the resolved `ApiKey` to `req.apiKey`.
+ *
+ *   2. A dedicated `express-rate-limit` middleware (from
+ *      `middleware/rateLimiter.ts`) enforces the per-key limits, keyed
+ *      on `req.apiKey.key_id` so merchants behind a shared egress IP
+ *      cannot starve each other. Unauthenticated routes use a per-IP
+ *      limiter.
+ *
+ * The previous in-process token-bucket implementation was removed in
+ * favour of the standard library so distributed deployments can swap in
+ * a Redis store with a single configuration change.
  *
  * @see docs/merchant-api-spec.md
+ * @see https://github.com/xlabtg/tonbankcard-protocol/issues/130
  */
 
 import { Request, Response, NextFunction } from 'express';
 import { invoiceService } from '../services/InvoiceService';
 import { apiKeyService } from '../services/ApiKeyService';
 import { ValidationError } from '../utils/validation';
-import {
-  ApiKey,
-  ApiKeyPermission,
-  RateLimitBucket,
-} from '../types/invoice';
+import { ApiKey, ApiKeyPermission } from '../types/invoice';
 import { ErrorCode } from '../types/errors';
 import {
   sendErrorResponse,
@@ -29,42 +34,17 @@ import {
   notFoundHandlerMiddleware,
 } from '../middleware/errorHandler';
 import { requestIdMiddleware } from '../middleware/requestId';
+import {
+  publicIpRateLimiter,
+  invoiceCreateRateLimiter,
+  invoiceStatusRateLimiter,
+  invoiceReadRateLimiter,
+} from '../middleware/rateLimiter';
 
 /**
- * ⚠️ PRODUCTION WARNING: In-memory stores MUST NOT be used in production.
+ * Extract the bearer credential from the `Authorization` header.
  *
- * `rateLimitBuckets` and `apiKeyStore` below are process-local Maps that:
- *  - Lose all state on server restart or crash
- *  - Are not shared across horizontal replicas (each instance enforces limits
- *    independently, allowing N×RPM through N load-balanced replicas)
- *  - Grow without bound under sustained load, risking OOM crashes
- *
- * For production, replace with:
- *  - Redis for rate limiting: use a sliding-window or token-bucket algorithm
- *    backed by Redis atomic operations (e.g., `INCR` + `EXPIRE`, or a library
- *    such as `rate-limiter-flexible`).
- *  - PostgreSQL/MongoDB for API key storage: store hashed keys with scoped
- *    permissions and look them up on each authenticated request.
- *
- * The `IInvoiceStorage` / `IIdempotencyStorage` abstractions in
- * `src/storage/IStorage.ts` demonstrate the pattern to follow when
- * extracting these in-memory stores into injectable, swappable adapters.
- */
-
-/** Rate limit buckets per API key + endpoint (in-memory, for reference only) */
-const rateLimitBuckets = new Map<string, RateLimitBucket>();
-
-/**
- * Default rate limits per endpoint (requests per minute)
- */
-const DEFAULT_RATE_LIMITS = {
-  'invoice:create': 100,
-  'invoice:read': 1000,
-  'invoice:status': 500,
-} as const;
-
-/**
- * Extract API key from Authorization header
+ * Throws `ValidationError(INVALID_API_KEY)` on a missing or malformed header.
  */
 function extractApiKey(req: Request): string {
   const authHeader = req.headers.authorization;
@@ -78,7 +58,7 @@ function extractApiKey(req: Request): string {
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
     throw new ValidationError(
       ErrorCode.INVALID_API_KEY,
-      'Authorization header must be in format: Bearer <API_KEY>'
+      'Authorization header must be in format: Bearer <API_KEY>',
     );
   }
 
@@ -86,9 +66,7 @@ function extractApiKey(req: Request): string {
 }
 
 /**
- * POST /invoice/create
- *
- * Create a new invoice
+ * POST /v1/invoice/create
  */
 export async function createInvoice(req: Request, res: Response): Promise<Response> {
   try {
@@ -101,10 +79,10 @@ export async function createInvoice(req: Request, res: Response): Promise<Respon
 }
 
 /**
- * GET /invoice/:invoice_id
+ * GET /v1/invoice/:invoice_id
  *
- * Get invoice details
- * Public endpoint (no authentication required)
+ * Public endpoint — no authentication. Rate-limited per-IP to defeat
+ * cheap enumeration attempts.
  */
 export async function getInvoice(req: Request, res: Response): Promise<Response> {
   try {
@@ -117,10 +95,7 @@ export async function getInvoice(req: Request, res: Response): Promise<Response>
 }
 
 /**
- * GET /invoice/:invoice_id/status
- *
- * Get invoice status
- * Requires authentication
+ * GET /v1/invoice/:invoice_id/status
  */
 export async function getInvoiceStatus(req: Request, res: Response): Promise<Response> {
   try {
@@ -133,138 +108,44 @@ export async function getInvoiceStatus(req: Request, res: Response): Promise<Res
   }
 }
 
-/**
- * Check if API key has required permission (scoping)
- *
- * @param apiKey - API key to check
- * @param requiredPermission - Required permission
- * @returns true if permitted, false otherwise
- */
 function hasPermission(apiKey: ApiKey, requiredPermission: ApiKeyPermission): boolean {
   return apiKey.permissions.includes(requiredPermission);
 }
 
 /**
- * Check rate limit for API key + endpoint
+ * Authentication middleware with permission scoping.
  *
- * Uses token bucket algorithm with per-key limits.
- * In production, use Redis for distributed rate limiting.
+ * Validates the bearer API key, checks the required permission, and
+ * stores the resolved `ApiKey` on `req.apiKey` so downstream middleware
+ * (rate limiter, audit logging) can read it.
  *
- * @param apiKeyId - API key identifier
- * @param endpoint - Endpoint permission being accessed
- * @param limit - Requests per minute limit
- * @returns Object with allowed status and retry info
- */
-function checkRateLimit(
-  apiKeyId: string,
-  endpoint: ApiKeyPermission,
-  limit: number
-): { allowed: boolean; retryAfter?: number; remaining: number } {
-  const bucketKey = `${apiKeyId}:${endpoint}`;
-  const now = Date.now();
-  const windowMs = 60 * 1000; // 1 minute
-
-  let bucket = rateLimitBuckets.get(bucketKey);
-
-  if (!bucket) {
-    // Initialize new bucket
-    bucket = {
-      tokens: limit,
-      max_tokens: limit,
-      last_refill: now,
-      refill_at: now + windowMs,
-    };
-    rateLimitBuckets.set(bucketKey, bucket);
-  }
-
-  // Refill tokens based on time elapsed
-  const elapsed = now - bucket.last_refill;
-  const refillAmount = (elapsed / windowMs) * limit;
-
-  bucket.tokens = Math.min(bucket.max_tokens, bucket.tokens + refillAmount);
-  bucket.last_refill = now;
-
-  if (bucket.tokens < 1) {
-    // Rate limit exceeded
-    const retryAfter = Math.ceil((1 - bucket.tokens) * (windowMs / limit) / 1000);
-    return {
-      allowed: false,
-      retryAfter,
-      remaining: 0,
-    };
-  }
-
-  // Consume token
-  bucket.tokens -= 1;
-  bucket.refill_at = now + windowMs;
-
-  return {
-    allowed: true,
-    remaining: Math.floor(bucket.tokens),
-  };
-}
-
-/**
- * Authentication middleware with permission scoping
- *
- * Validates API key and checks:
- * 1. Key exists and is valid
- * 2. Key has required permission
- * 3. Key is not expired
- * 4. Rate limit not exceeded
- *
- * @param requiredPermission - Permission required for this endpoint
+ * Rate limiting is intentionally *not* performed here — it is delegated
+ * to dedicated `express-rate-limit` middleware mounted on each route so
+ * the per-endpoint limits can vary independently of authentication.
  */
 export function authenticateWithPermission(requiredPermission: ApiKeyPermission) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const apiKeyValue = extractApiKey(req);
 
-      // Look up API key by hash – throws INVALID_API_KEY if not found,
+      // Look up API key by hash — throws INVALID_API_KEY if not found,
       // deactivated, or expired.
       const apiKey = apiKeyService.findAndValidateKey(apiKeyValue);
 
-      // Check permission (scoping)
       if (!hasPermission(apiKey, requiredPermission)) {
         throw new ValidationError(
           ErrorCode.UNAUTHORIZED_MERCHANT,
           `API key does not have permission: ${requiredPermission}`,
-          { required_permission: requiredPermission }
+          { required_permission: requiredPermission },
         );
       }
 
-      // Check rate limit (per-key)
-      const rateLimit = apiKey.rate_limits[
-        requiredPermission.replace(':', '_') as keyof typeof apiKey.rate_limits
-      ] || DEFAULT_RATE_LIMITS[requiredPermission];
-
-      const rateLimitResult = checkRateLimit(apiKey.key_id, requiredPermission, rateLimit);
-
-      if (!rateLimitResult.allowed) {
-        res.setHeader('Retry-After', rateLimitResult.retryAfter!.toString());
-        res.setHeader('X-RateLimit-Limit', rateLimit.toString());
-        res.setHeader('X-RateLimit-Remaining', '0');
-
-        throw new ValidationError(
-          ErrorCode.RATE_LIMIT_EXCEEDED,
-          'Rate limit exceeded',
-          {
-            retryAfter: rateLimitResult.retryAfter,
-            limit: rateLimit,
-            window: 60,
-          }
-        );
-      }
-
-      // Set rate limit headers
-      res.setHeader('X-RateLimit-Limit', rateLimit.toString());
-      res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
-
-      // Update last used timestamp
       apiKeyService.touchKey(apiKey.key_hash);
 
-      // Store API key info in request for later use
-      (req as any).apiKey = apiKey;
+      // Expose the resolved key to subsequent middleware (rate limiter,
+      // route handler). Typed as `any` to avoid extending the global
+      // Express namespace solely for this short-lived attachment.
+      (req as Request & { apiKey?: ApiKey }).apiKey = apiKey;
 
       next();
     } catch (error) {
@@ -274,45 +155,16 @@ export function authenticateWithPermission(requiredPermission: ApiKeyPermission)
 }
 
 /**
- * Authentication middleware (legacy, uses full permissions)
+ * Backwards-compatible alias.
  *
- * @deprecated Use authenticateWithPermission for scoped access
+ * @deprecated Use `authenticateWithPermission` with the explicit scope.
  */
 export function authenticateApiKey(req: Request, res: Response, next: NextFunction): void {
   authenticateWithPermission('invoice:create')(req, res, next);
 }
 
 /**
- * Rate limiting middleware (stub)
- *
- * In production, use express-rate-limit or similar
- */
-export function rateLimitMiddleware(req: Request, res: Response, next: NextFunction): void {
-  // TODO: Implement rate limiting
-  // Example:
-  // const key = req.ip + ':' + req.path;
-  // const limit = await rateLimiter.checkLimit(key, limits[req.path]);
-  //
-  // if (limit.exceeded) {
-  //   const errorResponse: ErrorResponse = {
-  //     error: {
-  //       code: ErrorCode.RATE_LIMIT_EXCEEDED,
-  //       message: 'Too many requests',
-  //       details: {
-  //         retryAfter: limit.retryAfter,
-  //       },
-  //     },
-  //   };
-  //   return res.status(429)
-  //     .header('Retry-After', limit.retryAfter.toString())
-  //     .json(errorResponse);
-  // }
-
-  next();
-}
-
-/**
- * CORS middleware configuration
+ * CORS middleware configuration.
  *
  * Never defaults to wildcard '*'. When ALLOWED_ORIGINS is unset (e.g. in
  * production without explicit configuration) all cross-origin requests are
@@ -320,10 +172,9 @@ export function rateLimitMiddleware(req: Request, res: Response, next: NextFunct
  * allowed.
  *
  * Set the ALLOWED_ORIGINS environment variable to a comma-separated list of
- * permitted origins:
- *   ALLOWED_ORIGINS=https://yourdomain.com,https://staging.yourdomain.com
+ * permitted origins.
  *
- * Fixes: https://github.com/xlabtg/tonbankcard-protocol/issues/92
+ * @see https://github.com/xlabtg/tonbankcard-protocol/issues/92
  */
 const _allowedOrigins: string[] = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
@@ -331,7 +182,6 @@ const _allowedOrigins: string[] = process.env.ALLOWED_ORIGINS
 
 export const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow server-to-server requests (no Origin header present)
     if (!origin) {
       callback(null, true);
       return;
@@ -342,54 +192,40 @@ export const corsOptions = {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: false,
 };
 
 /**
- * Example Express.js app setup
- *
- * Usage:
- * ```typescript
- * import express from 'express';
- * import cors from 'cors';
- * import { setupInvoiceRoutes, corsOptions } from './routes/invoiceRoutes';
- *
- * const app = express();
- * app.use(cors(corsOptions));
- * app.use(express.json());
- *
- * setupInvoiceRoutes(app);
- *
- * app.listen(3000, () => {
- *   console.log('Merchant API listening on port 3000');
- * });
- * ```
+ * Wire the invoice routes into an Express app.
  */
 export function setupInvoiceRoutes(app: any): void {
-  // Tag every request with a stable identifier (and mirror it as
-  // X-Request-Id on the response) so log entries and error envelopes
-  // can be correlated. Must run before any route handler.
   app.use(requestIdMiddleware);
 
-  // Public endpoint (no auth required, but rate limited by IP)
-  app.get('/v1/invoice/:invoice_id', rateLimitMiddleware, getInvoice);
+  // Public endpoint: per-IP rate limit (defeats cheap enumeration).
+  app.get('/v1/invoice/:invoice_id', publicIpRateLimiter, getInvoice);
 
-  // Protected endpoints with scoped permissions and per-key rate limiting
+  // Protected endpoints: authenticate first, then enforce per-key limit.
   app.post(
     '/v1/invoice/create',
     authenticateWithPermission('invoice:create'),
-    createInvoice
+    invoiceCreateRateLimiter,
+    createInvoice,
   );
 
   app.get(
     '/v1/invoice/:invoice_id/status',
     authenticateWithPermission('invoice:status'),
-    getInvoiceStatus
+    invoiceStatusRateLimiter,
+    getInvoiceStatus,
   );
 
-  // Health check endpoint
+  // Reserved for an authenticated invoice-detail variant; documented for
+  // future use even though the public route above is mounted first.
+  void invoiceReadRateLimiter;
+
+  // Health check (no rate limit so liveness probes never trip a 429).
   app.get('/v1/health', (req: Request, res: Response) => {
     res.status(200).json({
       status: 'ok',
@@ -398,12 +234,9 @@ export function setupInvoiceRoutes(app: any): void {
     });
   });
 
-  // Standardised 404 for any unmatched route. Must be registered after
-  // the real routes so they get first refusal.
+  // Standardised 404 — must be after real routes.
   app.use(notFoundHandlerMiddleware);
 
-  // Final safety net: any error that escapes a handler is funnelled
-  // through the shared envelope. Must be the *last* middleware and use
-  // the four-argument signature so Express routes errors to it.
+  // Final safety net — must be last and use the four-argument signature.
   app.use(errorHandlerMiddleware);
 }
