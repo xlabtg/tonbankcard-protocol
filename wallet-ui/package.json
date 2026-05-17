@@ -47,6 +47,7 @@
     "@ton/ton": ">=13.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@jest/globals": "^30.4.1",
     "@types/jest": "^30.0.0",
     "@types/jsdom": "^28.0.1",
@@ -60,7 +61,8 @@
     "prettier": "^3.4.2",
     "ts-jest": "^29.4.6",
     "tsup": "^8.5.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.59.3"
   },
   "peerDependencies": {
     "@ton/core": ">=0.56.0",
