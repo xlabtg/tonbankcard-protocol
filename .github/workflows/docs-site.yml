@@ -1,0 +1,54 @@
+name: Docs Site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'sdk/src/**'
+      - '.github/workflows/docs-site.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'sdk/src/**'
+      - '.github/workflows/docs-site.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build documentation site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: docs-site/.nvmrc
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install docs-site dependencies
+        working-directory: docs-site
+        run: npm install --no-audit --no-fund
+
+      - name: Generate SDK API reference
+        working-directory: docs-site
+        run: npm run gen:sdk-api
+
+      - name: Build documentation site
+        working-directory: docs-site
+        run: npm run build
+
+      - name: Upload build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site-build
+          path: docs-site/build
+          retention-days: 7
