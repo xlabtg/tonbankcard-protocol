@@ -10,6 +10,7 @@
 import express from 'express';
 import cors from 'cors';
 import { setupInvoiceRoutes, corsOptions } from './routes/invoiceRoutes';
+import { installSandboxMode, isSandboxMode } from './middleware/sandbox';
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -23,6 +24,11 @@ app.use(express.json({ limit: '10kb' }));
 // Disable x-powered-by header
 app.disable('x-powered-by');
 
+// Sandbox relaxations (header + anonymous auth + /v1/sandbox/info).
+// Inert in production: `installSandboxMode` returns false when
+// `TONBANKCARD_SANDBOX` / `NODE_ENV=sandbox` are not set.
+const sandboxInstalled = installSandboxMode(app);
+
 // Set up routes
 setupInvoiceRoutes(app);
 
@@ -30,6 +36,9 @@ setupInvoiceRoutes(app);
 app.listen(Number(PORT), HOST, () => {
   console.log(`Merchant API listening on ${HOST}:${PORT}`);
   console.log(`Health check: http://${HOST}:${PORT}/v1/health`);
+  if (sandboxInstalled && isSandboxMode()) {
+    console.log(`Sandbox mode: ON  →  GET http://${HOST}:${PORT}/v1/sandbox/info`);
+  }
 });
 
 export default app;

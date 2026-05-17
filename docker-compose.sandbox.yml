@@ -1,0 +1,161 @@
+# docker-compose.sandbox.yml — Testnet sandbox stack
+#
+# Brings up the public Tonbankcard sandbox topology described in
+# docs/sandbox.md:
+#
+#   - Merchant API in sandbox mode (TONBANKCARD_SANDBOX=true)
+#       · X-Tonbankcard-Environment: sandbox header on every response
+#       · /v1/sandbox/info discovery endpoint
+#       · Anonymous Authorization fallback for `POST /v1/invoice/create`
+#   - Payment Indexer pointed at TON testnet contracts
+#   - TBC faucet (scripts/faucet) with 1-per-hour-per-address rate limit
+#   - Redis (shared idempotency + rate-limit storage)
+#
+# Usage:
+#   cp .env.sandbox.example .env.sandbox
+#   docker compose -f docker-compose.sandbox.yml --env-file .env.sandbox up --build
+#
+# The stack is testnet-only by construction:
+#   - TON_NETWORK defaults to `testnet`
+#   - Faucet runs the DryRunDispenser by default; swap in a real TonDispenser
+#     and inject signing keys via Docker secrets before exposing publicly.
+#   - No mainnet contract addresses are referenced.
+
+name: tonbankcard-sandbox
+
+services:
+  api:
+    image: tonbankcard/merchant-api:sandbox
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: tonbankcard-sandbox-api
+    restart: unless-stopped
+    env_file:
+      - path: .env.sandbox
+        required: false
+    environment:
+      NODE_ENV: sandbox
+      TONBANKCARD_SANDBOX: "true"
+      PORT: 3000
+      HOST: 0.0.0.0
+      TON_NETWORK: ${TON_NETWORK:-testnet}
+      ALLOWED_ORIGINS: ${SANDBOX_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:8080}
+      API_KEY_SECRET: ${SANDBOX_API_KEY_SECRET:-sandbox-do-not-use-in-production-32-bytes}
+      SANDBOX_BASE_URL: ${SANDBOX_BASE_URL:-http://localhost:3001}
+      SANDBOX_FAUCET_URL: ${SANDBOX_FAUCET_URL:-http://localhost:4500}
+      SANDBOX_RESET_CADENCE: ${SANDBOX_RESET_CADENCE:-weekly}
+      SANDBOX_DEFAULT_MERCHANT_NFT: ${SANDBOX_DEFAULT_MERCHANT_NFT:-EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+      SANDBOX_TEST_NFT_CARDS: ${SANDBOX_TEST_NFT_CARDS:-0:1111111111111111111111111111111111111111111111111111111111111111,0:2222222222222222222222222222222222222222222222222222222222222222}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    ports:
+      - "${SANDBOX_API_HOST_PORT:-3001}:3000"
+    networks:
+      - tonbankcard-sandbox
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  indexer:
+    image: tonbankcard/indexer:sandbox
+    build:
+      context: ./backend/indexer
+      dockerfile: Dockerfile
+    container_name: tonbankcard-sandbox-indexer
+    restart: unless-stopped
+    env_file:
+      - path: .env.sandbox
+        required: false
+    environment:
+      NODE_ENV: sandbox
+      PORT: 3000
+      HOST: 0.0.0.0
+      DB_PATH: /app/data/sandbox-indexer.db
+      TON_NETWORK: ${TON_NETWORK:-testnet}
+      TON_API_ENDPOINT: ${TON_API_ENDPOINT:-https://testnet.toncenter.com/api/v2}
+      TON_API_KEY: ${TON_API_KEY:-}
+      PAYMENT_HUB_ADDRESS: ${PAYMENT_HUB_ADDRESS:-}
+      MERCHANT_PAYMENT_HUB_ADDRESS: ${MERCHANT_PAYMENT_HUB_ADDRESS:-}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PRETTY: ${LOG_PRETTY:-true}
+    ports:
+      - "${SANDBOX_INDEXER_HOST_PORT:-3002}:3000"
+    volumes:
+      - sandbox-indexer-data:/app/data
+    networks:
+      - tonbankcard-sandbox
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  faucet:
+    image: tonbankcard/tbc-faucet:sandbox
+    build:
+      context: ./scripts/faucet
+      dockerfile: Dockerfile
+    container_name: tonbankcard-sandbox-faucet
+    restart: unless-stopped
+    env_file:
+      - path: .env.sandbox
+        required: false
+    environment:
+      FAUCET_PORT: 4500
+      FAUCET_HOST: 0.0.0.0
+      FAUCET_NETWORK: ${TON_NETWORK:-ton-testnet}
+      FAUCET_DEFAULT_DISPENSE_NANOCOINS: ${FAUCET_DEFAULT_DISPENSE_NANOCOINS:-10000000000}
+      FAUCET_RATE_LIMIT_WINDOW_MS: ${FAUCET_RATE_LIMIT_WINDOW_MS:-3600000}
+      FAUCET_RATE_LIMIT_MAX: ${FAUCET_RATE_LIMIT_MAX:-1}
+      FAUCET_ALLOWED_ORIGINS: ${SANDBOX_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:8080}
+    ports:
+      - "${SANDBOX_FAUCET_HOST_PORT:-4500}:4500"
+    networks:
+      - tonbankcard-sandbox
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:4500/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: tonbankcard-sandbox-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${SANDBOX_REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - sandbox-redis-data:/data
+    networks:
+      - tonbankcard-sandbox
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  tonbankcard-sandbox:
+    driver: bridge
+
+volumes:
+  sandbox-indexer-data:
+    driver: local
+  sandbox-redis-data:
+    driver: local

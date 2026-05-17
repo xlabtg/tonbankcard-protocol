@@ -9,6 +9,43 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [1.2.0] — 2026-05-17
+
+### Added — Public Testnet Sandbox (Issue #124)
+
+**SDK examples now default to the public Tonbankcard sandbox**
+- `examples/react-integration/.env.example`, `examples/vue-integration/.env.example`
+  default `VITE_MERCHANT_NFT` to the sandbox merchant NFT documented in
+  `docs/sandbox.md`, plus `VITE_MERCHANT_API_BASE=https://sandbox.api.tonbankcard.com`
+  and `VITE_FAUCET_URL=https://sandbox.api.tonbankcard.com/faucet`.
+- `examples/vanilla-html/index.html` ships a sandbox banner with faucet link
+  and pre-fills the merchant NFT input with the sandbox default — the demo
+  works against the hosted sandbox without any user configuration.
+
+**New infrastructure (outside the SDK package, but used by the examples)**
+- `scripts/faucet/` — standalone TBC faucet service with sliding-window
+  per-address rate limiting (1 dispense / hour by default), CORS allowlist,
+  `DryRunDispenser` default and pluggable `IDispenser` interface.
+- `api/src/middleware/sandbox.ts` — stamps `X-Tonbankcard-Environment: sandbox`
+  on every response, exposes `GET /v1/sandbox/info`, and allows anonymous
+  invoice creation in sandbox mode by injecting a public sandbox API key.
+  Inert in production (no-op unless `TONBANKCARD_SANDBOX=true` or
+  `NODE_ENV=sandbox`).
+- `docker-compose.sandbox.yml` + `.env.sandbox.example` — full testnet sandbox
+  stack (Merchant API, Payment Indexer, faucet, Redis) wired to TON testnet.
+- `docs/sandbox.md` — end-to-end documentation: endpoints, quickstart,
+  faucet usage, test data reset cadence, security posture, self-hosting.
+
+### Security
+- Sandbox stack is **testnet-only by construction** — the indexer refuses to
+  start with `TON_NETWORK=mainnet`, and the faucet ships a `DryRunDispenser`
+  by default so a misconfigured deployment cannot move real funds.
+- Sandbox anonymous API key (`tbck_sandbox_public_anonymous_key`) is
+  registered only when sandbox mode is explicitly enabled and is never
+  surfaced in production responses.
+
+---
+
 ## [1.1.0] — 2026-05-17
 
 ### Added — Developer Experience (Issue #123)
