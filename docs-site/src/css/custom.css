@@ -1,0 +1,27 @@
+/**
+ * Tonbankcard Protocol documentation theme overrides.
+ * Infima utility variables: https://infima.dev/docs/variables/colors
+ */
+
+:root {
+  --ifm-color-primary: #0088cc;
+  --ifm-color-primary-dark: #007ab8;
+  --ifm-color-primary-darker: #0074ad;
+  --ifm-color-primary-darkest: #005f8e;
+  --ifm-color-primary-light: #1496d6;
+  --ifm-color-primary-lighter: #1f9bd9;
+  --ifm-color-primary-lightest: #41abdf;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #4cb5ea;
+  --ifm-color-primary-dark: #2da6e5;
+  --ifm-color-primary-darker: #1d9fe3;
+  --ifm-color-primary-darkest: #1880b7;
+  --ifm-color-primary-light: #6bc4ef;
+  --ifm-color-primary-lighter: #7bcbf1;
+  --ifm-color-primary-lightest: #aaddf6;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}

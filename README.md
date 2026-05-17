@@ -6,6 +6,13 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/xlabtg/tonbankcard-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/xlabtg/tonbankcard-protocol/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-index-informational)](docs/INDEX.md)
+[![Docs Site](https://img.shields.io/badge/docs--site-Docusaurus-2c5bb4)](docs-site/README.md)
+
+> 📖 **Public documentation site:** the markdown sources in [`docs/`](docs/) are
+> also published as a browsable site via Docusaurus. Build it locally with
+> `cd docs-site && npm install && npm run start`, or read the build/deployment
+> notes in [`docs-site/README.md`](docs-site/README.md). When deployed, the
+> hosted site lives at <https://docs.tonbankcard.com>.
 
 ## Overview
 
