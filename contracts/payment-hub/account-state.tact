@@ -171,17 +171,19 @@ contract AccountStateMachine with Deployable {
         require(msg.amount > 0, "Amount must be positive");
         require(msg.from_nft != msg.to_nft, "Cannot transfer to same account");
 
-        // Get source account
+        // Fail-fast: validate the source account fully BEFORE touching the
+        // destination dictionary entry. Loading `to_account` is a dict_get
+        // that costs gas; if the source is locked or under-funded the
+        // transfer aborts anyway, so the destination lookup is wasted work.
+        // Reordering preserves all observable behavior (the same requires
+        // fail in the same priority order) while saving one dict_get on
+        // every rejected transfer.
         let from_account: AccountState = self.getOrDefault(msg.from_nft);
-
-        // Get destination account
-        let to_account: AccountState = self.getOrDefault(msg.to_nft);
-
-        // Check source account state allows sending
         require(from_account.state == STATE_ACTIVE, "Source account must be ACTIVE");
-
-        // Check sufficient balance
         require(from_account.balance_tbc >= msg.amount, "Insufficient balance");
+
+        // Now that the source is known good, fetch the destination.
+        let to_account: AccountState = self.getOrDefault(msg.to_nft);
 
         // NOTE: In production, should verify msg.sender == from_nft owner
         // This would require integration with NFT Account Resolver (Issue #4)

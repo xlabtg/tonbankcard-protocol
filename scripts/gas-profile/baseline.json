@@ -1,0 +1,107 @@
+{
+  "label": "baseline",
+  "generatedAt": "2026-05-17T02:47:01.663Z",
+  "contract": "contracts/payment-hub/account-state.tact :: AccountStateMachine",
+  "sandbox": "@ton/sandbox",
+  "operations": [
+    {
+      "name": "deposit_cold",
+      "description": "DepositTBC into an account that has never been touched (cold map insert).",
+      "gasUsed": 6643,
+      "txExitCode": 0,
+      "txSuccess": true,
+      "runs": 3,
+      "minGas": 6643,
+      "maxGas": 6643,
+      "avgGas": 6643
+    },
+    {
+      "name": "deposit_warm",
+      "description": "DepositTBC into an existing account (dictionary update).",
+      "gasUsed": 6977,
+      "txExitCode": 0,
+      "txSuccess": true,
+      "runs": 3,
+      "minGas": 6977,
+      "maxGas": 6977,
+      "avgGas": 6977
+    },
+    {
+      "name": "withdraw",
+      "description": "WithdrawTBC from an ACTIVE account with sufficient balance.",
+      "gasUsed": 7793,
+      "txExitCode": 0,
+      "txSuccess": true,
+      "runs": 3,
+      "minGas": 7793,
+      "maxGas": 7793,
+      "avgGas": 7793
+    },
+    {
+      "name": "transfer_internal_cold",
+      "description": "Internal TBC transfer; to_nft is being touched for the first time.",
+      "gasUsed": 11341,
+      "txExitCode": 0,
+      "txSuccess": true,
+      "runs": 3,
+      "minGas": 11341,
+      "maxGas": 11341,
+      "avgGas": 11341
+    },
+    {
+      "name": "transfer_internal_warm",
+      "description": "Internal TBC transfer where both accounts already exist (steady state).",
+      "gasUsed": 11725,
+      "txExitCode": 0,
+      "txSuccess": true,
+      "runs": 3,
+      "minGas": 11725,
+      "maxGas": 11725,
+      "avgGas": 11725
+    },
+    {
+      "name": "lock_set_frozen",
+      "description": "ChangeAccountState ACTIVE -> FROZEN (FRAUD_LOCK equivalent).",
+      "gasUsed": 8035,
+      "txExitCode": 0,
+      "txSuccess": true,
+      "runs": 3,
+      "minGas": 8035,
+      "maxGas": 8035,
+      "avgGas": 8035
+    },
+    {
+      "name": "lock_set_collateral",
+      "description": "ChangeAccountState ACTIVE -> COLLATERAL_LOCKED (COLLATERAL_LOCK equivalent).",
+      "gasUsed": 8061,
+      "txExitCode": 0,
+      "txSuccess": true,
+      "runs": 3,
+      "minGas": 8061,
+      "maxGas": 8061,
+      "avgGas": 8061
+    },
+    {
+      "name": "transfer_reject_insufficient",
+      "description": "TransferInternal rejected: source balance is below requested amount.",
+      "gasUsed": 6435,
+      "txExitCode": 54615,
+      "txSuccess": false,
+      "runs": 3,
+      "minGas": 6435,
+      "maxGas": 6435,
+      "avgGas": 6435
+    },
+    {
+      "name": "transfer_reject_frozen_source",
+      "description": "TransferInternal rejected: source account is FROZEN.",
+      "gasUsed": 6417,
+      "txExitCode": 50436,
+      "txSuccess": false,
+      "runs": 3,
+      "minGas": 6417,
+      "maxGas": 6417,
+      "avgGas": 6417
+    }
+  ]
+}
