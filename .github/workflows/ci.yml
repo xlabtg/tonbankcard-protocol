@@ -319,6 +319,38 @@ jobs:
         working-directory: tests/invariants
         run: npm test
 
+  test-adversarial:
+    name: Test (Adversarial & Fuzz)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install invariants dependencies (shared model)
+        working-directory: tests/invariants
+        run: npm install --no-audit --no-fund
+
+      - name: Install adversarial dependencies
+        working-directory: tests/adversarial
+        run: npm install --no-audit --no-fund
+
+      - name: TypeScript check adversarial
+        working-directory: tests/adversarial
+        run: npm run typecheck
+
+      # Coverage thresholds (≥80% all four metrics) are enforced via
+      # `coverageThreshold` in tests/adversarial/package.json. This step fails
+      # if the adversarial test suite ever drops below the configured floor
+      # (per issue #127 §"Configure CI to fail if coverage drops").
+      - name: Adversarial + fuzz tests with coverage gate
+        working-directory: tests/adversarial
+        run: npm run test:coverage
+
   deploy:
     name: Deploy to Vercel
     runs-on: ubuntu-latest

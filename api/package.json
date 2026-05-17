@@ -66,6 +66,14 @@
       "!src/**/*.d.ts",
       "!**/node_modules/**",
       "!**/dist/**"
-    ]
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 75,
+        "functions": 75,
+        "lines": 75,
+        "statements": 75
+      }
+    }
   }
 }
