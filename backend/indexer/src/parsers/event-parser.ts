@@ -103,7 +103,7 @@ export class EventParser {
         if (event !== null) {
           events.push(event);
         }
-      } catch (err) {
+      } catch (_err) {
         // Malformed message – skip and continue with the rest
       }
     }

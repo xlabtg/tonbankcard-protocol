@@ -89,7 +89,7 @@ export class PostgresDriver implements MigrationDriver {
     try {
       // Lazy require — `pg` is an optional dependency so SQLite-only
       // deployments don't have to install it.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       pg = require('pg');
     } catch {
       throw new Error(
