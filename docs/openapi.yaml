@@ -1,0 +1,455 @@
+openapi: 3.1.0
+info:
+  title: TONBANKCARD Merchant API
+  description: |
+    Stateless, non-custodial orchestration layer for TONBANKCARD merchant payments.
+
+    The Merchant API enables third-party websites and services to:
+
+    * Create payment intents (invoices)
+    * Accept payments in TBC
+    * Verify on-chain settlement
+
+    ### Non-custodial guarantees
+
+    The API **never** stores private keys, signs transactions, initiates transfers,
+    holds user funds, or authorises payments. The blockchain is the single source
+    of truth.
+
+    See [docs/merchant-api-spec.md](./merchant-api-spec.md) and
+    [docs/merchant-api-security.md](./merchant-api-security.md) for the full design
+    rationale and security considerations.
+  version: 1.0.0
+  contact:
+    name: TONBANKCARD Protocol
+    url: https://github.com/xlabtg/tonbankcard-protocol
+  license:
+    name: MIT
+    url: https://github.com/xlabtg/tonbankcard-protocol/blob/main/LICENSE
+
+servers:
+  - url: https://api.tonbankcard.io/v1
+    description: Production (TON mainnet)
+  - url: https://api-testnet.tonbankcard.io/v1
+    description: Sandbox (TON testnet)
+  - url: http://localhost:3000/v1
+    description: Local development
+
+tags:
+  - name: Invoice
+    description: |
+      Operations to create payment intents and to check their settlement status.
+  - name: Webhook
+    description: |
+      Webhook payload schemas. The Merchant API itself does not deliver webhooks
+      in v1.0.0; the schemas are published so that SDKs and merchants can validate
+      payloads signed by future webhook senders using HMAC-SHA256.
+
+paths:
+  /invoice/create:
+    post:
+      operationId: createInvoice
+      tags: [Invoice]
+      summary: Create a payment invoice
+      description: |
+        Generates a unique payment intent for a merchant. The invoice is
+        informational only — it does **not** lock funds or grant payment
+        authority. Same input within the expiry window returns the same
+        invoice id (idempotency).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoiceRequest'
+      responses:
+        '201':
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invoice/{invoice_id}:
+    get:
+      operationId: getInvoice
+      tags: [Invoice]
+      summary: Retrieve invoice details
+      description: |
+        Returns invoice details for payment resolution. Public endpoint — wallets
+        may call it without authentication. Rate limited per IP.
+      parameters:
+        - $ref: '#/components/parameters/InvoiceId'
+      responses:
+        '200':
+          description: Invoice found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invoice/{invoice_id}/status:
+    get:
+      operationId: getInvoiceStatus
+      tags: [Invoice]
+      summary: Get invoice settlement status
+      description: |
+        Returns the current settlement status of an invoice, with on-chain
+        verification proof when settled. Merchants must independently verify
+        settlement via a blockchain explorer or TON SDK; API verification is
+        informational, not authoritative.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InvoiceId'
+      responses:
+        '200':
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key (tbck_live_… / tbck_test_…)
+      description: |
+        Merchant API key issued via the dashboard. Pass as
+        `Authorization: Bearer <MERCHANT_API_KEY>`. Keys are scoped to a
+        merchant NFT address and are rate-limited per key.
+
+  parameters:
+    InvoiceId:
+      name: invoice_id
+      in: path
+      required: true
+      description: Unique invoice identifier (e.g. `inv_9f3a7b2c1d4e5f6a`).
+      schema:
+        type: string
+        pattern: '^inv_[A-Za-z0-9]+$'
+        minLength: 5
+        maxLength: 64
+        example: inv_9f3a7b2c1d4e5f6a
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Merchant NFT not authorised
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Gone:
+      description: Resource expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    CreateInvoiceRequest:
+      type: object
+      required:
+        - merchant_nft
+        - amount_tbc
+        - currency
+      additionalProperties: false
+      properties:
+        merchant_nft:
+          type: string
+          description: Merchant NFT address in TON address format (Base64url, 48 chars).
+          pattern: '^[EU][Qq][A-Za-z0-9_-]{46}$'
+          example: EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le
+        amount_tbc:
+          type: string
+          description: |
+            Amount in TBC nanocoins as a decimal string (`1 TBC = 10^9 nanocoins`).
+            Encoded as a string to preserve full 120-bit precision in JSON.
+          pattern: '^[1-9][0-9]*$'
+          example: '1000000000'
+        currency:
+          type: string
+          enum: [TBC]
+          description: Currency code. Only `TBC` is supported in v1.0.0.
+        metadata:
+          $ref: '#/components/schemas/InvoiceMetadata'
+        expires_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp at which the invoice expires (default 24h).
+          example: '2025-12-31T23:59:59Z'
+
+    Invoice:
+      type: object
+      required:
+        - invoice_id
+        - merchant_nft
+        - amount_tbc
+        - currency
+        - status
+        - created_at
+        - expires_at
+        - payment_url
+      properties:
+        invoice_id:
+          type: string
+          example: inv_9f3a7b2c1d4e5f6a
+        merchant_nft:
+          type: string
+          example: EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le
+        amount_tbc:
+          type: string
+          example: '1000000000'
+        currency:
+          type: string
+          enum: [TBC]
+        metadata:
+          $ref: '#/components/schemas/InvoiceMetadata'
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        created_at:
+          type: string
+          format: date-time
+          example: '2025-12-27T10:00:00Z'
+        expires_at:
+          type: string
+          format: date-time
+          example: '2025-12-31T23:59:59Z'
+        payment_url:
+          type: string
+          format: uri
+          example: https://wallet.tonbankcard.io/pay/inv_9f3a7b2c1d4e5f6a
+        settlement:
+          oneOf:
+            - $ref: '#/components/schemas/Settlement'
+            - type: 'null'
+          description: Present (non-null) once the invoice has been settled on-chain.
+
+    InvoiceMetadata:
+      type: object
+      description: |
+        Arbitrary key-value pairs (max 10 fields, max 1KB total).
+        Keys must match `^[a-zA-Z0-9_]+$`; values may be string, number, or boolean.
+      maxProperties: 10
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: number
+          - type: boolean
+      properties:
+        order_id:
+          type: string
+          description: Merchant's internal order identifier.
+        description:
+          type: string
+          description: Human-readable description shown to the payer.
+        customer_email:
+          type: string
+          format: email
+          description: Customer's email (optional, never persisted on-chain).
+
+    InvoiceStatus:
+      type: string
+      enum:
+        - pending
+        - settled
+        - expired
+      description: |
+        Lifecycle status of the invoice. Transitions are one-way:
+        `pending → settled` (on-chain confirmation) or `pending → expired`
+        (after `expires_at`). `settled` and `expired` are terminal states.
+
+    Settlement:
+      type: object
+      required:
+        - payer_nft
+        - merchant_nft
+        - amount_tbc
+        - block_number
+        - tx_hash
+        - timestamp
+        - payload_hash
+      properties:
+        payer_nft:
+          type: string
+          example: EQDef456...
+        merchant_nft:
+          type: string
+          example: EQAbc123...
+        amount_tbc:
+          type: string
+          example: '1000000000'
+        block_number:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 12345678
+        tx_hash:
+          type: string
+          description: Transaction hash on the TON blockchain.
+          example: '0xabc123...'
+        timestamp:
+          type: string
+          format: date-time
+          example: '2025-12-27T10:05:00Z'
+        payload_hash:
+          type: string
+          description: Hash of payment metadata, used to bind on-chain event to the invoice.
+          example: '0x7f8a9b...'
+        on_chain_verified:
+          type: boolean
+          description: True when the API has independently confirmed the event on-chain.
+          example: true
+        verification_url:
+          type: string
+          format: uri
+          description: Explorer URL for independent verification.
+          example: https://tonscan.org/tx/0xabc123...
+
+    InvoiceStatusResponse:
+      type: object
+      required:
+        - invoice_id
+        - status
+        - created_at
+        - expires_at
+      properties:
+        invoice_id:
+          type: string
+          example: inv_9f3a7b2c1d4e5f6a
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        settlement:
+          oneOf:
+            - $ref: '#/components/schemas/Settlement'
+            - type: 'null'
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              $ref: '#/components/schemas/ErrorCode'
+            message:
+              type: string
+              description: Human-readable error message.
+            details:
+              type: object
+              description: Additional context for debugging.
+              additionalProperties: true
+
+    ErrorCode:
+      type: string
+      enum:
+        - INVALID_API_KEY
+        - UNAUTHORIZED_MERCHANT
+        - INVALID_NFT_ADDRESS
+        - NFT_NOT_WHITELISTED
+        - INVALID_AMOUNT
+        - INVALID_METADATA
+        - INVOICE_NOT_FOUND
+        - INVOICE_EXPIRED
+        - RATE_LIMIT_EXCEEDED
+        - INTERNAL_ERROR
+        - BLOCKCHAIN_UNAVAILABLE
+
+    WebhookPayload:
+      type: object
+      description: |
+        Schema for invoice settlement webhook payloads. The Merchant API does not
+        deliver webhooks in v1.0.0; the schema is published so SDKs can verify
+        future webhook deliveries.
+
+        Webhooks MUST be signed with HMAC-SHA256 over the raw JSON body using a
+        shared secret. The signature MUST be transmitted in the
+        `X-Tonbankcard-Signature` header as a hex-encoded digest, and verification
+        MUST use constant-time comparison to prevent timing attacks.
+      required: [event, invoice_id, status, timestamp]
+      properties:
+        event:
+          type: string
+          enum: [invoice.settled, invoice.expired]
+        invoice_id:
+          type: string
+          example: inv_9f3a7b2c1d4e5f6a
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        timestamp:
+          type: string
+          format: date-time
+        settlement:
+          oneOf:
+            - $ref: '#/components/schemas/Settlement'
+            - type: 'null'
