@@ -8,6 +8,9 @@ import {
   AccountStateChangedEvent,
   MerchantPaymentEvent,
   NFTOwnershipChangeEvent,
+  TransparencyProtocolMetricsEvent,
+  TransparencyLockActivityEvent,
+  TransparencyParameterChangeEvent,
   accountStateFromNumber,
 } from '../types/events';
 
@@ -22,6 +25,10 @@ export const OP_CODES = {
   ACCOUNT_STATE_CHANGED: 0x5af8273b,     // AccountStateChangedEvent
   MERCHANT_PAYMENT: 0x3b4c2365,          // MerchantPayment
   NFT_TRANSFER: 0x8fc3fa67,              // NFTTransfer (TEP-62 style used in Tact)
+  // E4 (Issue #135) - TransparencyRegistry monthly aggregate events
+  PROTOCOL_METRICS_RECORDED: 0xe4011001, // ProtocolMetricsRecorded
+  LOCK_ACTIVITY_RECORDED: 0xe4011002,    // LockActivityRecorded
+  PARAMETER_CHANGE_RECORDED: 0xe4011003, // ParameterChangeRecorded
 } as const;
 
 /**
@@ -186,6 +193,18 @@ export class EventParser {
           );
         case OP_CODES.MERCHANT_PAYMENT:
           return this.decodeMerchantPaymentEvent(
+            slice, blockNumber, txHash, logIndex, timestamp
+          );
+        case OP_CODES.PROTOCOL_METRICS_RECORDED:
+          return this.decodeProtocolMetricsRecorded(
+            slice, blockNumber, txHash, logIndex, timestamp
+          );
+        case OP_CODES.LOCK_ACTIVITY_RECORDED:
+          return this.decodeLockActivityRecorded(
+            slice, blockNumber, txHash, logIndex, timestamp
+          );
+        case OP_CODES.PARAMETER_CHANGE_RECORDED:
+          return this.decodeParameterChangeRecorded(
             slice, blockNumber, txHash, logIndex, timestamp
           );
         default:
@@ -391,6 +410,142 @@ export class EventParser {
     }
   }
 
+  /**
+   * Decode ProtocolMetricsRecorded event (E4, Issue #135).
+   *
+   * Layout (op already consumed):
+   *   uint32  period_start
+   *   uint32  period_end
+   *   uint32  active_accounts
+   *   coins   tbc_volume_transferred
+   *   uint32  transfer_count
+   */
+  private decodeProtocolMetricsRecorded(
+    slice: Slice,
+    blockNumber: number,
+    txHash: string,
+    logIndex: number,
+    timestamp: number
+  ): TransparencyProtocolMetricsEvent | null {
+    try {
+      const periodStart = slice.loadUint(32);
+      const periodEnd = slice.loadUint(32);
+      const activeAccounts = slice.loadUint(32);
+      const tbcVolumeTransferred = slice.loadCoins();
+      const transferCount = slice.loadUint(32);
+
+      return {
+        eventType: 'TransparencyProtocolMetrics',
+        blockNumber,
+        transactionHash: txHash,
+        logIndex,
+        timestamp,
+        periodStart,
+        periodEnd,
+        activeAccounts,
+        tbcVolumeTransferred,
+        transferCount,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Decode LockActivityRecorded event (E4, Issue #135).
+   *
+   * Layout (op already consumed):
+   *   uint32  period_start
+   *   uint32  period_end
+   *   uint32  locks_set
+   *   uint32  locks_cleared
+   *   uint32  locks_active
+   *   uint32  appeals_filed
+   *   uint32  appeals_overturned
+   *   uint32  appeals_upheld
+   */
+  private decodeLockActivityRecorded(
+    slice: Slice,
+    blockNumber: number,
+    txHash: string,
+    logIndex: number,
+    timestamp: number
+  ): TransparencyLockActivityEvent | null {
+    try {
+      const periodStart = slice.loadUint(32);
+      const periodEnd = slice.loadUint(32);
+      const locksSet = slice.loadUint(32);
+      const locksCleared = slice.loadUint(32);
+      const locksActive = slice.loadUint(32);
+      const appealsFiled = slice.loadUint(32);
+      const appealsOverturned = slice.loadUint(32);
+      const appealsUpheld = slice.loadUint(32);
+
+      return {
+        eventType: 'TransparencyLockActivity',
+        blockNumber,
+        transactionHash: txHash,
+        logIndex,
+        timestamp,
+        periodStart,
+        periodEnd,
+        locksSet,
+        locksCleared,
+        locksActive,
+        appealsFiled,
+        appealsOverturned,
+        appealsUpheld,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Decode ParameterChangeRecorded event (E4, Issue #135).
+   *
+   * Layout (op already consumed):
+   *   ref     parameter_id      (String stored in a ref cell)
+   *   uint256 old_value_hash
+   *   uint256 new_value_hash
+   *   uint64  effective_block
+   *   maybe uint64 governance_proposal_id
+   */
+  private decodeParameterChangeRecorded(
+    slice: Slice,
+    blockNumber: number,
+    txHash: string,
+    logIndex: number,
+    timestamp: number
+  ): TransparencyParameterChangeEvent | null {
+    try {
+      const parameterIdRef = slice.loadRef();
+      const parameterId = parameterIdRef.beginParse().loadStringTail();
+      const oldValueHashBig = slice.loadUintBig(256);
+      const newValueHashBig = slice.loadUintBig(256);
+      const effectiveBlock = Number(slice.loadUintBig(64));
+      const hasProposal = slice.loadBit();
+      const governanceProposalId = hasProposal
+        ? Number(slice.loadUintBig(64))
+        : null;
+
+      return {
+        eventType: 'TransparencyParameterChange',
+        blockNumber,
+        transactionHash: txHash,
+        logIndex,
+        timestamp,
+        parameterId,
+        oldValueHash: '0x' + oldValueHashBig.toString(16).padStart(64, '0'),
+        newValueHash: '0x' + newValueHashBig.toString(16).padStart(64, '0'),
+        effectiveBlock,
+        governanceProposalId,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Legacy individual parse methods (kept for backward compatibility)
   // ---------------------------------------------------------------------------
@@ -537,4 +692,7 @@ export const EVENT_SIGNATURES = {
   ACCOUNT_STATE_CHANGED: 'AccountStateChangedEvent',
   MERCHANT_PAYMENT: 'MerchantPayment',
   NFT_OWNERSHIP_CHANGE: 'NFTTransfer',
+  PROTOCOL_METRICS_RECORDED: 'ProtocolMetricsRecorded',
+  LOCK_ACTIVITY_RECORDED: 'LockActivityRecorded',
+  PARAMETER_CHANGE_RECORDED: 'ParameterChangeRecorded',
 };

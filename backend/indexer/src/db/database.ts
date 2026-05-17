@@ -490,6 +490,260 @@ export class IndexerDatabase {
     return transferCount + paymentCount + stateCount + nftCount;
   }
 
+  // ============================================================
+  // E4 transparency aggregates (Issue #135)
+  // Mirrors TransparencyRegistry.tact RecordProtocolMetrics /
+  // RecordLockActivity / RecordParameterChange handlers.
+  // ============================================================
+
+  insertTransparencyProtocolMetrics(event: {
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+    timestamp: number;
+    periodStart: number;
+    periodEnd: number;
+    activeAccounts: number;
+    tbcVolumeTransferred: string;
+    transferCount: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO transparency_protocol_metrics
+         (block_number, transaction_hash, log_index, timestamp,
+          period_start, period_end, active_accounts, tbc_volume_transferred, transfer_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        event.blockNumber,
+        event.transactionHash,
+        event.logIndex,
+        event.timestamp,
+        event.periodStart,
+        event.periodEnd,
+        event.activeAccounts,
+        event.tbcVolumeTransferred,
+        event.transferCount
+      );
+  }
+
+  insertTransparencyLockActivity(event: {
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+    timestamp: number;
+    periodStart: number;
+    periodEnd: number;
+    locksSet: number;
+    locksCleared: number;
+    locksActive: number;
+    appealsFiled: number;
+    appealsOverturned: number;
+    appealsUpheld: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO transparency_lock_activity
+         (block_number, transaction_hash, log_index, timestamp,
+          period_start, period_end, locks_set, locks_cleared, locks_active,
+          appeals_filed, appeals_overturned, appeals_upheld)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        event.blockNumber,
+        event.transactionHash,
+        event.logIndex,
+        event.timestamp,
+        event.periodStart,
+        event.periodEnd,
+        event.locksSet,
+        event.locksCleared,
+        event.locksActive,
+        event.appealsFiled,
+        event.appealsOverturned,
+        event.appealsUpheld
+      );
+  }
+
+  insertTransparencyParameterChange(event: {
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+    timestamp: number;
+    parameterId: string;
+    oldValueHash: string;
+    newValueHash: string;
+    effectiveBlock: number;
+    governanceProposalId: number | null;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO transparency_parameter_changes
+         (block_number, transaction_hash, log_index, timestamp,
+          parameter_id, old_value_hash, new_value_hash, effective_block, governance_proposal_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        event.blockNumber,
+        event.transactionHash,
+        event.logIndex,
+        event.timestamp,
+        event.parameterId,
+        event.oldValueHash,
+        event.newValueHash,
+        event.effectiveBlock,
+        event.governanceProposalId
+      );
+  }
+
+  /**
+   * Latest indexed protocol-metrics period (or null when none recorded yet).
+   */
+  getLatestTransparencyProtocolMetrics(): {
+    period_start: number;
+    period_end: number;
+    active_accounts: number;
+    tbc_volume_transferred: string;
+    transfer_count: number;
+    block_number: number;
+    transaction_hash: string;
+  } | null {
+    return this.db
+      .prepare(
+        `SELECT period_start, period_end, active_accounts, tbc_volume_transferred,
+                transfer_count, block_number, transaction_hash
+         FROM transparency_protocol_metrics
+         ORDER BY period_end DESC
+         LIMIT 1`
+      )
+      .get() as any || null;
+  }
+
+  /**
+   * Latest indexed lock-activity period (or null when none recorded yet).
+   */
+  getLatestTransparencyLockActivity(): {
+    period_start: number;
+    period_end: number;
+    locks_set: number;
+    locks_cleared: number;
+    locks_active: number;
+    appeals_filed: number;
+    appeals_overturned: number;
+    appeals_upheld: number;
+    block_number: number;
+    transaction_hash: string;
+  } | null {
+    return this.db
+      .prepare(
+        `SELECT period_start, period_end, locks_set, locks_cleared, locks_active,
+                appeals_filed, appeals_overturned, appeals_upheld,
+                block_number, transaction_hash
+         FROM transparency_lock_activity
+         ORDER BY period_end DESC
+         LIMIT 1`
+      )
+      .get() as any || null;
+  }
+
+  /**
+   * Historical protocol-metrics series, newest first.
+   */
+  listTransparencyProtocolMetrics(limit: number = 24): Array<{
+    period_start: number;
+    period_end: number;
+    active_accounts: number;
+    tbc_volume_transferred: string;
+    transfer_count: number;
+    block_number: number;
+    transaction_hash: string;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT period_start, period_end, active_accounts, tbc_volume_transferred,
+                transfer_count, block_number, transaction_hash
+         FROM transparency_protocol_metrics
+         ORDER BY period_end DESC
+         LIMIT ?`
+      )
+      .all(limit) as any[];
+  }
+
+  /**
+   * Historical lock-activity series, newest first.
+   */
+  listTransparencyLockActivity(limit: number = 24): Array<{
+    period_start: number;
+    period_end: number;
+    locks_set: number;
+    locks_cleared: number;
+    locks_active: number;
+    appeals_filed: number;
+    appeals_overturned: number;
+    appeals_upheld: number;
+    block_number: number;
+    transaction_hash: string;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT period_start, period_end, locks_set, locks_cleared, locks_active,
+                appeals_filed, appeals_overturned, appeals_upheld,
+                block_number, transaction_hash
+         FROM transparency_lock_activity
+         ORDER BY period_end DESC
+         LIMIT ?`
+      )
+      .all(limit) as any[];
+  }
+
+  /**
+   * Full parameter-change audit trail, newest first.
+   */
+  listTransparencyParameterChanges(limit: number = 100): Array<{
+    parameter_id: string;
+    old_value_hash: string;
+    new_value_hash: string;
+    effective_block: number;
+    governance_proposal_id: number | null;
+    block_number: number;
+    transaction_hash: string;
+    timestamp: number;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT parameter_id, old_value_hash, new_value_hash, effective_block,
+                governance_proposal_id, block_number, transaction_hash, timestamp
+         FROM transparency_parameter_changes
+         ORDER BY effective_block DESC, id DESC
+         LIMIT ?`
+      )
+      .all(limit) as any[];
+  }
+
+  /**
+   * Cumulative counts (mirror on-chain `get fun getMetricPeriodsCount` etc.).
+   */
+  getTransparencyCounts(): {
+    metric_periods: number;
+    lock_periods: number;
+    parameter_changes: number;
+  } {
+    const metricPeriods = (this.db
+      .prepare('SELECT COUNT(*) AS count FROM transparency_protocol_metrics')
+      .get() as any).count as number;
+    const lockPeriods = (this.db
+      .prepare('SELECT COUNT(*) AS count FROM transparency_lock_activity')
+      .get() as any).count as number;
+    const parameterChanges = (this.db
+      .prepare('SELECT COUNT(*) AS count FROM transparency_parameter_changes')
+      .get() as any).count as number;
+    return {
+      metric_periods: metricPeriods,
+      lock_periods: lockPeriods,
+      parameter_changes: parameterChanges,
+    };
+  }
+
   /**
    * Close database connection
    */
