@@ -4,6 +4,7 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
+import { applySqliteMigrationsSync, locateMigrationsDir } from './sync-migrate';
 
 interface AccountHistoryResult {
   events: Array<{
@@ -43,9 +44,12 @@ export class IndexerDatabase {
   }
 
   private initialize(): void {
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    const schema = fs.readFileSync(schemaPath, 'utf-8');
-    this.db.exec(schema);
+    // Schema is owned by the migrator (`src/db/migrations/`). Apply every
+    // pending SQLite migration synchronously so the database is ready
+    // before any query is issued. Migration files double as the SQL the
+    // async `db:migrate` CLI runs, so the two paths can never drift.
+    const migrationsDir = locateMigrationsDir(__dirname);
+    applySqliteMigrationsSync(this.db, migrationsDir);
   }
 
   /**
