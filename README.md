@@ -7,6 +7,38 @@
 [![CI](https://github.com/xlabtg/tonbankcard-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/xlabtg/tonbankcard-protocol/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-index-informational)](docs/INDEX.md)
 [![Docs Site](https://img.shields.io/badge/docs--site-Docusaurus-2c5bb4)](docs-site/README.md)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/xlabtg/tonbankcard-protocol)
+
+## Quickstart (< 5 minutes)
+
+> Want a working merchant checkout against TON testnet without reading the
+> rest of this README? Pick one:
+
+* **GitHub Codespaces** — click the badge above. The
+  [`.devcontainer/`](.devcontainer/) recipe runs `scripts/setup.sh` on
+  creation, so you land in a terminal with all six packages installed and
+  built. Then run `npm run demo` and open the forwarded `:8080` port.
+* **Local clone** —
+  ```bash
+  git clone https://github.com/xlabtg/tonbankcard-protocol.git
+  cd tonbankcard-protocol
+  npm run setup        # install + build + smoke-test all six packages
+  npm run demo         # http://localhost:8080
+  ```
+* **Just the merchant demo** —
+  ```bash
+  cd examples/merchant-demo
+  npm install && npm start
+  ```
+
+The reference merchant lives at
+[`examples/merchant-demo/`](examples/merchant-demo/README.md): a
+non-custodial Express.js storefront that creates a sandbox invoice, embeds
+the `@tonbankcard/merchant-sdk` payment widget, and receives webhooks —
+the canonical entry point for integrators (Issue
+[#125](https://github.com/xlabtg/tonbankcard-protocol/issues/125)).
+
+![Merchant demo screenshot](docs/screenshots/merchant-demo.png)
 
 > 📖 **Public documentation site:** the markdown sources in [`docs/`](docs/) are
 > also published as a browsable site via Docusaurus. Build it locally with
@@ -205,37 +237,47 @@ npm install @tonbankcard/merchant-dashboard
 
 ### Development Setup (all packages)
 
-Clone the repository and install dependencies for each package:
+Use the one-command quickstart introduced in Issue
+[#125](https://github.com/xlabtg/tonbankcard-protocol/issues/125):
 
 ```bash
 git clone https://github.com/xlabtg/tonbankcard-protocol.git
 cd tonbankcard-protocol
+npm run setup            # install + build + smoke-test all six packages
+```
 
-# Install SDK dependencies
-cd sdk && npm install && cd ..
+`scripts/setup.sh` is idempotent, runs no remote shell scripts, and
+completes in well under five minutes on a Node.js LTS install. Flags:
 
-# Install API dependencies
-cd api && npm install && cd ..
+| Command | Behaviour |
+|---------|-----------|
+| `npm run setup` | Install + build + smoke test (full quickstart). |
+| `npm run setup:install` | Install dependencies only, skip build. |
+| `npm run setup:check` | Verify prerequisites only (`node --version` etc.). |
+| `bash scripts/setup.sh --skip mobile,dashboard` | Skip selected packages. |
+| `bash scripts/setup.sh --no-smoke` | Install + build, skip smoke test. |
 
-# Install indexer dependencies
-cd backend/indexer && npm install && cd ../..
+If you prefer the per-package flow, every package retains a standalone
+`npm install` / `npm run build` / `npm test`:
 
-# Install wallet-ui dependencies
-cd wallet-ui && npm install && cd ..
-
-# Install mobile dependencies
-cd mobile && npm install && cd ..
-
-# Install dashboard dependencies
-cd dashboard && npm install && cd ..
+```bash
+cd sdk && npm install && npm run build         # @tonbankcard/merchant-sdk
+cd api && npm install && npm run build         # @tonbankcard/merchant-api
+cd backend/indexer && npm install              # @tonbankcard/payment-indexer
+cd wallet-ui && npm install && npm run build   # @tonbankcard/wallet-ui
+cd mobile && npm install && npm run build      # @tonbankcard/mobile-core
+cd dashboard && npm install && npm run build   # @tonbankcard/merchant-dashboard
 ```
 
 ### Running Tests
 
-Each package includes its own test suite:
+```bash
+npm test                # runs every package's test suite via scripts/test-all.sh
+```
+
+Each package still works in isolation:
 
 ```bash
-# Run tests for a specific package
 cd sdk && npm test
 cd api && npm test
 cd backend/indexer && npm test
@@ -246,6 +288,20 @@ cd dashboard && npm test
 # Run with coverage
 npm run test:coverage
 ```
+
+### Merchant demo
+
+The reference Express.js merchant integration lives at
+[`examples/merchant-demo/`](examples/merchant-demo/README.md). It uses the
+public C3 sandbox by default — no environment variables required — and is
+the canonical quickstart reference for new integrators (per Issue #125 §3
+and §8).
+
+```bash
+npm run demo            # equivalent to: npm --prefix examples/merchant-demo start
+```
+
+Then open <http://localhost:8080>.
 
 ---
 

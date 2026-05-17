@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tonbankcard merchant-demo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <h1>Tonbankcard merchant-demo</h1>
+      <p class="lead">
+        Reference Express.js storefront that creates a sandbox invoice,
+        embeds the <code>@tonbankcard/merchant-sdk</code> widget, and
+        receives webhooks — entirely non-custodial.
+      </p>
+      <p class="sandbox-banner">
+        <strong>Environment:</strong> TON testnet · public C3 sandbox.
+        Need test TBC? Use the
+        <a id="faucetLink" href="#" target="_blank" rel="noopener">TBC faucet</a>
+        (1 dispense per address per hour).
+      </p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>1. Pick a product</h2>
+        <ul class="product-list" id="productList"></ul>
+      </section>
+
+      <section class="card" id="checkoutCard" hidden>
+        <h2>2. Pay with a TON wallet</h2>
+        <p class="meta" id="invoiceMeta"></p>
+        <div id="tonbankcard-checkout"></div>
+        <details class="debug">
+          <summary>Invoice JSON (debug)</summary>
+          <pre id="invoiceJson"></pre>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>3. Webhook log</h2>
+        <p class="meta">
+          The demo server exposes <code>POST /webhook</code>. Any payment
+          confirmation the sandbox posts here will appear in this list.
+        </p>
+        <ul class="webhook-list" id="webhookList">
+          <li class="empty">No webhooks received yet.</li>
+        </ul>
+        <p class="meta">
+          You can also push a fake event from a terminal to verify the
+          plumbing without making an on-chain payment:
+        </p>
+        <pre class="cmd">curl -sX POST http://localhost:8080/webhook \
+  -H 'Content-Type: application/json' \
+  -d '{"event":"payment.completed","invoice_id":"demo"}'</pre>
+      </section>
+
+      <p id="error" class="error" hidden></p>
+    </main>
+
+    <footer>
+      <p>
+        Source: <a href="https://github.com/xlabtg/tonbankcard-protocol/tree/main/examples/merchant-demo">examples/merchant-demo</a>
+        · <a href="https://github.com/xlabtg/tonbankcard-protocol/blob/main/sdk/README.md">SDK README</a>
+        · <a href="https://github.com/xlabtg/tonbankcard-protocol/blob/main/docs/sandbox.md">Sandbox docs</a>
+      </p>
+      <p>
+        <strong>Trust model.</strong> This server NEVER signs transactions
+        or stores private keys. Always verify the on-chain settlement event
+        before delivering goods.
+      </p>
+    </footer>
+
+    <!--
+      The merchant SDK browser bundle. The demo prefers the locally-built
+      copy at /vendor/tonbankcard.global.js (served by the Express app from
+      ../../sdk/dist/index.global.js when it exists). If the local bundle is
+      not available the page falls back to a pinned public CDN. If both are
+      unavailable, the page still works end-to-end except for the on-page
+      payment widget — invoice creation and the webhook log keep functioning.
+    -->
+    <script>
+      (function () {
+        function loadScript(src, onload, onerror) {
+          var s = document.createElement('script');
+          s.src = src;
+          s.async = false;
+          s.onload = onload;
+          s.onerror = onerror;
+          document.head.appendChild(s);
+        }
+        loadScript(
+          '/vendor/tonbankcard.global.js',
+          function () {
+            if (window.Tonbankcard && window.Tonbankcard.PaymentWidget) {
+              loadScript('./app.js');
+            } else {
+              loadScript(
+                'https://unpkg.com/@tonbankcard/merchant-sdk@latest/dist/index.global.js',
+                function () { loadScript('./app.js'); },
+                function () { loadScript('./app.js'); },
+              );
+            }
+          },
+          function () {
+            loadScript(
+              'https://unpkg.com/@tonbankcard/merchant-sdk@latest/dist/index.global.js',
+              function () { loadScript('./app.js'); },
+              function () { loadScript('./app.js'); },
+            );
+          },
+        );
+      })();
+    </script>
+  </body>
+</html>

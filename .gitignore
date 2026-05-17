@@ -36,3 +36,6 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+# Playwright MCP local artefacts (snapshots, console logs)
+.playwright-mcp/

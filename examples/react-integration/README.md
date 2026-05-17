@@ -4,6 +4,11 @@ Standalone React + Vite project that demonstrates how to embed the
 TONBANKCARD non-custodial payment widget into a React UI and verify
 the resulting on-chain settlement.
 
+> **Looking for a full backend + frontend reference?** See
+> [`examples/merchant-demo/`](../merchant-demo/) — an Express.js storefront that
+> creates sandbox invoices and receives webhooks. It is the canonical quickstart
+> wired into `npm run setup` and Codespaces.
+
 > The example is **read-only** with respect to funds. It never asks for a
 > mnemonic or private key — payment is executed exclusively by the user's TON
 > wallet after they confirm the transaction.

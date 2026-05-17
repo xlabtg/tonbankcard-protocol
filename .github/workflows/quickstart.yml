@@ -1,0 +1,109 @@
+name: Quickstart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/setup.sh'
+      - 'scripts/build-all.sh'
+      - 'scripts/test-all.sh'
+      - 'scripts/smoke-test.sh'
+      - 'package.json'
+      - 'examples/merchant-demo/**'
+      - '.devcontainer/**'
+      - '.github/workflows/quickstart.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/setup.sh'
+      - 'scripts/build-all.sh'
+      - 'scripts/test-all.sh'
+      - 'scripts/smoke-test.sh'
+      - 'package.json'
+      - 'examples/merchant-demo/**'
+      - '.devcontainer/**'
+      - '.github/workflows/quickstart.yml'
+
+jobs:
+  setup-check:
+    name: Verify setup.sh prerequisites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run setup.sh --check
+        run: bash scripts/setup.sh --check
+
+  merchant-demo:
+    name: Build and test merchant-demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install merchant-demo dependencies
+        working-directory: examples/merchant-demo
+        run: npm install --no-audit --no-fund
+
+      - name: Run merchant-demo tests
+        working-directory: examples/merchant-demo
+        run: npm test
+
+      - name: Start merchant-demo and probe /health
+        working-directory: examples/merchant-demo
+        env:
+          PORT: '18080'
+          DEMO_DISABLE_REMOTE: '1'
+        run: |
+          node src/server.js &
+          SERVER_PID=$!
+          # Wait up to 10s for the server to bind.
+          for i in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:18080/health" > /tmp/health.json; then
+              echo "Server is up after ${i} attempts"
+              cat /tmp/health.json
+              break
+            fi
+            sleep 0.5
+          done
+          STATUS=$(curl -fsS "http://127.0.0.1:18080/health" | grep -c '"status":"ok"' || true)
+          kill "$SERVER_PID" || true
+          wait "$SERVER_PID" 2>/dev/null || true
+          if [ "$STATUS" != "1" ]; then
+            echo "Health probe failed" >&2
+            exit 1
+          fi
+
+  full-setup:
+    name: Full one-command setup (install-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run npm run setup:install
+        run: bash scripts/setup.sh --install-only
+
+      - name: Verify packages installed
+        run: |
+          for pkg in sdk api backend/indexer wallet-ui mobile dashboard examples/merchant-demo; do
+            if [ ! -d "$pkg/node_modules" ]; then
+              echo "Missing node_modules in $pkg" >&2
+              exit 1
+            fi
+            echo "OK: $pkg"
+          done

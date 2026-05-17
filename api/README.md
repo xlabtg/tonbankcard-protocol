@@ -4,6 +4,12 @@
 
 This directory contains the reference implementation of the Tonbankcard Merchant API, a stateless, non-custodial payment orchestration layer that enables merchants to accept TBC payments.
 
+> **Quickstart.** New to the protocol? The fastest way to see invoice creation,
+> settlement verification, and webhooks working end-to-end is the
+> [`examples/merchant-demo/`](../examples/merchant-demo/) Express.js storefront
+> against the public C3 sandbox. From a fresh clone: `npm run setup` (see the
+> [root README quickstart](../README.md#quickstart--5-minutes)), then `npm run demo`.
+
 ---
 
 > **⚠️ PRODUCTION WARNING**

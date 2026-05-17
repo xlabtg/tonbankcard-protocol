@@ -2,6 +2,11 @@
 
 **Read-only on-chain event indexer for the Tonbankcard Protocol**
 
+> **Quickstart.** To see settlement events flowing into a real storefront, run the
+> [`examples/merchant-demo/`](../../examples/merchant-demo/) reference app. From a
+> fresh clone: `npm run setup` at the repo root (see
+> [root README quickstart](../../README.md#quickstart--5-minutes)), then `npm run demo`.
+
 ## Overview
 
 The Payment Status Indexer is a **read-only** service that observes on-chain events from the Tonbankcard protocol and provides payment status information for merchants and integrators.
