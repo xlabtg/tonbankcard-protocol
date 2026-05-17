@@ -11,6 +11,11 @@ export interface IndexerConfig {
     paymentHub: string;
     merchantPaymentHub: string;
     nftCollections: string[];
+    /**
+     * TransparencyRegistry (E4, Issue #135). Empty string disables transparency
+     * indexing — the API still serves cached aggregates if present.
+     */
+    transparencyRegistry: string;
   };
 
   // Database configuration
@@ -90,6 +95,7 @@ export function loadConfig(): IndexerConfig {
         getEnv('NFT_COLLECTION_7777_ADDRESS', ''),
         getEnv('NFT_COLLECTION_8888_ADDRESS', ''),
       ].filter((addr) => addr !== ''),
+      transparencyRegistry: getEnv('TRANSPARENCY_REGISTRY_ADDRESS', ''),
     },
 
     database: {

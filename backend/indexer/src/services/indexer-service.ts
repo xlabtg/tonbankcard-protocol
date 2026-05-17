@@ -369,6 +369,7 @@ export class IndexerService {
     const trackedAddresses = [
       this.config.contracts.paymentHub,
       this.config.contracts.merchantPaymentHub,
+      this.config.contracts.transparencyRegistry,
       ...this.config.contracts.nftCollections,
     ].filter((addr) => addr !== '');
 
@@ -420,6 +421,7 @@ export class IndexerService {
     const relevantContracts = [
       this.config.contracts.paymentHub,
       this.config.contracts.merchantPaymentHub,
+      this.config.contracts.transparencyRegistry,
       ...this.config.contracts.nftCollections,
     ].filter((addr) => addr !== '');
 
@@ -498,6 +500,51 @@ export class IndexerService {
             collectionAddress: event.collectionAddress,
             oldOwner: event.oldOwner,
             newOwner: event.newOwner,
+          });
+          break;
+
+        case 'TransparencyProtocolMetrics':
+          this.db.insertTransparencyProtocolMetrics({
+            blockNumber,
+            transactionHash: txHash,
+            logIndex,
+            timestamp,
+            periodStart: event.periodStart,
+            periodEnd: event.periodEnd,
+            activeAccounts: event.activeAccounts,
+            tbcVolumeTransferred: event.tbcVolumeTransferred.toString(),
+            transferCount: event.transferCount,
+          });
+          break;
+
+        case 'TransparencyLockActivity':
+          this.db.insertTransparencyLockActivity({
+            blockNumber,
+            transactionHash: txHash,
+            logIndex,
+            timestamp,
+            periodStart: event.periodStart,
+            periodEnd: event.periodEnd,
+            locksSet: event.locksSet,
+            locksCleared: event.locksCleared,
+            locksActive: event.locksActive,
+            appealsFiled: event.appealsFiled,
+            appealsOverturned: event.appealsOverturned,
+            appealsUpheld: event.appealsUpheld,
+          });
+          break;
+
+        case 'TransparencyParameterChange':
+          this.db.insertTransparencyParameterChange({
+            blockNumber,
+            transactionHash: txHash,
+            logIndex,
+            timestamp,
+            parameterId: event.parameterId,
+            oldValueHash: event.oldValueHash,
+            newValueHash: event.newValueHash,
+            effectiveBlock: event.effectiveBlock,
+            governanceProposalId: event.governanceProposalId,
           });
           break;
       }

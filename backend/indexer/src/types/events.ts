@@ -63,13 +63,62 @@ export interface NFTOwnershipChangeEvent extends BaseEvent {
 }
 
 /**
+ * E4 Protocol Metrics Recorded Event
+ * Emitted by: TransparencyRegistry.tact RecordProtocolMetrics handler
+ * Monthly checksum anchoring the off-chain protocol-metrics aggregate.
+ * See docs/governance/TRANSPARENCY_REPORTING.md §2.4.
+ */
+export interface TransparencyProtocolMetricsEvent extends BaseEvent {
+  eventType: 'TransparencyProtocolMetrics';
+  periodStart: number;
+  periodEnd: number;
+  activeAccounts: number;
+  tbcVolumeTransferred: bigint;
+  transferCount: number;
+}
+
+/**
+ * E4 Lock Activity Recorded Event
+ * Emitted by: TransparencyRegistry.tact RecordLockActivity handler
+ * Monthly checksum of FRAUD_LOCK and appeal counters for the period.
+ */
+export interface TransparencyLockActivityEvent extends BaseEvent {
+  eventType: 'TransparencyLockActivity';
+  periodStart: number;
+  periodEnd: number;
+  locksSet: number;
+  locksCleared: number;
+  locksActive: number;
+  appealsFiled: number;
+  appealsOverturned: number;
+  appealsUpheld: number;
+}
+
+/**
+ * E4 Parameter Change Recorded Event
+ * Emitted by: TransparencyRegistry.tact RecordParameterChange handler
+ * Append-only audit anchor for protocol parameter changes.
+ */
+export interface TransparencyParameterChangeEvent extends BaseEvent {
+  eventType: 'TransparencyParameterChange';
+  parameterId: string;
+  oldValueHash: string;
+  newValueHash: string;
+  effectiveBlock: number;
+  governanceProposalId: number | null;
+}
+
+/**
  * Union type of all indexable events
  */
 export type IndexedEvent =
   | InternalTransferEvent
   | AccountStateChangedEvent
   | MerchantPaymentEvent
-  | NFTOwnershipChangeEvent;
+  | NFTOwnershipChangeEvent
+  | TransparencyProtocolMetricsEvent
+  | TransparencyLockActivityEvent
+  | TransparencyParameterChangeEvent;
 
 /**
  * Account States

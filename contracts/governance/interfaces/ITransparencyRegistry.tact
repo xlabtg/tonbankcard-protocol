@@ -80,4 +80,30 @@ trait ITransparencyRegistry {
 
     // Get statistics for a specific category
     get fun getCategoryStats(category: Int): CategoryStats;
+
+    // ========================================
+    // E4 AGGREGATE CHECKSUM GETTERS
+    // (Issue #135 - On-Chain Transparency Reporting)
+    //
+    // Read-only checksums for the LATEST monthly aggregates anchored
+    // on-chain via the three additive receive handlers
+    // (RecordProtocolMetrics, RecordLockActivity, RecordParameterChange).
+    // Full historical series live in the off-chain indexer
+    // (TRANSPARENCY_REPORTING.md §3). Privacy guarantees of §7 apply.
+    // ========================================
+
+    // Latest protocol-metrics monthly checksum
+    get fun getLatestProtocolMetrics(): ProtocolMetricsCheckpoint;
+
+    // Latest lock-activity monthly checksum
+    get fun getLatestLockActivity(): LockActivityCheckpoint;
+
+    // Parameter-change cumulative audit summary
+    get fun getParameterChangeSummary(): ParameterChangeSummary;
+
+    // Cumulative count of RecordProtocolMetrics receipts (>=0)
+    get fun getMetricPeriodsCount(): Int;
+
+    // Cumulative count of RecordLockActivity receipts (>=0)
+    get fun getLockPeriodsCount(): Int;
 }

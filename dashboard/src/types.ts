@@ -213,3 +213,101 @@ export interface MultiSigPaymentRecord {
   /** Transaction hash */
   txHash?: string;
 }
+
+// =============================================================================
+// E4: TRANSPARENCY DASHBOARD TYPES (Issue #135)
+// =============================================================================
+
+/**
+ * Configuration for the public transparency dashboard.
+ *
+ * The transparency dashboard is unbound to any specific merchant — it
+ * renders the aggregated protocol snapshot served by the indexer.
+ */
+export interface TransparencyDashboardConfig {
+  /** Container element ID to render into (required) */
+  containerId: string;
+
+  /** Dashboard color theme */
+  theme?: 'light' | 'dark';
+
+  /** Callback on error */
+  onError?: (error: Error) => void;
+
+  /** Callback when the dashboard has mounted */
+  onReady?: () => void;
+}
+
+/**
+ * Latest aggregated protocol metrics for a single period.
+ * Mirrors `TransparencyProtocolMetricsRow` from the indexer API.
+ */
+export interface TransparencyProtocolMetricsRow {
+  periodStart: number;
+  periodEnd: number;
+  activeAccounts: number;
+  /** String representation of bigint (nanocoins) */
+  tbcVolumeTransferred: string;
+  transferCount: number;
+  blockNumber: number;
+  transactionHash: string;
+}
+
+/**
+ * Latest aggregated lock-activity counters for a single period.
+ * Mirrors `TransparencyLockActivityRow` from the indexer API.
+ */
+export interface TransparencyLockActivityRow {
+  periodStart: number;
+  periodEnd: number;
+  locksSet: number;
+  locksCleared: number;
+  locksActive: number;
+  appealsFiled: number;
+  appealsOverturned: number;
+  appealsUpheld: number;
+  blockNumber: number;
+  transactionHash: string;
+}
+
+/**
+ * A single recorded parameter change (PP-* governance flow).
+ * Mirrors `TransparencyParameterChangeRow` from the indexer API.
+ */
+export interface TransparencyParameterChangeRow {
+  parameterId: string;
+  oldValueHash: string;
+  newValueHash: string;
+  effectiveBlock: number;
+  governanceProposalId: number | null;
+  blockNumber: number;
+  transactionHash: string;
+  timestamp: number;
+}
+
+/**
+ * Full transparency snapshot as returned by
+ * `GET /api/v1/transparency/metrics`. Documented in
+ * docs/governance/TRANSPARENCY_REPORTING.md §4.1.
+ */
+export interface TransparencyMetricsSnapshot {
+  disclaimer: string;
+  snapshot: {
+    indexedAt: number;
+    latestBlockIndexed: number;
+  };
+  protocolMetrics: {
+    latest: TransparencyProtocolMetricsRow | null;
+    history: TransparencyProtocolMetricsRow[];
+    periodCount: number;
+  };
+  lockActivity: {
+    latest: TransparencyLockActivityRow | null;
+    history: TransparencyLockActivityRow[];
+    periodCount: number;
+  };
+  parameterChanges: {
+    total: number;
+    history: TransparencyParameterChangeRow[];
+  };
+}
