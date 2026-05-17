@@ -55,6 +55,32 @@ export interface WalletUIConfig {
 
   /** Callback when widget is ready */
   onReady?: () => void;
+
+  /**
+   * TON Connect v2 dapp manifest URL. When provided, the "Connect
+   * Wallet" button opens a wallet selector modal (Tonkeeper, Tonhub,
+   * OpenMask, ...) instead of a bare `ton://transfer` link. The URL
+   * MUST be HTTPS and point to a publicly fetchable manifest document.
+   */
+  tonConnectManifestUrl?: string;
+
+  /**
+   * Optional inline TON Connect manifest. When supplied, the manifest
+   * is validated at construction time (HTTPS URLs, required fields).
+   */
+  tonConnectManifest?: TonConnectManifestConfig;
+}
+
+/**
+ * TON Connect manifest configuration, surfaced through the public
+ * {@link WalletUIConfig.tonConnectManifest} field.
+ */
+export interface TonConnectManifestConfig {
+  url: string;
+  name: string;
+  iconUrl: string;
+  termsOfUseUrl?: string;
+  privacyPolicyUrl?: string;
 }
 
 /**

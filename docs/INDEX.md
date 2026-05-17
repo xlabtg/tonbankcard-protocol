@@ -120,6 +120,7 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 | Document | Description |
 |----------|-------------|
 | [External Guarantees](integrations/external-guarantees.md) | External service integration guarantees |
+| [Wallet Compatibility](wallet-compatibility.md) | Supported TON Connect wallets and connection methods |
 
 ---
 
