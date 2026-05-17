@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
+  "name": "Tonbankcard Protocol",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-20-bookworm",
+  "remoteUser": "node",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "tonstudio.vscode-tact",
+        "ms-azuretools.vscode-docker",
+        "github.vscode-github-actions",
+        "github.vscode-pull-request-github"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "typescript.tsdk": "sdk/node_modules/typescript/lib",
+        "files.eol": "\n"
+      }
+    }
+  },
+  "forwardPorts": [3000, 3001, 3002, 4500, 5173, 6379, 6380, 8080],
+  "portsAttributes": {
+    "3000": { "label": "Merchant API (dev)" },
+    "3001": { "label": "Merchant API (sandbox)" },
+    "3002": { "label": "Payment Indexer (sandbox)" },
+    "4500": { "label": "TBC Faucet (sandbox)" },
+    "5173": { "label": "Vite dev server" },
+    "6379": { "label": "Redis" },
+    "6380": { "label": "Redis (sandbox)" },
+    "8080": { "label": "Merchant demo" }
+  },
+  "postCreateCommand": "bash scripts/setup.sh --no-smoke",
+  "postAttachCommand": {
+    "welcome": "echo '\\nTonbankcard Protocol devcontainer ready. Try:\\n  npm run demo        # merchant demo on :8080\\n  npm test            # run all suites\\n  bash scripts/setup.sh --check   # verify environment\\n'"
+  },
+  "containerEnv": {
+    "TONBANKCARD_DEVCONTAINER": "1",
+    "NPM_CONFIG_AUDIT": "false",
+    "NPM_CONFIG_FUND": "false"
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "4gb",
+    "storage": "32gb"
+  }
+}

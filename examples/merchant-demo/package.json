@@ -1,0 +1,24 @@
+{
+  "name": "@tonbankcard/merchant-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reference Express.js merchant integration for the TONBANKCARD payment widget — uses the public C3 sandbox by default and demonstrates invoice creation, widget embedding, and webhook receipt.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol.git",
+    "directory": "examples/merchant-demo"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "node --test src/server.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

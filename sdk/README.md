@@ -6,6 +6,12 @@ A lightweight, **non-custodial** SDK for integrating TONBANKCARD payments into w
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TON](https://img.shields.io/badge/TON-Blockchain-0088cc)](https://ton.org)
 
+> **New here? Start with the merchant demo.** A working Express.js storefront that
+> creates a sandbox invoice, embeds this SDK in the browser, and surfaces webhooks
+> end-to-end lives at [`examples/merchant-demo/`](../examples/merchant-demo/). From a
+> fresh clone you can be running locally in under five minutes via `npm run setup`
+> at the repo root (see the [root README quickstart](../README.md#quickstart--5-minutes)).
+
 ---
 
 ## ⚠️ CRITICAL: SDK Trust Model
