@@ -129,6 +129,21 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 
 ---
 
+## Recurring Payments (F4)
+
+| Document | Description |
+|----------|-------------|
+| [Specification](recurring-payments/SPECIFICATION.md) | Mandate state machine, billing periods, error registry, threat catalogue T-RP-1..T-RP-6, hardening backlog RP-CH-1..RP-CH-5 |
+| [Dashboard Integration](recurring-payments/DASHBOARD_INTEGRATION.md) | Merchant subscription console, subscriber statuses, MRR/ARR computation (AC-4) |
+| [Wallet UX](recurring-payments/WALLET_UX.md) | Wallet subscribe/cancel/pause flow, user-facing error mapping (AC-5) |
+| [Notifications](recurring-payments/NOTIFICATIONS.md) | RP-N01..RP-N08 notification catalogue, T-3d scheduler (AC-6) |
+| [Monitoring](recurring-payments/MONITORING.md) | Alert catalogue SUB-M01..SUB-M18, severity matrix, DR drills DR-1..DR-5 |
+| [Contract Hardening](recurring-payments/CONTRACT_HARDENING.md) | Hardening backlog RP-CH-1..RP-CH-5 and CI guardrails R-RP-CH-1..R-RP-CH-5 (A2-gated) |
+| [Testnet Deployment](recurring-payments/TESTNET_DEPLOYMENT.md) | Deployment plan, error-path coverage, AC-8 test bars (47 dashboard + 28 wallet-ui) |
+| [Bug Bounty](recurring-payments/BUG_BOUNTY.md) | Subscription-specific bounty tiers and A5 integration |
+
+---
+
 ## Integrations
 
 | Document | Description |
