@@ -18,15 +18,15 @@ const (
 
 // Settlement captures the on-chain proof for a settled invoice.
 type Settlement struct {
-	PayerNFT         string `json:"payer_nft"`
-	MerchantNFT      string `json:"merchant_nft"`
-	AmountTBC        string `json:"amount_tbc"`
-	BlockNumber      int64  `json:"block_number"`
-	TxHash           string `json:"tx_hash"`
-	Timestamp        string `json:"timestamp"`
-	PayloadHash      string `json:"payload_hash"`
-	OnChainVerified  bool   `json:"on_chain_verified,omitempty"`
-	VerificationURL  string `json:"verification_url,omitempty"`
+	PayerNFT        string `json:"payer_nft"`
+	MerchantNFT     string `json:"merchant_nft"`
+	AmountTBC       string `json:"amount_tbc"`
+	BlockNumber     int64  `json:"block_number"`
+	TxHash          string `json:"tx_hash"`
+	Timestamp       string `json:"timestamp"`
+	PayloadHash     string `json:"payload_hash"`
+	OnChainVerified bool   `json:"on_chain_verified,omitempty"`
+	VerificationURL string `json:"verification_url,omitempty"`
 }
 
 // Invoice is the response body for invoice create / fetch endpoints.

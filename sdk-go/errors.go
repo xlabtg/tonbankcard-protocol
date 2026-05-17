@@ -29,13 +29,13 @@ func (e *APIError) Error() string {
 //	var apiErr *tonbankcard.APIError
 //	if errors.As(err, &apiErr) && apiErr.StatusCode == 401 { ... }
 var (
-	ErrAuthentication          = errors.New("tonbankcard: authentication failed")
-	ErrInvalidRequest          = errors.New("tonbankcard: invalid request")
-	ErrInvoiceNotFound         = errors.New("tonbankcard: invoice not found")
-	ErrInvoiceExpired          = errors.New("tonbankcard: invoice expired")
-	ErrRateLimited             = errors.New("tonbankcard: rate limited")
-	ErrServer                  = errors.New("tonbankcard: server error")
-	ErrSignatureVerification   = errors.New("tonbankcard: webhook signature verification failed")
+	ErrAuthentication        = errors.New("tonbankcard: authentication failed")
+	ErrInvalidRequest        = errors.New("tonbankcard: invalid request")
+	ErrInvoiceNotFound       = errors.New("tonbankcard: invoice not found")
+	ErrInvoiceExpired        = errors.New("tonbankcard: invoice expired")
+	ErrRateLimited           = errors.New("tonbankcard: rate limited")
+	ErrServer                = errors.New("tonbankcard: server error")
+	ErrSignatureVerification = errors.New("tonbankcard: webhook signature verification failed")
 )
 
 // Unwrap maps the API status code to one of the sentinel errors above.
