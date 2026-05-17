@@ -29,6 +29,16 @@ import {
   AccountState,
 } from '../types';
 import { formatTBC, shortAddress, formatDate, getAccountStateLabel } from '../utils';
+import {
+  WalletSelector,
+  TonConnectConnector,
+  generateQRSvg,
+  buildTonTransferLink,
+  type TonConnectManifest,
+  type TonTransferParams,
+  type ConnectionState,
+  type ConnectorEvent,
+} from '../tonconnect';
 
 /**
  * TonbankcardWalletUI
@@ -61,6 +71,9 @@ export class TonbankcardWalletUI {
   private currentView: WalletView = WalletView.BALANCE;
   private account: WalletAccount | null = null;
   private transactions: TransactionRecord[] = [];
+  private connector: TonConnectConnector | null = null;
+  private connectorUnsubscribe: (() => void) | null = null;
+  private activeSelector: WalletSelector | null = null;
 
   /**
    * Create a new TonbankcardWalletUI instance
@@ -83,6 +96,29 @@ export class TonbankcardWalletUI {
       theme: 'light',
       ...config,
     };
+
+    if (config.tonConnectManifestUrl) {
+      const manifest: TonConnectManifest | undefined = config.tonConnectManifest
+        ? {
+            url: config.tonConnectManifest.url,
+            name: config.tonConnectManifest.name,
+            iconUrl: config.tonConnectManifest.iconUrl,
+            ...(config.tonConnectManifest.termsOfUseUrl
+              ? { termsOfUseUrl: config.tonConnectManifest.termsOfUseUrl }
+              : {}),
+            ...(config.tonConnectManifest.privacyPolicyUrl
+              ? { privacyPolicyUrl: config.tonConnectManifest.privacyPolicyUrl }
+              : {}),
+          }
+        : undefined;
+
+      this.connector = new TonConnectConnector({
+        manifestUrl: config.tonConnectManifestUrl,
+        manifest,
+        network: config.network,
+      });
+      this.connectorUnsubscribe = this.connector.on(event => this.handleConnectorEvent(event));
+    }
   }
 
   /**
@@ -113,6 +149,16 @@ export class TonbankcardWalletUI {
    * Unmount the wallet UI and clean up
    */
   unmount(): void {
+    if (this.activeSelector?.isOpen()) {
+      this.activeSelector.close();
+    }
+    this.activeSelector = null;
+
+    if (this.connectorUnsubscribe) {
+      this.connectorUnsubscribe();
+      this.connectorUnsubscribe = null;
+    }
+
     if (!this.mounted || !this.container) {
       return;
     }
@@ -154,7 +200,11 @@ export class TonbankcardWalletUI {
   }
 
   /**
-   * Generate a TON Connect deep link for wallet connection
+   * Generate a TON Connect deep link for wallet connection.
+   *
+   * When a TON Connect manifest URL is configured, the UI defers wallet
+   * selection to the WalletSelector modal and this method continues to
+   * expose a simple `ton://transfer` link for legacy callers/tests.
    *
    * SECURITY NOTICE: This link only opens the user's wallet app.
    * No signing or fund transfers are initiated by this method.
@@ -164,6 +214,113 @@ export class TonbankcardWalletUI {
   generateConnectLink(): string {
     const text = encodeURIComponent('TONBANKCARD Wallet Connection');
     return `ton://transfer/${this.config.paymentHubAddress}?text=${text}`;
+  }
+
+  /**
+   * Return the active TON Connect connector, if one was configured.
+   *
+   * SECURITY NOTICE: The connector exposes only public connection
+   * metadata; signing always happens inside the user's wallet app.
+   */
+  getConnector(): TonConnectConnector | null {
+    return this.connector;
+  }
+
+  /**
+   * Snapshot of the current TON Connect connection state, or `null` when
+   * no connector is configured.
+   */
+  getConnectionState(): ConnectionState | null {
+    return this.connector ? this.connector.getState() : null;
+  }
+
+  /**
+   * Open the wallet selector modal. No-op when TON Connect is not
+   * configured. Returns the {@link WalletSelector} so callers (and
+   * tests) can interact with the open modal.
+   */
+  openWalletSelector(): WalletSelector | null {
+    if (!this.connector) return null;
+    if (this.activeSelector?.isOpen()) return this.activeSelector;
+
+    const selector = new WalletSelector({
+      manifestUrl: this.config.tonConnectManifestUrl as string,
+      theme: this.config.theme === 'dark' ? 'dark' : 'light',
+      onWalletSelected: wallet => {
+        try {
+          this.connector?.connect(wallet.id);
+        } catch (err) {
+          this.config.onError?.(err as Error);
+        }
+        selector.close();
+      },
+      onClose: () => {
+        this.activeSelector = null;
+      },
+      onError: err => this.config.onError?.(err),
+    });
+
+    selector.show();
+    this.activeSelector = selector;
+    return selector;
+  }
+
+  /**
+   * Tear down the active TON Connect session. No-op when no connector is
+   * configured or no session exists.
+   */
+  disconnect(): void {
+    this.connector?.disconnect();
+  }
+
+  /**
+   * Build a `ton://transfer` deep link for the Payment Hub or an
+   * arbitrary address. When a connector is configured and connected, the
+   * link is routed through the user's wallet universal link so it opens
+   * directly in the connected app.
+   *
+   * SECURITY NOTICE: Builds a sign-request URL only; the wallet performs
+   * any signing.
+   */
+  buildPaymentLink(params: Partial<TonTransferParams> & { address?: string } = {}): string {
+    const merged: TonTransferParams = {
+      address: params.address ?? this.config.paymentHubAddress,
+      ...(params.amount !== undefined ? { amount: params.amount } : {}),
+      ...(params.text !== undefined ? { text: params.text } : {}),
+      ...(params.bin !== undefined ? { bin: params.bin } : {}),
+      ...(params.init !== undefined ? { init: params.init } : {}),
+    };
+
+    if (this.connector && this.connector.getState().status === 'connected') {
+      try {
+        return this.connector.buildTransferLink(merged);
+      } catch {
+        // Fall through to plain ton:// link if the connected wallet has
+        // no universal-link template.
+      }
+    }
+    return buildTonTransferLink(merged);
+  }
+
+  /**
+   * Generate an SVG QR code for a payment request. Useful for desktop
+   * checkout flows where the user scans the code with their phone wallet.
+   *
+   * SECURITY NOTICE: The encoded data is a public payment URL only.
+   */
+  renderPaymentQR(
+    params: Partial<TonTransferParams> & { address?: string } = {},
+    options: { scale?: number; margin?: number } = {}
+  ): string {
+    const link = this.buildPaymentLink(params);
+    const isDark = this.config.theme === 'dark';
+    return generateQRSvg(link, {
+      errorLevel: 'M',
+      scale: options.scale ?? 4,
+      margin: options.margin ?? 2,
+      darkColor: isDark ? '#e0e0ff' : '#1a1a1a',
+      lightColor: isDark ? '#1a1a2e' : '#ffffff',
+    });
   }
 
   /**
@@ -524,19 +681,54 @@ export class TonbankcardWalletUI {
   }
 
   /**
-   * Render the Connect Wallet button
+   * Render the Connect Wallet button. When a TON Connect manifest URL is
+   * configured, the button opens the {@link WalletSelector} modal so the
+   * user can pick between Tonkeeper, Tonhub, OpenMask, ... Otherwise it
+   * falls back to the legacy `ton://transfer` link.
    *
-   * SECURITY NOTICE: This button generates a ton:// deep link that opens
-   * the user's wallet app. No signing or fund transfers are initiated.
+   * SECURITY NOTICE: This button only opens the user's wallet app; no
+   * signing or fund transfers happen here.
    */
   private renderConnectButton(isDark: boolean): HTMLElement {
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'margin-top:16px;';
 
-    const btn = document.createElement('a');
-    btn.href = this.generateConnectLink();
-    btn.target = '_blank';
-    btn.rel = 'noopener noreferrer';
+    if (this.connector) {
+      wrapper.appendChild(this.renderConnectorStatus(isDark));
+    }
+
+    const state = this.connector?.getState();
+    const isConnected = state?.status === 'connected';
+
+    let btn: HTMLAnchorElement | HTMLButtonElement;
+    if (this.connector && !isConnected) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent =
+        state?.status === 'pending' ? 'Waiting for wallet...' : 'Connect Wallet';
+      button.setAttribute('data-testid', 'tonconnect-open-selector');
+      button.addEventListener('click', () => {
+        this.openWalletSelector();
+      });
+      btn = button;
+    } else if (this.connector && isConnected) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Disconnect';
+      button.setAttribute('data-testid', 'tonconnect-disconnect');
+      button.addEventListener('click', () => {
+        this.disconnect();
+      });
+      btn = button;
+    } else {
+      const link = document.createElement('a');
+      link.href = this.generateConnectLink();
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Connect Wallet';
+      btn = link;
+    }
+
     btn.style.cssText = [
       'display:block',
       'width:100%',
@@ -550,11 +742,15 @@ export class TonbankcardWalletUI {
       'text-decoration:none',
       'box-sizing:border-box',
       'transition:opacity 0.2s',
-      isDark
-        ? 'background:#3a5aff;color:#ffffff'
-        : 'background:#0088cc;color:#ffffff',
+      isConnected
+        ? isDark
+          ? 'background:#3a1a1a;color:#fca5a5'
+          : 'background:#fee2e2;color:#b91c1c'
+        : isDark
+          ? 'background:#3a5aff;color:#ffffff'
+          : 'background:#0088cc;color:#ffffff',
     ].join(';');
-    btn.textContent = 'Connect Wallet';
+
     btn.onmouseover = () => {
       btn.style.opacity = '0.85';
     };
@@ -564,5 +760,74 @@ export class TonbankcardWalletUI {
 
     wrapper.appendChild(btn);
     return wrapper;
+  }
+
+  /**
+   * Render a small status badge above the Connect button so the user
+   * always knows whether a wallet is linked, pending, or disconnected.
+   */
+  private renderConnectorStatus(isDark: boolean): HTMLElement {
+    const status = this.connector?.getState();
+    const row = document.createElement('div');
+    row.setAttribute('data-testid', 'tonconnect-status');
+    row.style.cssText = [
+      'display:flex',
+      'align-items:center',
+      'justify-content:space-between',
+      'gap:8px',
+      'margin-bottom:8px',
+      'font-size:12px',
+      isDark ? 'color:#aaa' : 'color:#555',
+    ].join(';');
+
+    const label = document.createElement('span');
+    if (!status || status.status === 'disconnected') {
+      label.textContent = 'Wallet: not connected';
+    } else if (status.status === 'pending') {
+      label.textContent = 'Wallet: connecting...';
+    } else {
+      label.textContent = `Wallet: ${shortAddress(status.address ?? '')}`;
+    }
+    row.appendChild(label);
+
+    if (status?.status === 'pending') {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel';
+      cancel.style.cssText = [
+        'padding:4px 10px',
+        'border:none',
+        'border-radius:8px',
+        'font-size:11px',
+        'cursor:pointer',
+        isDark ? 'background:#2a2a3e;color:#aaa' : 'background:#f0f0f0;color:#666',
+      ].join(';');
+      cancel.addEventListener('click', () => {
+        this.connector?.cancel();
+      });
+      row.appendChild(cancel);
+    }
+
+    return row;
+  }
+
+  /**
+   * Connector event handler. Re-renders the UI on every status change so
+   * the badge and button reflect the latest session state.
+   */
+  private handleConnectorEvent(event: ConnectorEvent): void {
+    switch (event.type) {
+      case 'error':
+        this.config.onError?.(event.error);
+        break;
+      case 'statusChange':
+      case 'connected':
+      case 'disconnected':
+        if (this.mounted && this.container) {
+          this.container.innerHTML = '';
+          this.render();
+        }
+        break;
+    }
   }
 }
