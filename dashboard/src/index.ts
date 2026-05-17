@@ -22,6 +22,7 @@
  */
 
 export { TonbankcardDashboard } from './components/DashboardApp';
+export { TonbankcardTransparencyDashboard } from './components/TransparencyDashboard';
 
 export {
   // Types
@@ -35,6 +36,12 @@ export {
   RecurringSubscriber,
   RecurringPaymentStats,
   MultiSigPaymentRecord,
+  // E4 Transparency Types (Issue #135)
+  TransparencyDashboardConfig,
+  TransparencyMetricsSnapshot,
+  TransparencyProtocolMetricsRow,
+  TransparencyLockActivityRow,
+  TransparencyParameterChangeRow,
 } from './types';
 
 export {
