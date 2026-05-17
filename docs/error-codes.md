@@ -206,6 +206,36 @@ A2-gated MS-CH-1..MS-CH-6 backlog (notably MS-CH-4, which raises the
 `MAX_SIGNERS` cap from 3 to 10 once corporate 3-of-5 / custom presets land
 on-chain).
 
+### DEX integrations (off-chain) — adapter & aggregator error codes
+
+The F6 DEX integration layer (Issue #141) is **off-chain**: error codes
+are emitted by the shared `DexAdapter` interface and the
+`PriceAggregator` module that mediates between higher protocol layers
+and individual venue adapters (TONCO, DeDust, and later STON.fi via
+DEX-AH-2). Codes are stable across adapter implementations and consumed
+by `docs/dex/WALLET_UX.md` §4 (swap confirmation sheet) and
+`docs/dex/TESTNET_INTEGRATION.md` (end-to-end coverage); consumers MUST
+map by numeric value.
+
+| Code | Symbol | Meaning |
+|---:|---|---|
+| `0` | `ERROR_DEX_NONE` | Quote or execution succeeded (success path). |
+| `1` | `ERROR_DEX_TIMEOUT` | Adapter or aggregator exceeded `PRICE_AGGREGATOR_TIMEOUT_MS = 500 ms` (`docs/dex/PRICE_AGGREGATOR.md` §4.1). |
+| `2` | `ERROR_DEX_VENUE_DOWN` | Both venues returned no surviving quote (catastrophic fallback; emits alert `DEX-M01`, `docs/dex/PRICE_AGGREGATOR.md` §4.4). |
+| `3` | `ERROR_DEX_INVALID_TOKEN` | `tokenIn` / `tokenOut` is not a supported symbol (`docs/dex/SPECIFICATION.md` §3). |
+| `4` | `ERROR_DEX_INVALID_AMOUNT` | `amountIn == 0` or otherwise out of range. |
+| `5` | `ERROR_DEX_INSUFFICIENT_LIQUIDITY` | Pool depth cannot fill the requested swap (`docs/dex/SLIPPAGE_PROTECTION.md` §3). |
+| `6` | `ERROR_DEX_STALE_PRICE` | Venue oracle is stale beyond the freshness window (`docs/dex/SPECIFICATION.md` §4). |
+| `7` | `ERROR_DEX_SLIPPAGE_EXCEEDED` | Execution-time re-quote falls below `amountOutMin` derived from `slippageBps` (`docs/dex/PRICE_AGGREGATOR.md` §5.1). |
+| `8` | `ERROR_DEX_FLOOR_REJECT` | All quotes exceed `MAX_EFFECTIVE_PRICE_DEVIATION_BPS = 500` vs mid; closes T-DEX-3 (`docs/dex/PRICE_AGGREGATOR.md` §4.3). |
+| `9` | `ERROR_DEX_QUOTE_EXPIRED` | Cached quote is older than `expiresAt` at execution (`docs/dex/SPECIFICATION.md` §4). |
+
+See `docs/dex/SPECIFICATION.md` §7.2 for the canonical registry and
+`docs/dex/WALLET_UX.md` §4 for the wallet-facing failure-mode toast
+catalogue. The DEX layer is gated on A4 verdict READY for adapter
+source landings (`docs/dex/ADAPTER_HARDENING.md` §5, R-DEX-AH-1); the
+codes themselves are stable independent of that gate.
+
 ### Test-only seeding (deployer guards)
 
 Several contracts expose `Register*` receivers behind a `sender() == self.deployer`

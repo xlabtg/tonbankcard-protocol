@@ -226,6 +226,8 @@ The following components are **explicitly excluded** from the audit:
   - Reason: Issue #139 (F4) documents production-readiness requirements (specification, dashboard, wallet UX, notifications, monitoring, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/recurring-payments/` for the full F4 specification.
 - ❌ **Cross-Chain Bridge (production-hardened)** — `contracts/CrossChainBridge.tact`
   - Reason: Issue #138 (F3) documents production-readiness requirements (validators, replay protection, circuit breakers, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/bridge/` for the full F3 specification.
+- ❌ **Additional DEX Integrations (production-hardened)** — `backend/adapters/{toncoAdapter,dedustAdapter,priceAggregator}.ts`
+  - Reason: Issue #141 (F6) documents production-readiness requirements for the multi-venue DEX integration layer (shared `DexAdapter` interface, price aggregator with fallback routing, slippage protection, liquidity monitoring, notifications, wallet UX, adapter hardening, testnet integration, bug bounty). The DEX layer is **fully off-chain** (no contract) and adapter source landings are **gated by A4 audit verdict=READY** (off-chain services pentest). See `docs/dex/` for the full F6 specification.
 
 ---
 
@@ -772,6 +774,15 @@ tests/
 | **F3 Bridge — Contract Hardening** | CH-1..CH-7 backlog and R-CH-1..R-CH-5 guardrails | `docs/bridge/CONTRACT_HARDENING.md` |
 | **F3 Bridge — Monitoring** | Alerts BR-M01..BR-M20 (B3 integration) | `docs/bridge/MONITORING.md` |
 | **F3 Bridge — Bug Bounty** | Bridge-specific bounty (A5 integration) | `docs/bridge/BUG_BOUNTY.md` |
+| **F6 DEX — Specification** | Shared `DexAdapter` interface, error registry codes 1..9, T-DEX-1..T-DEX-7 (#141, A4-gated) | `docs/dex/SPECIFICATION.md` |
+| **F6 DEX — Price Aggregator** | `Promise.allSettled` fan-out, floor guard, fallback re-quote, idempotency | `docs/dex/PRICE_AGGREGATOR.md` |
+| **F6 DEX — Slippage Protection** | User slippage slider [MIN=10, DEFAULT=50, MAX=500] bps, auto-revert ladder | `docs/dex/SLIPPAGE_PROTECTION.md` |
+| **F6 DEX — Liquidity Monitoring** | Alerts DEX-M01..DEX-M18, P0..P3 severity, DR drills, B3 wiring | `docs/dex/LIQUIDITY_MONITORING.md` |
+| **F6 DEX — Notifications** | DEX-N01..DEX-N08 catalogue, MAX_WEBHOOK_RETRIES, privacy posture | `docs/dex/NOTIFICATIONS.md` |
+| **F6 DEX — Wallet UX** | Swap confirmation sheet, slippage slider, failure-mode toast catalogue | `docs/dex/WALLET_UX.md` |
+| **F6 DEX — Adapter Hardening** | DEX-AH-1..DEX-AH-7 backlog, R-DEX-AH-1..R-DEX-AH-5 guardrails (A4-gated) | `docs/dex/ADAPTER_HARDENING.md` |
+| **F6 DEX — Testnet Integration** | Deployment manifest, fallback drill, 24 adapter unit + 12 aggregator integration tests | `docs/dex/TESTNET_INTEGRATION.md` |
+| **F6 DEX — Bug Bounty** | DEX-specific bounty tiers, RC-BOUNTY-CRITICAL pause, A5 integration | `docs/dex/BUG_BOUNTY.md` |
 
 ---
 
