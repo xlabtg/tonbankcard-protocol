@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TONBANKCARD — Vanilla HTML integration example</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+        color: #1a1a1a;
+      }
+      h1 { margin: 0 0 4px; font-size: 28px; }
+      h2 { margin-top: 0; font-size: 18px; }
+      .card {
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: #fff;
+      }
+      label { display: block; margin-bottom: 12px; font-size: 14px; color: #333; }
+      input {
+        display: block; width: 100%; margin-top: 4px; padding: 8px 10px;
+        font-size: 14px; border: 1px solid #ccd0d5; border-radius: 8px;
+        box-sizing: border-box;
+      }
+      button.primary {
+        background: #0088cc; color: #fff; border: none; border-radius: 8px;
+        padding: 10px 16px; cursor: pointer; font-weight: 600;
+      }
+      code { background: #f1f3f5; padding: 2px 6px; border-radius: 4px; }
+      .meta { font-size: 13px; color: #555; margin-top: 12px; }
+      .error { color: #c0392b; margin-top: 12px; }
+      .success { color: #1d7a3a; margin-top: 12px; word-break: break-all; }
+      .footer { font-size: 12px; color: #666; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>TONBANKCARD Vanilla HTML example</h1>
+      <p>
+        Non-custodial checkout against TON testnet using
+        <code>@tonbankcard/merchant-sdk</code> via a single
+        <code>&lt;script&gt;</code> tag — no build step.
+      </p>
+    </header>
+
+    <section class="card">
+      <h2>1. Configure the order</h2>
+      <label>
+        Merchant NFT (testnet)
+        <input id="merchantNft" placeholder="EQ..." />
+      </label>
+      <label>
+        Order ID
+        <input id="orderId" />
+      </label>
+      <label>
+        Amount (TBC)
+        <input id="amountTbc" value="1.50" inputmode="decimal" />
+      </label>
+      <button class="primary" id="createInvoice">Create invoice &amp; mount widget</button>
+      <p id="error" class="error" hidden></p>
+    </section>
+
+    <section class="card" id="checkoutCard" hidden>
+      <h2>2. Pay with a TON wallet</h2>
+      <p class="meta" id="invoiceMeta"></p>
+      <div id="tonbankcard-checkout"></div>
+      <p id="success" class="success" hidden></p>
+      <details style="margin-top: 12px; font-size: 12px; color: #555;">
+        <summary>Invoice JSON (debug)</summary>
+        <pre id="invoiceJson"></pre>
+      </details>
+    </section>
+
+    <footer class="footer">
+      <p>
+        <strong>Trust model:</strong> the SDK is informational. Always verify
+        the on-chain settlement event before delivering goods.
+      </p>
+      <p>
+        Source: <a href="./app.js">app.js</a> ·
+        <a href="../../sdk/README.md">SDK README</a> ·
+        <a href="../../docs/merchant-api-spec.md">Merchant API spec</a>
+      </p>
+    </footer>
+
+    <!--
+      The SDK is loaded from a public CDN as a UMD bundle so that no build
+      step is required. Pin the version explicitly to keep checkout
+      reproducible.
+    -->
+    <script src="https://unpkg.com/@tonbankcard/merchant-sdk@1.0.0/dist/index.global.js"
+            crossorigin="anonymous"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
