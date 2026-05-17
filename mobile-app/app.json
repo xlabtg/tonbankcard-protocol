@@ -1,0 +1,26 @@
+{
+  "name": "TONBANKCARD",
+  "displayName": "TONBANKCARD",
+  "expo": {
+    "ios": {
+      "bundleIdentifier": "app.tonbankcard.mobile",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "TONBANKCARD scans wallet QR codes to receive payment intents. No images leave the device.",
+        "NSFaceIDUsageDescription": "Face ID protects access to the TONBANKCARD app and payment confirmations.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "app.tonbankcard.mobile",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.INTERNET"
+      ]
+    }
+  }
+}

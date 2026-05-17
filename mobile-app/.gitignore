@@ -1,0 +1,41 @@
+node_modules/
+dist/
+coverage/
+
+# Build artefacts
+*.tsbuildinfo
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# React Native / iOS
+ios/Pods/
+ios/build/
+ios/*.xcworkspace
+*.xcuserstate
+
+# React Native / Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.keystore
+!debug.keystore
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env
+.env
+.env.local
+
+# Metro
+.metro-health-check*
