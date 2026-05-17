@@ -5,6 +5,8 @@ import { createRouter } from './routes';
 import { IndexerDatabase } from '../db/database';
 import { IndexerService } from '../services/indexer-service';
 import { IndexerConfig } from '../types/config';
+import { IndexerErrorCode } from '../types/errors';
+import { requestIdMiddleware } from './requestId';
 import pino from 'pino';
 import {
   RateLimiterMemory,
@@ -122,6 +124,10 @@ export class ApiServer {
     // JSON parsing
     this.app.use(express.json());
 
+    // Stamp every request with a stable identifier before anything else,
+    // so even rate-limited responses are correlatable in the log.
+    this.app.use(requestIdMiddleware);
+
     // CORS - allow all origins for read-only API
     this.app.use((req, res, next) => {
       res.header('Access-Control-Allow-Origin', '*');
@@ -130,10 +136,12 @@ export class ApiServer {
       next();
     });
 
-    // Request logging
+    // Request logging at debug to keep the default `info` floor quiet
+    // (see `docs/error-codes.md` §3.3 on the 20% log-volume cap).
     this.app.use((req, res, next) => {
       this.logger.debug(
         {
+          requestId: req.requestId,
           method: req.method,
           path: req.path,
           query: req.query,
@@ -178,9 +186,21 @@ export class ApiServer {
           Math.ceil((Date.now() + (rlRes.msBeforeNext ?? windowMs)) / 1000)
         );
 
+        // Single warn entry per blocked request — counted against the 20%
+        // log-volume cap. Aggregators can alert on `errorCode`.
+        this.logger.warn(
+          {
+            requestId: req.requestId,
+            errorCode: IndexerErrorCode.API_RATE_LIMIT_EXCEEDED,
+            ip,
+            path: req.path,
+          },
+          'Rate limit exceeded'
+        );
+
         res.status(429).json({
           error: {
-            code: 'RATE_LIMIT_EXCEEDED',
+            code: IndexerErrorCode.API_RATE_LIMIT_EXCEEDED,
             message: 'Too many requests',
           },
         });
@@ -214,28 +234,48 @@ export class ApiServer {
   }
 
   private setupErrorHandling(): void {
-    // 404 handler
+    // 404 handler. We log at `warn` (operator signal, not an outage) with
+    // the canonical `API_NOT_FOUND` errorCode so dashboards stay clean.
     this.app.use((req, res) => {
+      this.logger.warn(
+        {
+          requestId: req.requestId,
+          errorCode: IndexerErrorCode.API_NOT_FOUND,
+          method: req.method,
+          path: req.originalUrl ?? req.path,
+        },
+        'Route not found'
+      );
       res.status(404).json({
         error: {
-          code: 'NOT_FOUND',
+          code: IndexerErrorCode.API_NOT_FOUND,
           message: 'Endpoint not found',
         },
       });
     });
 
-    // Error handler
+    // Error handler. Includes `errorCode` so the log entry can be joined
+    // against the response envelope by operators triaging an incident.
     this.app.use(
       (
         err: Error,
-        _req: express.Request,
+        req: express.Request,
         res: express.Response,
         _next: express.NextFunction
       ) => {
-        this.logger.error({ error: err }, 'Unhandled error');
+        this.logger.error(
+          {
+            requestId: req.requestId,
+            errorCode: IndexerErrorCode.API_REQUEST_FAILED,
+            method: req.method,
+            path: req.originalUrl ?? req.path,
+            err: { name: err.name, message: err.message },
+          },
+          'Unhandled API error'
+        );
         res.status(500).json({
           error: {
-            code: 'INTERNAL_ERROR',
+            code: IndexerErrorCode.API_REQUEST_FAILED,
             message: 'Internal server error',
           },
         });
