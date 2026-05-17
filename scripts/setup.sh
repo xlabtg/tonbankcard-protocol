@@ -163,13 +163,15 @@ install_pkg() {
   fi
 
   log "Installing dependencies in $pkg"
+  # Use `|` as the sed delimiter because $pkg can contain `/`
+  # (e.g. `backend/indexer`), which would otherwise break `s/.../.../`.
   if [[ -f "$pkg_dir/package-lock.json" ]]; then
-    (cd "$pkg_dir" && npm ci --no-audit --no-fund --prefer-offline 2>&1 | sed "s/^/    [$pkg] /") || {
+    (cd "$pkg_dir" && npm ci --no-audit --no-fund --prefer-offline 2>&1 | sed "s|^|    [$pkg] |") || {
       warn "npm ci failed in $pkg — falling back to npm install"
-      (cd "$pkg_dir" && npm install --no-audit --no-fund 2>&1 | sed "s/^/    [$pkg] /")
+      (cd "$pkg_dir" && npm install --no-audit --no-fund 2>&1 | sed "s|^|    [$pkg] |")
     }
   else
-    (cd "$pkg_dir" && npm install --no-audit --no-fund 2>&1 | sed "s/^/    [$pkg] /")
+    (cd "$pkg_dir" && npm install --no-audit --no-fund 2>&1 | sed "s|^|    [$pkg] |")
   fi
   ok "Installed: $pkg"
 }
@@ -196,7 +198,7 @@ build_pkg() {
   fi
 
   log "Building $pkg"
-  (cd "$pkg_dir" && npm run build 2>&1 | sed "s/^/    [$pkg] /") || {
+  (cd "$pkg_dir" && npm run build 2>&1 | sed "s|^|    [$pkg] |") || {
     fail "Build failed in $pkg"
     return 1
   }
