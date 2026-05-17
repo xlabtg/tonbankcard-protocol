@@ -146,6 +146,35 @@ referenced by these checks and `docs/bridge/CIRCUIT_BREAKERS.md` for the
 auto-pause reason codes (`RC-*`) that may suppress acceptance even when the
 above codes would otherwise return `ERROR_BR_NONE`.
 
+### `RecurringPayments.tact` — response error codes
+
+Subscription entry points (`CreateMandate`, `ExecuteRecurringPayment`,
+`CancelMandate`) follow the same response-rather-than-abort discipline as the
+bridge: every validation failure emits a structured
+`RecurringPaymentResponse` carrying a numeric `error_code`. This keeps the
+mandate state machine (`SPECIFICATION.md` §5) auditable and lets the wallet
+surface the precise failure to the user
+(F4 / Issue #139). Codes are stable; consumers MUST map by numeric value.
+
+| Code | Symbol | Meaning |
+|---:|---|---|
+| `0` | `ERROR_RP_NONE` | Operation accepted (success path). |
+| `1` | `ERROR_RP_NOT_OWNER` | `CreateMandate` / `CancelMandate` sender does not own the target NFT card (invariants I1, I2). |
+| `2` | `ERROR_RP_INVALID_AMOUNT` | `CreateMandate` with `amount_per_period == 0`. |
+| `3` | `ERROR_RP_INVALID_PERIOD` | `CreateMandate` with `period_seconds < MIN_PERIOD_SECONDS` (3600 s). |
+| `4` | `ERROR_RP_MANDATE_NOT_FOUND` | `ExecuteRecurringPayment` / `CancelMandate` references an unknown mandate. |
+| `5` | `ERROR_RP_MANDATE_NOT_ACTIVE` | Operation against a mandate already in `MANDATE_CANCELLED` or `MANDATE_COMPLETED`. |
+| `6` | `ERROR_RP_TOO_EARLY` | `ExecuteRecurringPayment` before `last_executed_at + period_seconds` (`SPECIFICATION.md` §5.2). |
+| `7` | `ERROR_RP_MAX_REACHED` | `ExecuteRecurringPayment` after `execution_count == max_executions` (`SPECIFICATION.md` §5.3). |
+| `8` | `ERROR_RP_NFT_NOT_REGISTERED` | `CreateMandate` for an NFT that the protocol has not yet seeded into `nft_owners`. |
+| `9` | `ERROR_RP_NOT_AUTHORIZED` | `ExecuteRecurringPayment` sender is neither the NFT owner nor the stored `merchant_address` (`SPECIFICATION.md` §5.1). |
+
+See `docs/recurring-payments/SPECIFICATION.md` §7 for the response envelope
+shape and §7.4 for the registry mirror, and
+`docs/recurring-payments/CONTRACT_HARDENING.md` for the A2-gated RP-CH-3
+backlog item that will introduce `ERROR_RP_PAUSED = 10` once
+pause/resume lands.
+
 ### Test-only seeding (deployer guards)
 
 Several contracts expose `Register*` receivers behind a `sender() == self.deployer`

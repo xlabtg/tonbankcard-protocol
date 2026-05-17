@@ -222,8 +222,8 @@ The following components are **explicitly excluded** from the audit:
   - Reason: Not implemented yet
 - ❌ **Multi-Sig Cards**
   - Reason: Not implemented yet
-- ❌ **Recurring Payments**
-  - Reason: Not implemented yet
+- ❌ **Recurring Payments (production-hardened)** — `contracts/RecurringPayments.tact`
+  - Reason: Issue #139 (F4) documents production-readiness requirements (specification, dashboard, wallet UX, notifications, monitoring, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/recurring-payments/` for the full F4 specification.
 - ❌ **Cross-Chain Bridge (production-hardened)** — `contracts/CrossChainBridge.tact`
   - Reason: Issue #138 (F3) documents production-readiness requirements (validators, replay protection, circuit breakers, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/bridge/` for the full F3 specification.
 
