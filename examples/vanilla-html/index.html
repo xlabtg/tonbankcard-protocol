@@ -36,6 +36,11 @@
       .error { color: #c0392b; margin-top: 12px; }
       .success { color: #1d7a3a; margin-top: 12px; word-break: break-all; }
       .footer { font-size: 12px; color: #666; line-height: 1.5; }
+      .sandbox-banner {
+        background: #fff8e1; border: 1px solid #f0d878; border-radius: 8px;
+        padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: #5b4500;
+      }
+      .sandbox-banner a { color: #b87600; font-weight: 600; }
     </style>
   </head>
   <body>
@@ -46,13 +51,23 @@
         <code>@tonbankcard/merchant-sdk</code> via a single
         <code>&lt;script&gt;</code> tag — no build step.
       </p>
+      <p class="sandbox-banner" id="sandboxBanner">
+        Default values target the public
+        <a href="../../docs/sandbox.md">Tonbankcard sandbox</a>
+        on TON testnet. Need test TBC? Visit the
+        <a id="faucetLink"
+           href="https://sandbox.api.tonbankcard.com/faucet"
+           target="_blank" rel="noopener">TBC faucet</a>
+        (1 dispense per address per hour).
+      </p>
     </header>
 
     <section class="card">
       <h2>1. Configure the order</h2>
       <label>
         Merchant NFT (testnet)
-        <input id="merchantNft" placeholder="EQ..." />
+        <input id="merchantNft" placeholder="EQ..."
+               value="EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" />
       </label>
       <label>
         Order ID
