@@ -236,6 +236,40 @@ catalogue. The DEX layer is gated on A4 verdict READY for adapter
 source landings (`docs/dex/ADAPTER_HARDENING.md` §5, R-DEX-AH-1); the
 codes themselves are stable independent of that gate.
 
+### Analytics (off-chain) — error codes
+
+The F7 Analytics & Reporting layer (Issue #142) is **off-chain**:
+error codes are emitted by the merchant analytics endpoint
+(`GET /v1/analytics/merchant`), the protocol analytics endpoint
+(`GET /v1/analytics/protocol`), and the read-replica-backed
+aggregator pipeline. Codes are stable across aggregator
+implementations and consumed by
+`docs/analytics/MERCHANT_ANALYTICS.md` §6,
+`docs/analytics/PROTOCOL_ANALYTICS.md` §7, and the wallet / dashboard
+error-mapping tables; consumers MUST map by numeric value.
+
+| Code | Symbol | Meaning |
+|---:|---|---|
+| `0` | `ERROR_AN_NONE` | Query succeeded (success path). |
+| `1` | `ERROR_AN_TIMEOUT` | Read-replica failed to respond within `QUERY_TIMEOUT_MS = 5000 ms` (`docs/analytics/SPECIFICATION.md` §7.2). |
+| `2` | `ERROR_AN_UNAUTHORIZED` | Authentication missing or invalid for `GET /v1/analytics/merchant`. |
+| `3` | `ERROR_AN_FORBIDDEN_SCOPE` | `merchantId` in path / query does not match the session-bound principal (T-AN-1 closure; AN-AH-1 anchor, `docs/analytics/SPECIFICATION.md` §7.3). |
+| `4` | `ERROR_AN_INVALID_RANGE` | `range` is not one of the supported windows (`24h` / `7d` / `30d` / `90d` / `all-time`). |
+| `5` | `ERROR_AN_INDEXER_LAG` | Replica lag exceeds `REPLICA_LAG_BUDGET_SECONDS = 60 s` (alert `AN-M10`, `docs/analytics/MONITORING.md` §3.4). |
+| `6` | `ERROR_AN_RATE_LIMITED` | Per-merchant or per-IP rate limit exceeded (`RATE_LIMIT_REQUESTS_PER_MINUTE = 60`, alert `AN-M09`). |
+| `7` | `ERROR_AN_CACHE_MISS_STORM` | Cache hit ratio fell below 80 % within the rolling window; query rejected to protect the replica (alert `AN-M05`). |
+| `8` | `ERROR_AN_PRIVACY_THRESHOLD` | Requested aggregate below `K_ANONYMITY_FLOOR = 5` (T-AN-2 closure; AN-AH-2 anchor, `docs/analytics/PRIVACY.md` §2). |
+| `9` | `ERROR_AN_BACKEND_DOWN` | Read-replica unreachable after retries (alert `AN-M11`, `docs/analytics/MONITORING.md` §3.4). |
+
+See `docs/analytics/SPECIFICATION.md` §7.2 for the canonical registry,
+`docs/analytics/MERCHANT_ANALYTICS.md` §6 / `docs/analytics/PROTOCOL_ANALYTICS.md`
+§7 for endpoint-scoped error mapping, and
+`docs/analytics/ENDPOINT_HARDENING.md` §3 / §5 for the AN-AH-1..AN-AH-7
+hardening backlog (`R-AN-AH-1`..`R-AN-AH-5` CI guardrails, B3-gated).
+The analytics layer is gated on B3 production-monitoring verdict READY
+for aggregator source landings; the codes themselves are stable
+independent of that gate.
+
 ### Test-only seeding (deployer guards)
 
 Several contracts expose `Register*` receivers behind a `sender() == self.deployer`

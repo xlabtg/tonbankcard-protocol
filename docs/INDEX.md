@@ -175,6 +175,22 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 
 ---
 
+## Analytics & Reporting (F7)
+
+| Document | Description |
+|----------|-------------|
+| [Specification](analytics/SPECIFICATION.md) | Off-chain analytics layer (indexer → read-replica → aggregator → API → CDN-cached dashboard), error registry `ERROR_AN_0..ERROR_AN_9`, threat catalogue T-AN-1..T-AN-7, hardening backlog AN-AH-1..AN-AH-7 (B3-gated) |
+| [Merchant Analytics](analytics/MERCHANT_ANALYTICS.md) | `GET /v1/analytics/merchant` envelope, JWT `sub`-bound scope, `K_ANONYMITY_FLOOR = 5` top-customers gate, P95 < 2 s budget (AC-2, AC-4) |
+| [Protocol Analytics](analytics/PROTOCOL_ANALYTICS.md) | `GET /v1/analytics/protocol` aggregate envelope, CDN cache directive (TTL=600 s + SWR=120 s + `Vary: Accept-Encoding`), AN-M02 budget anchor (AC-3, AC-6) |
+| [Public Dashboard](analytics/PUBLIC_DASHBOARD.md) | `stats.tonbankcard.com` public dashboard, AN-M04 disconnect-grace banner, `DASHBOARD_LOAD_BUDGET_MS = 2000` real-user budget (AC-5) |
+| [Privacy](analytics/PRIVACY.md) | K-anonymity floor (K=5) triple enforcement, first-4/last-4 truncated `hashedSub`, merchant opt-out (`NOT` publicly enumerable), `ANALYTICS_RETENTION_YEARS = 3` |
+| [Monitoring](analytics/MONITORING.md) | Alert catalogue AN-M01..AN-M12, P0..P3 pager severity matrix, data sources DS-1..DS-6, DR drills DR-1..DR-6, B3 wiring |
+| [Endpoint Hardening](analytics/ENDPOINT_HARDENING.md) | Hardening backlog AN-AH-1..AN-AH-7 with T-AN-N closures, CI guardrails R-AN-AH-1..R-AN-AH-5 (B3-gated) |
+| [Testnet Integration](analytics/TESTNET_INTEGRATION.md) | Staging deployment manifest, IDOR drill (6 cases), AC-7 IDOR-protection bar, dashboard-load budget rehearsal (AC-2, AC-3, AC-4, AC-5, AC-7) |
+| [Bug Bounty](analytics/BUG_BOUNTY.md) | Analytics-specific bounty tiers (Critical for aggregators), A5 PROGRAM_BRIEF.md wiring, B3-READY activation gate |
+
+---
+
 ## Integrations
 
 | Document | Description |
