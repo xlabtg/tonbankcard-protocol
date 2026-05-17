@@ -417,7 +417,7 @@ jobs:
   deploy:
     name: Deploy to Vercel
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && vars.VERCEL_PREVIEW_ENABLED == 'true'
     environment:
       name: preview
       url: ${{ steps.deploy.outputs.preview-url }}
