@@ -159,6 +159,22 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 
 ---
 
+## Additional DEX Integrations (F6)
+
+| Document | Description |
+|----------|-------------|
+| [Specification](dex/SPECIFICATION.md) | Shared `DexAdapter` interface, error registry codes 1..9, threat catalogue T-DEX-1..T-DEX-7, hardening backlog DEX-AH-1..DEX-AH-7 (A4-gated, off-chain envelope) |
+| [Price Aggregator](dex/PRICE_AGGREGATOR.md) | Parallel `Promise.allSettled` fan-out, tie-break order TONCO → DeDust, floor guard, fallback re-quote window (5 s), idempotency window (600 s) and P50/P95/P99 budgets |
+| [Slippage Protection](dex/SLIPPAGE_PROTECTION.md) | User-tunable slippage slider [MIN=10, DEFAULT=50, MAX=500] bps, large-trade warnings, auto-revert ladder (DEX-M07) (AC-5) |
+| [Liquidity Monitoring](dex/LIQUIDITY_MONITORING.md) | Alert catalogue DEX-M01..DEX-M18, §3.6 P0..P3 severity matrix, data sources DS-1..DS-4, DR drills DR-1..DR-5, B3 wiring (AC-6) |
+| [Notifications](dex/NOTIFICATIONS.md) | DEX-N01..DEX-N08 notification catalogue, Push/Email/Webhook channels, sha256 dedup key, retry policy `MAX_WEBHOOK_RETRIES = 5`, privacy posture |
+| [Wallet UX](dex/WALLET_UX.md) | Swap confirmation sheet, slippage slider, expires-in countdown, failure-mode toast catalogue (codes 1..9), large-trade modal, venue-status pill |
+| [Adapter Hardening](dex/ADAPTER_HARDENING.md) | Hardening backlog DEX-AH-1..DEX-AH-7 with T-DEX-N closures, CI guardrails R-DEX-AH-1..R-DEX-AH-5 (A4-gated) |
+| [Testnet Integration](dex/TESTNET_INTEGRATION.md) | Deployment manifest, end-to-end multi-DEX flow, fallback drill (AC-4), test bars **24** adapter unit + **12** aggregator integration (AC-7) |
+| [Bug Bounty](dex/BUG_BOUNTY.md) | DEX-specific bounty tiers (Critical for the aggregator, High for adapters), RC-BOUNTY-CRITICAL pause, A5 PROGRAM_BRIEF.md wiring, A4-READY activation gate |
+
+---
+
 ## Integrations
 
 | Document | Description |
