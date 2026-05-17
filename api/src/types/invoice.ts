@@ -166,37 +166,15 @@ export interface GetInvoiceStatusResponse {
 }
 
 /**
- * Error response
+ * Error response envelope and codes are defined in `./errors` so they
+ * can be consumed without pulling in the rest of the invoice types.
+ * Re-exported here for backwards compatibility with existing imports.
+ *
+ * @see ./errors
+ * @see docs/error-codes.md
  */
-export interface ErrorResponse {
-  error: {
-    /** Machine-readable error code */
-    code: string;
-
-    /** Human-readable error message */
-    message: string;
-
-    /** Additional context (optional) */
-    details?: Record<string, any>;
-  };
-}
-
-/**
- * Error codes
- */
-export enum ErrorCode {
-  INVALID_API_KEY = 'INVALID_API_KEY',
-  UNAUTHORIZED_MERCHANT = 'UNAUTHORIZED_MERCHANT',
-  INVALID_NFT_ADDRESS = 'INVALID_NFT_ADDRESS',
-  NFT_NOT_WHITELISTED = 'NFT_NOT_WHITELISTED',
-  INVALID_AMOUNT = 'INVALID_AMOUNT',
-  INVALID_METADATA = 'INVALID_METADATA',
-  INVOICE_NOT_FOUND = 'INVOICE_NOT_FOUND',
-  INVOICE_EXPIRED = 'INVOICE_EXPIRED',
-  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
-  INTERNAL_ERROR = 'INTERNAL_ERROR',
-  BLOCKCHAIN_UNAVAILABLE = 'BLOCKCHAIN_UNAVAILABLE',
-}
+export { ErrorCode, ERROR_CODE_HTTP_STATUS, getHttpStatusForErrorCode } from './errors';
+export type { ErrorResponse } from './errors';
 
 /**
  * Whitelisted NFT collections

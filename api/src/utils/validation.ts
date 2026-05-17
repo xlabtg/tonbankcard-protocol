@@ -11,17 +11,23 @@ import {
   WHITELISTED_NFT_COLLECTIONS,
   CONSTANTS,
   InvoiceMetadata,
-  ErrorCode,
 } from '../types/invoice';
+import { ErrorCode } from '../types/errors';
 
 /**
  * Validation error
+ *
+ * Always carries a stable `ErrorCode` so the central error handler can
+ * map it to the correct HTTP status and envelope without sniffing the
+ * message text. The optional `details` field is structured context that
+ * is sanitised by `middleware/errorHandler.ts` before being returned
+ * to the client.
  */
 export class ValidationError extends Error {
   constructor(
     public code: ErrorCode,
     message: string,
-    public details?: Record<string, any>
+    public details?: Record<string, unknown>
   ) {
     super(message);
     this.name = 'ValidationError';

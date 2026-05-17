@@ -18,12 +18,17 @@ import { invoiceService } from '../services/InvoiceService';
 import { apiKeyService } from '../services/ApiKeyService';
 import { ValidationError } from '../utils/validation';
 import {
-  ErrorCode,
-  ErrorResponse,
   ApiKey,
   ApiKeyPermission,
   RateLimitBucket,
 } from '../types/invoice';
+import { ErrorCode } from '../types/errors';
+import {
+  sendErrorResponse,
+  errorHandlerMiddleware,
+  notFoundHandlerMiddleware,
+} from '../middleware/errorHandler';
+import { requestIdMiddleware } from '../middleware/requestId';
 
 /**
  * ⚠️ PRODUCTION WARNING: In-memory stores MUST NOT be used in production.
@@ -59,55 +64,6 @@ const DEFAULT_RATE_LIMITS = {
 } as const;
 
 /**
- * Error response helper
- */
-function sendErrorResponse(res: Response, error: ValidationError | Error): Response {
-  if (error instanceof ValidationError) {
-    const statusCode = getHttpStatusForErrorCode(error.code);
-    const errorResponse: ErrorResponse = {
-      error: {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-      },
-    };
-    return res.status(statusCode).json(errorResponse);
-  }
-
-  // Unexpected error
-  console.error('Unexpected error:', error);
-  const errorResponse: ErrorResponse = {
-    error: {
-      code: ErrorCode.INTERNAL_ERROR,
-      message: 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? { error: error.message } : undefined,
-    },
-  };
-  return res.status(500).json(errorResponse);
-}
-
-/**
- * Map error code to HTTP status code
- */
-function getHttpStatusForErrorCode(code: ErrorCode): number {
-  const statusMap: Record<ErrorCode, number> = {
-    [ErrorCode.INVALID_API_KEY]: 401,
-    [ErrorCode.UNAUTHORIZED_MERCHANT]: 403,
-    [ErrorCode.INVALID_NFT_ADDRESS]: 400,
-    [ErrorCode.NFT_NOT_WHITELISTED]: 403,
-    [ErrorCode.INVALID_AMOUNT]: 400,
-    [ErrorCode.INVALID_METADATA]: 400,
-    [ErrorCode.INVOICE_NOT_FOUND]: 404,
-    [ErrorCode.INVOICE_EXPIRED]: 410,
-    [ErrorCode.RATE_LIMIT_EXCEEDED]: 429,
-    [ErrorCode.INTERNAL_ERROR]: 500,
-    [ErrorCode.BLOCKCHAIN_UNAVAILABLE]: 503,
-  };
-
-  return statusMap[code] || 500;
-}
-
-/**
  * Extract API key from Authorization header
  */
 function extractApiKey(req: Request): string {
@@ -140,7 +96,7 @@ export async function createInvoice(req: Request, res: Response): Promise<Respon
     const invoice = await invoiceService.createInvoice(req.body, apiKey);
     return res.status(201).json(invoice);
   } catch (error) {
-    return sendErrorResponse(res, error as Error);
+    return sendErrorResponse(req, res, error as Error);
   }
 }
 
@@ -156,7 +112,7 @@ export async function getInvoice(req: Request, res: Response): Promise<Response>
     const invoice = await invoiceService.getInvoice(invoice_id);
     return res.status(200).json(invoice);
   } catch (error) {
-    return sendErrorResponse(res, error as Error);
+    return sendErrorResponse(req, res, error as Error);
   }
 }
 
@@ -173,7 +129,7 @@ export async function getInvoiceStatus(req: Request, res: Response): Promise<Res
     const status = await invoiceService.getInvoiceStatus(invoice_id, apiKey);
     return res.status(200).json(status);
   } catch (error) {
-    return sendErrorResponse(res, error as Error);
+    return sendErrorResponse(req, res, error as Error);
   }
 }
 
@@ -312,7 +268,7 @@ export function authenticateWithPermission(requiredPermission: ApiKeyPermission)
 
       next();
     } catch (error) {
-      sendErrorResponse(res, error as Error);
+      sendErrorResponse(req, res, error as Error);
     }
   };
 }
@@ -412,6 +368,11 @@ export const corsOptions = {
  * ```
  */
 export function setupInvoiceRoutes(app: any): void {
+  // Tag every request with a stable identifier (and mirror it as
+  // X-Request-Id on the response) so log entries and error envelopes
+  // can be correlated. Must run before any route handler.
+  app.use(requestIdMiddleware);
+
   // Public endpoint (no auth required, but rate limited by IP)
   app.get('/v1/invoice/:invoice_id', rateLimitMiddleware, getInvoice);
 
@@ -436,4 +397,13 @@ export function setupInvoiceRoutes(app: any): void {
       version: '1.0.0',
     });
   });
+
+  // Standardised 404 for any unmatched route. Must be registered after
+  // the real routes so they get first refusal.
+  app.use(notFoundHandlerMiddleware);
+
+  // Final safety net: any error that escapes a handler is funnelled
+  // through the shared envelope. Must be the *last* middleware and use
+  // the four-argument signature so Express routes errors to it.
+  app.use(errorHandlerMiddleware);
 }

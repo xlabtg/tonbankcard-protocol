@@ -6,7 +6,16 @@ import { IndexerDatabase } from '../db/database';
 import { EventParser } from '../parsers/event-parser';
 import { IndexerConfig } from '../types/config';
 import { IndexedEvent } from '../types/events';
+import { IndexerErrorCode, makeEventId } from '../types/errors';
 import pino from 'pino';
+
+/** Coerce an unknown thrown value into a safe `{name, message}` log field. */
+function toErrInfo(error: unknown): { name: string; message: string } {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message };
+  }
+  return { name: 'Unknown', message: String(error) };
+}
 
 export class IndexerService {
   private client: TonClient;
@@ -53,7 +62,13 @@ export class IndexerService {
       try {
         await this.syncBlocks();
       } catch (error) {
-        this.logger.error({ error }, 'Error during sync');
+        this.logger.error(
+          {
+            errorCode: IndexerErrorCode.SYNC_FAILED,
+            err: toErrInfo(error),
+          },
+          'Error during sync'
+        );
       }
     }, this.config.indexer.pollIntervalMs);
 
@@ -132,7 +147,13 @@ export class IndexerService {
         this.db.markBlocksConfirmed(confirmUpTo);
       }
     } catch (error) {
-      this.logger.error({ error }, 'Error syncing blocks');
+      this.logger.error(
+        {
+          errorCode: IndexerErrorCode.SYNC_FAILED,
+          err: toErrInfo(error),
+        },
+        'Error syncing blocks'
+      );
       throw error;
     }
   }
@@ -181,6 +202,8 @@ export class IndexerService {
     if (storedBlock.block_hash !== chainHash) {
       this.logger.warn(
         {
+          errorCode: IndexerErrorCode.REORG_DETECTED,
+          eventId: makeEventId(blockNumber),
           blockNumber,
           storedHash: storedBlock.block_hash,
           chainHash,
@@ -240,7 +263,15 @@ export class IndexerService {
         'Block processed'
       );
     } catch (error) {
-      this.logger.error({ error, blockNumber }, 'Error processing block');
+      this.logger.error(
+        {
+          errorCode: IndexerErrorCode.BLOCK_PROCESSING_FAILED,
+          eventId: makeEventId(blockNumber),
+          blockNumber,
+          err: toErrInfo(error),
+        },
+        'Error processing block'
+      );
       throw error;
     }
   }
@@ -362,7 +393,11 @@ export class IndexerService {
         }
       } catch (error) {
         this.logger.warn(
-          { error, address },
+          {
+            errorCode: IndexerErrorCode.TX_FETCH_FAILED,
+            contractAddress: address,
+            err: toErrInfo(error),
+          },
           'Error fetching transactions for address'
         );
       }
@@ -467,7 +502,15 @@ export class IndexerService {
           break;
       }
     } catch (error) {
-      this.logger.error({ error, event }, 'Error storing event');
+      this.logger.error(
+        {
+          errorCode: IndexerErrorCode.EVENT_STORE_FAILED,
+          eventId: makeEventId(blockNumber, txHash, logIndex),
+          eventType: event.eventType,
+          err: toErrInfo(error),
+        },
+        'Error storing event'
+      );
     }
   }
 
@@ -482,7 +525,13 @@ export class IndexerService {
       const info = await this.client.getMasterchainInfo();
       return { seqno: info.latestSeqno };
     } catch (error) {
-      this.logger.error({ error }, 'Error fetching latest block');
+      this.logger.error(
+        {
+          errorCode: IndexerErrorCode.LATEST_BLOCK_UNAVAILABLE,
+          err: toErrInfo(error),
+        },
+        'Error fetching latest block'
+      );
       return null;
     }
   }
@@ -548,7 +597,15 @@ export class IndexerService {
         transactions: [], // Transactions are fetched per-account, not per-block
       };
     } catch (error) {
-      this.logger.error({ error, blockNumber }, 'Error fetching block');
+      this.logger.error(
+        {
+          errorCode: IndexerErrorCode.BLOCK_FETCH_FAILED,
+          eventId: makeEventId(blockNumber),
+          blockNumber,
+          err: toErrInfo(error),
+        },
+        'Error fetching block'
+      );
       return null;
     }
   }

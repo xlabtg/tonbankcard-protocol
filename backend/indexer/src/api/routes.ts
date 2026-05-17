@@ -15,6 +15,7 @@ import {
   BlockInfoResponse,
 } from '../types/api';
 import { accountStateToString } from '../types/events';
+import { IndexerErrorCode } from '../types/errors';
 import pino from 'pino';
 
 export function createRouter(
@@ -54,7 +55,15 @@ export function createRouter(
 
       res.json(response);
     } catch (error) {
-      logger.error({ error }, 'Health check failed');
+      logger.error(
+        {
+          requestId: req.requestId,
+          errorCode: IndexerErrorCode.API_REQUEST_FAILED,
+          path: req.originalUrl ?? req.path,
+          err: error instanceof Error ? { name: error.name, message: error.message } : { name: 'Unknown', message: String(error) },
+        },
+        'Health check failed'
+      );
       res.status(500).json({
         status: 'unhealthy',
         error: 'Health check failed',
@@ -124,10 +133,19 @@ export function createRouter(
 
         res.json(response);
       } catch (error) {
-        logger.error({ error }, 'Error fetching payment status');
+        logger.error(
+          {
+            requestId: req.requestId,
+            errorCode: IndexerErrorCode.API_REQUEST_FAILED,
+            invoiceId: req.params.invoice_id,
+            path: req.originalUrl ?? req.path,
+            err: error instanceof Error ? { name: error.name, message: error.message } : { name: 'Unknown', message: String(error) },
+          },
+          'Error fetching payment status'
+        );
         const errorResponse: ErrorResponse = {
           error: {
-            code: 'INTERNAL_ERROR',
+            code: IndexerErrorCode.API_REQUEST_FAILED,
             message: 'Failed to fetch payment status',
           },
         };
@@ -180,10 +198,19 @@ export function createRouter(
 
         res.json(response);
       } catch (error) {
-        logger.error({ error }, 'Error fetching payment events');
+        logger.error(
+          {
+            requestId: req.requestId,
+            errorCode: IndexerErrorCode.API_REQUEST_FAILED,
+            invoiceId: req.params.invoice_id,
+            path: req.originalUrl ?? req.path,
+            err: error instanceof Error ? { name: error.name, message: error.message } : { name: 'Unknown', message: String(error) },
+          },
+          'Error fetching payment events'
+        );
         const errorResponse: ErrorResponse = {
           error: {
-            code: 'INTERNAL_ERROR',
+            code: IndexerErrorCode.API_REQUEST_FAILED,
             message: 'Failed to fetch payment events',
           },
         };
@@ -231,10 +258,19 @@ export function createRouter(
 
         res.json(response);
       } catch (error) {
-        logger.error({ error }, 'Error fetching account history');
+        logger.error(
+          {
+            requestId: req.requestId,
+            errorCode: IndexerErrorCode.API_REQUEST_FAILED,
+            nftAddress: req.params.nft_id,
+            path: req.originalUrl ?? req.path,
+            err: error instanceof Error ? { name: error.name, message: error.message } : { name: 'Unknown', message: String(error) },
+          },
+          'Error fetching account history'
+        );
         const errorResponse: ErrorResponse = {
           error: {
-            code: 'INTERNAL_ERROR',
+            code: IndexerErrorCode.API_REQUEST_FAILED,
             message: 'Failed to fetch account history',
           },
         };
@@ -255,9 +291,18 @@ export function createRouter(
         const blockNumber = parseInt(req.params.block_number);
 
         if (isNaN(blockNumber)) {
+          logger.warn(
+            {
+              requestId: req.requestId,
+              errorCode: IndexerErrorCode.API_INVALID_PARAMETER,
+              path: req.originalUrl ?? req.path,
+              rawBlockNumber: req.params.block_number,
+            },
+            'Invalid block number'
+          );
           const errorResponse: ErrorResponse = {
             error: {
-              code: 'INVALID_PARAMETER',
+              code: IndexerErrorCode.API_INVALID_PARAMETER,
               message: 'Invalid block number',
             },
           };
@@ -267,9 +312,18 @@ export function createRouter(
         const block = db.getBlock(blockNumber);
 
         if (!block) {
+          logger.warn(
+            {
+              requestId: req.requestId,
+              errorCode: IndexerErrorCode.API_NOT_FOUND,
+              path: req.originalUrl ?? req.path,
+              blockNumber,
+            },
+            'Block not found'
+          );
           const errorResponse: ErrorResponse = {
             error: {
-              code: 'NOT_FOUND',
+              code: IndexerErrorCode.API_NOT_FOUND,
               message: 'Block not found',
             },
           };
@@ -286,10 +340,19 @@ export function createRouter(
 
         res.json(response);
       } catch (error) {
-        logger.error({ error }, 'Error fetching block info');
+        logger.error(
+          {
+            requestId: req.requestId,
+            errorCode: IndexerErrorCode.API_REQUEST_FAILED,
+            blockNumber: req.params.block_number,
+            path: req.originalUrl ?? req.path,
+            err: error instanceof Error ? { name: error.name, message: error.message } : { name: 'Unknown', message: String(error) },
+          },
+          'Error fetching block info'
+        );
         const errorResponse: ErrorResponse = {
           error: {
-            code: 'INTERNAL_ERROR',
+            code: IndexerErrorCode.API_REQUEST_FAILED,
             message: 'Failed to fetch block information',
           },
         };
