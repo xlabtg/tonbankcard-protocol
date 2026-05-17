@@ -73,7 +73,7 @@ These keys have direct on-chain authority and are the highest-risk class.
 | Key | Authority | Scope | Current Setup |
 |-----|-----------|-------|---------------|
 | **Admin Key (Payment Hub)** | `op::set_paused`, `op::account_flagged` | Protocol-wide pause and account flagging | Single key — TEMPORARY (see [T8 in threat-model.md](../threat-model.md)) |
-| **Risk Authority Key** | `set_fraud_lock`, `clear_fraud_lock` (Account Locks contract) | Fraud lock management | Single key — HIGH RISK |
+| **Risk Authority Key** | `set_fraud_lock`, `clear_fraud_lock` (Account Locks contract) | Fraud lock management | Single key — TEMPORARY (HIGH RISK); target after E3: 3-of-5 hardware multi-sig (see [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) §2.1) |
 | **Lending Adapter Key** | `set_collateral_lock`, `clear_collateral_lock` (Account Locks contract) | Collateral lock management | Not yet deployed |
 | **Deployment Key** | Contract deployment authority | One-time deployment; immutable after | Cold storage required |
 
@@ -239,6 +239,61 @@ Emergency rotation is triggered when any of the following occur:
 
 Emergency rotations must be logged with timestamp, trigger event description, and rotating operator within 24 hours of completion.
 
+### 5.4 Risk Authority Multi-Sig Rotation Procedure (E3)
+
+The Risk Authority is a 3-of-5 hardware multi-sig wallet (see [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) §§ 2, 6). Rotation has three surfaces, each with its own procedure. All three reuse the existing on-chain handlers in `contracts/payments/account-locks.fc` — no contract redeployment is required.
+
+#### 5.4.1 Single-signer rotation (planned)
+
+Triggered when an RA-x signer's term expires (RA-3: 6 months; RA-4 / RA-5: 12 months), or when an internal handover is required without compromise.
+
+1. **T-30 days** — announce upcoming rotation on the security ops channel and in the public `docs/governance/risk-authority-rotation.log`.
+2. **T-14 days** — for RA-3 / RA-5 (DAO-elected seats): submit a `RISK_DISCLOSURE` proposal to the Diamond DAO via [`../governance/PARAMETER_CHANGES.md`](../governance/PARAMETER_CHANGES.md) template; for RA-1 / RA-2 / RA-4: publish the proposed replacement (role only, not identity) and collect community comment for 14 days.
+3. **T-7 days** — the **outgoing** signer (or the remaining 3-of-5 quorum if the outgoing signer is unavailable) prepares the signer-set update packet for the multi-sig wallet contract. The packet is reviewed off-chain by all remaining signers on cold air-gapped machines.
+4. **T+0** — the remaining signers collect a 3-of-5 signature on the wallet's internal `UpdateSigners` operation. The on-chain `risk_authority` slice in `account-locks.fc` does **not** change (the wallet contract address is unchanged); only the wallet's internal signer roster does.
+5. **T+24 h** — append a JSON Lines entry to `docs/governance/risk-authority-rotation.log` with: rotation type (`single-signer`), outgoing role, incoming role, DAO `proposal_id` (if applicable), `tx_hash` of the wallet's `UpdateSigners` call. The SHA-256 of the rotation entry is anchored on-chain via `TransparencyRegistry.RecordSnapshot`.
+6. **T+72 h** — the incoming signer publishes their first quarterly readiness attestation (`RISK_AUTHORITY.md` §2.2 step 4) to confirm operational handover is complete.
+
+#### 5.4.2 Whole multi-sig replacement (planned)
+
+Triggered when the wallet implementation must be upgraded (e.g. moving from `org.ton.contracts.multisig.v2` to a newer audited variant), or when ≥ 2 signers must be replaced simultaneously and a fresh wallet is preferred to a sequence of single-signer rotations.
+
+1. **T-30 days** — announce the wallet change; submit `RISK_DISCLOSURE` proposal to the Diamond DAO under [`../governance/PARAMETER_CHANGES.md`](../governance/PARAMETER_CHANGES.md). Quorum ≥ 44 (supermajority, per [`../governance/PARAMETERS.md`](../governance/PARAMETERS.md) §9 for lock-impacting changes).
+2. **T-14 days** — deploy the new multi-sig wallet contract on mainnet; record its address and signer hashes in `docs/deployments/B2-mainnet/multisig.risk-authority.json` and commit the manifest.
+3. **T+0** — the **current** multi-sig wallet (3-of-5 signatures) sends `op::propose_risk_authority = 0x4001` with the new wallet's address (lines 293–301 of `account-locks.fc`). This opens the 7-day timelock (`ROLE_TRANSFER_DELAY = 7 * 24 * 60 * 60` on line 54).
+4. **T+0 → T+7 d** — the Diamond DAO ratification vote runs. The vote can recommend abort (in which case `op::cancel_risk_authority = 0x4003` is signed; lines 315–322) or proceed.
+5. **T+7 d** — the **new** multi-sig wallet (3-of-5 signatures) sends `op::execute_risk_authority = 0x4002` (lines 304–312). The on-chain `risk_authority` slice rotates to the new wallet's address. The old wallet is no longer authorised.
+6. **T+7 d + 24 h** — append rotation log entry; anchor SHA-256 on-chain; publish a one-page operational note in `docs/governance/risk-authority-rotation.log`. The next quarterly transparency report references the rotation.
+
+#### 5.4.3 Emergency rotation (compromise scenario)
+
+Triggered when ≥ 1 hardware device is lost / stolen / suspected compromised but < 3 signers are affected (so the wallet itself is not yet captured). The contract-level 7-day timelock **cannot be bypassed** — therefore the emergency procedure is "pause first, then rotate".
+
+1. **T+0 → T+1 h** — security ops detect compromise (incident under [`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §3). The PaymentHub admin multi-sig considers signing `op::set_paused = true` if the threat extends beyond the Risk Authority (note: pause does **not** prevent further `op::set_fraud_lock` calls — these are gated on `risk_authority`, not on the pause flag — but the pause itself signals a protocol-wide incident to wallets and indexers).
+2. **T+0 → T+4 h** — the remaining uncompromised signers (≥ 3 of 5) sign the wallet's internal `UpdateSigners` to remove the compromised signer(s) and provision a replacement on a freshly procured hardware device. If < 3 uncompromised signers remain, escalate to §5.4.4 below.
+3. **T+4 h → T+24 h** — the indexer is instructed to **freeze attention** on the wallet: any setter transaction during the rotation window must be manually reviewed before being mirrored to `TransparencyRegistry`. The `ra.unknown-signer-set` alarm is expected to fire and is treated as expected noise for this window.
+4. **T+24 h** — log the emergency rotation; publish a one-page incident note. The post-mortem follows [`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §6.
+
+#### 5.4.4 Catastrophic compromise (≥ 3 of 5 signers compromised simultaneously)
+
+If three signer keys are believed to be in adversarial hands, the wallet itself is captured and a setter transaction may be inevitable. The recovery path is:
+
+1. **T+0** — the PaymentHub admin multi-sig signs `op::set_paused = true`. This does **not** stop further FRAUD_LOCK calls but signals a protocol-wide emergency.
+2. **T+0** — the Diamond DAO opens an emergency `RISK_DISCLOSURE` proposal to authorise a contract redeployment with a fresh `risk_authority`. The DAO recognises that the contract-level 7-day timelock makes a clean role transfer impossible within the incident window; redeployment plus on-chain redirection of the wallet-UI is the only safe path.
+3. **T+0 → T+7 d** — the DAO ratification vote runs; the on-chain `op::propose_risk_authority` is signed by the captured wallet in parallel, but with a **null** target address (acts as a placeholder; cancellable). The DAO's outcome determines whether the proposal is cancelled and replaced or whether redeployment proceeds.
+4. **T+7 d → T+14 d** — execute redeployment (per `E1-activation/RUNBOOK.md` §8); the wallet UI is upgraded to point to the new contract; the captured wallet is left in `risk_authority` of the old contract (orphaned) and the old contract is paused indefinitely.
+5. **Post-incident** — publish full timeline in [`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §6. Update [`RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) signer roster.
+
+#### 5.4.5 Rotation log schema
+
+Every rotation event (planned, emergency, catastrophic) appends a JSON Lines record to `docs/governance/risk-authority-rotation.log`:
+
+```jsonl
+{"rotation_type":"single-signer","outgoing_role":"RA-3","incoming_role":"RA-3","dao_proposal_id":"E3.5-PROP-014","tx_hash":"<hash>","wallet_address":"<EQ...>","transparency_snapshot":"<hash>","signed_at":"2026-06-15T12:00:00Z"}
+```
+
+The log is append-only; corrections are added as new entries with `"correction_of": "<earlier-entry-hash>"`. The indexer asserts every entry matches an on-chain event and raises `ra.rotation-log-mismatch` if not.
+
 ---
 
 ## 6. Compromise Scenarios
@@ -271,26 +326,42 @@ Emergency rotations must be logged with timestamp, trigger event description, an
 
 ### 6.2 Risk Authority Key Compromise (Account Locks)
 
-**Blast Radius:**
+**Pre-E3 (single key) blast radius:**
 - Arbitrary fraud locks can be set on any account (operational disruption)
 - Existing valid fraud locks can be cleared (fraud risk)
-- User funds CANNOT be seized (architectural guarantee)
+- User funds CANNOT be seized (architectural guarantee, INVARIANT I6)
 
-**Containment:**
-1. Rotate risk authority key immediately
+**Post-E3 (3-of-5 multi-sig) blast radius:**
+- A single signer compromise is **non-actionable** — the contract guard `equal_slices(sender_address, risk_authority)` reduces every setter call to "the multi-sig wallet emitted it", and the wallet enforces 3-of-5 — see [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) §4.6 closing paragraph
+- Two-signer compromise is detectable but still non-actionable
+- Three-or-more signer compromise: see §5.4.4 (catastrophic recovery path)
+
+**Containment (single-key era / pre-E3):**
+1. Rotate risk authority key immediately via the existing two-phase `op::propose_risk_authority` (0x4001) → 7-day timelock → `op::execute_risk_authority` (0x4002) flow (`account-locks.fc` lines 293–322)
 2. Review all lock changes after estimated compromise time
 3. Re-evaluate cleared locks for potential fraud risk
-4. Re-apply any fraudulently cleared locks using new key
+4. Re-apply any fraudulently cleared locks using the new key
+
+**Containment (post-E3, < 3 signers compromised):**
+1. Trigger §5.4.3 (emergency rotation) — remove the compromised signer(s) from the multi-sig wallet roster via the wallet's internal `UpdateSigners` op
+2. No on-chain role transfer is required (the wallet address is unchanged); the indexer's `ra.unknown-signer-set` alarm is expected to fire and is monitored manually for the duration of the rotation window
+3. Audit any setter transactions during the compromise window — every transaction must have a matching evidence anchor (`TransparencyRegistry.RecordSnapshot`); transactions without an anchor trigger fast-track appeals per [`../governance/FRAUD_LOCK_APPEAL.md`](../governance/FRAUD_LOCK_APPEAL.md) §4
+
+**Containment (post-E3, ≥ 3 signers compromised — catastrophic):**
+1. Follow §5.4.4 — pause + DAO emergency redeployment proposal + wallet-UI redirection
+2. The contract-level 7-day timelock cannot be bypassed; planning for this scenario must therefore assume a multi-day recovery window during which the captured wallet may sign one or more malicious setters
+3. All malicious setters from the compromise window are reviewed under the fast-track appeal path (`FRAUD_LOCK_APPEAL.md` §4.1, FT-2) and cleared at no cost to holders
 
 **Notification:**
 - Internal team: immediate
-- Affected users: within 4 hours if their accounts were flagged
-- Lending partners (if collateral locks involved): within 2 hours
+- Affected users: within 4 hours if their accounts were flagged (same SLA pre- and post-E3)
+- Lending partners (if collateral locks involved): N/A — collateral locks are gated on `lending_adapter`, not `risk_authority` (`account-locks.fc` lines 246–262)
 
 **Recovery:**
-1. Rotate risk authority key
-2. Audit lock activity post-compromise
-3. Conduct post-mortem within 1 week
+1. Rotate per the appropriate §5.4.x sub-procedure
+2. Audit lock activity in the compromise window (TransparencyRegistry events plus indexer alarms)
+3. Conduct post-mortem within 1 week ([`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §6)
+4. Update [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) signer roster (by role) if a seat is replaced
 
 ---
 
@@ -404,7 +475,7 @@ All keys classified as on-chain authority keys MUST use multi-sig or MPC before 
 | Key | Current State | Required State | Target Date |
 |-----|---------------|----------------|-------------|
 | Admin Key (Payment Hub) | Single key | Multi-sig 3-of-5 | Q1 2026 |
-| Risk Authority Key | Single key | Multi-sig 2-of-3 | Q1 2026 |
+| Risk Authority Key | Single key | Multi-sig 3-of-5 (hardware-backed) — see [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) | E3 activation (#134) |
 | Governance NFT majority custody | Single holder (per diamond) | Threshold: no single entity >33% | Ongoing |
 | Deployment Key | Single key | Multi-sig 2-of-3 (for future protocol versions) | Q2 2026 |
 
@@ -415,10 +486,15 @@ All keys classified as on-chain authority keys MUST use multi-sig or MPC before 
 - No single organization controls >2 of 5 keys
 - Time-lock of 48 hours on all admin actions (when implemented)
 
-**Risk Authority Key — Target: 2-of-3 Multi-Sig**
-- 3 signers from security/operations team
-- Emergency 1-of-3 available with mandatory post-incident review
-- No shared hardware devices between signers
+**Risk Authority Key — Target: 3-of-5 Multi-Sig (E3 — Issue [#134](https://github.com/xlabtg/tonbankcard-protocol/issues/134))**
+- 5 signers across at least 3 distinct legal jurisdictions and physical locations
+- Composition by role: RA-1 Protocol Team Lead, RA-2 Protocol Security Officer, RA-3 Community Representative (Diamond DAO elected, 6-month term), RA-4 External Auditor (12-month term), RA-5 Independent Adjudicator (Diamond DAO elected, 12-month term) — see [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) §2.1
+- No single individual may hold more than one Risk Authority seat (§2.2 step 2) and no Risk Authority signer may simultaneously hold the Admin Key (PaymentHub) seat, the Lending Adapter key or the Deployment Key
+- All signers use a dedicated Ledger or Trezor device; software wallets, cloud-stored keys and shared HSM partitions are prohibited
+- No "emergency 1-of-3" override exists — the 3-of-5 threshold is contract-enforced via the multi-sig wallet (`org.ton.contracts.multisig.v2`) and cannot be bypassed by any single signer
+- The fast-track / emergency path in [`RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) §4.6 compresses the *off-chain* ceremony window but still requires three valid hardware signatures and an on-chain evidence anchor before the setter is broadcast
+- Quarterly signing-readiness attestation: every signer must re-attest within 72 h once per quarter; two consecutive misses trigger replacement (§2.2 step 4 of `RISK_AUTHORITY.md`)
+- Rotation procedure: see §5.4 below
 
 **Lending Adapter Key — Target: Hardware-backed single key with 2-of-3 confirmation**
 - Lending operations are high-frequency; MPC preferred over multi-sig for latency
@@ -770,6 +846,7 @@ This document explicitly does NOT claim or guarantee the following:
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0 | 2026-03-05 | Initial formal specification (Issue #60) | AI Issue Solver |
+| 1.1 | 2026-05-17 | E3 (Issue #134): raise Risk Authority target to 3-of-5 hardware multi-sig; add §5.4 rotation procedure; expand §6.2 compromise scenario for the multi-sig era | AI Issue Solver |
 
 ---
 
