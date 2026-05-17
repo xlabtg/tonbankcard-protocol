@@ -162,13 +162,15 @@ describe('Migrator (SQLite)', () => {
 
     it('rolls back the failing migration entirely (transaction safety)', async () => {
       const dir = path.join(workDir, 'migrations');
-      // The second statement references a non-existent column — the entire
-      // migration should be rolled back so partial state isn't persisted.
+      // The second statement re-declares the table created by the first —
+      // SQLite raises "table good already exists" mid-migration, so the
+      // entire transaction must roll back without leaving the first table
+      // behind.
       writeMigration(
         dir,
         '001',
         'broken',
-        'CREATE TABLE good (id INTEGER); INSERT INTO missing_table VALUES (1);',
+        'CREATE TABLE good (id INTEGER); CREATE TABLE good (id INTEGER);',
         'DROP TABLE IF EXISTS good;'
       );
 
