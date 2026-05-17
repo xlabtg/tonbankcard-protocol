@@ -9,6 +9,56 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [1.1.0] — 2026-05-17
+
+### Added — Developer Experience (Issue #123)
+
+**Browser distribution**
+- New `@tonbankcard/merchant-sdk/browser` subpath export — dependency-free entry
+  that ships `PaymentWidget`, `parseTBC`, `formatTBC`, `serializeBigInt`
+  without pulling in `@ton/ton`/`@ton/core`.
+- New IIFE bundle at `dist/index.global.js` (≈6 KB minified) exposing the
+  global `Tonbankcard`. Wired up via the `unpkg` and `jsdelivr` fields in
+  `package.json` for direct `<script>` use on any static page.
+- `tsup.config.ts` replaces the inline build command — produces CJS + ESM +
+  IIFE artefacts and declaration files in one pass.
+
+**Integration examples** (each runnable in isolation, configured for testnet)
+- `examples/react-integration/` — React 18 + Vite + TypeScript, demonstrates
+  `TonbankcardSDK` + `PaymentWidget`, exposes an `onPaymentComplete(txHash)`
+  callback via wallet return-URL parsing.
+- `examples/vue-integration/` — Vue 3 Composition API + Vite, mirrors the
+  React example using `<script setup>` and emits `payment-complete`.
+- `examples/vanilla-html/` — single static HTML + JS page, loads the IIFE
+  bundle from a CDN, no build step, no framework.
+
+**Publishing & supply-chain**
+- `.github/workflows/npm-publish-sdk.yml` — npm publish workflow using
+  Trusted Publishing (OIDC, `id-token: write`) and `--provenance`. No
+  `NPM_TOKEN` secret required. Triggered by GitHub releases tagged
+  `sdk-v<semver>` or `workflow_dispatch`.
+- Workflow enforces a < 100 KB gzipped package budget via `npm pack --json`
+  and `npm audit --omit=dev --audit-level=high` before publishing.
+
+**Documentation**
+- `docs/merchant-api.postman_collection.json` — Postman Collection v2.1
+  covering `POST /invoice/create`, `GET /invoice/{id}`, `GET /invoice/{id}/status`
+  with example pending/settled/expired/error responses and built-in tests.
+
+### Changed
+- `sdk/package.json` `exports` map updated: `types` condition listed first
+  to satisfy modern bundler resolution; added `./browser` subpath and
+  `./package.json` re-export.
+- `sdk/.eslintrc.js` now ignores `dist/`, `node_modules/`, and `coverage/`
+  to keep linting focused on source.
+
+### Security
+- All examples are explicitly **non-custodial** — never request a mnemonic
+  or private key. Wallet return-URL `?tx=` hashes are treated as
+  informational and must be re-verified on-chain.
+
+---
+
 ## [1.0.0] — 2026-03-19
 
 ### Production Release
