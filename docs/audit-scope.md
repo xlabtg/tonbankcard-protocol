@@ -228,6 +228,8 @@ The following components are **explicitly excluded** from the audit:
   - Reason: Issue #138 (F3) documents production-readiness requirements (validators, replay protection, circuit breakers, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/bridge/` for the full F3 specification.
 - ❌ **Additional DEX Integrations (production-hardened)** — `backend/adapters/{toncoAdapter,dedustAdapter,priceAggregator}.ts`
   - Reason: Issue #141 (F6) documents production-readiness requirements for the multi-venue DEX integration layer (shared `DexAdapter` interface, price aggregator with fallback routing, slippage protection, liquidity monitoring, notifications, wallet UX, adapter hardening, testnet integration, bug bounty). The DEX layer is **fully off-chain** (no contract) and adapter source landings are **gated by A4 audit verdict=READY** (off-chain services pentest). See `docs/dex/` for the full F6 specification.
+- ❌ **Analytics & Reporting (production-hardened)** — `backend/analytics/{merchantAggregator,protocolAggregator}.ts`
+  - Reason: Issue #142 (F7) documents production-readiness requirements for the off-chain analytics layer (indexer → read-replica → aggregator → API → CDN-cached dashboard, JWT `sub`-bound merchant scope, K-anonymity floor enforcement, CDN cache directive, alert catalogue AN-M01..AN-M12, hardening backlog AN-AH-1..AN-AH-7). The analytics layer is **fully off-chain** (no contract) and aggregator source landings are **gated by B3 production-monitoring verdict=READY**. See `docs/analytics/` for the full F7 specification.
 
 ---
 
@@ -783,6 +785,15 @@ tests/
 | **F6 DEX — Adapter Hardening** | DEX-AH-1..DEX-AH-7 backlog, R-DEX-AH-1..R-DEX-AH-5 guardrails (A4-gated) | `docs/dex/ADAPTER_HARDENING.md` |
 | **F6 DEX — Testnet Integration** | Deployment manifest, fallback drill, 24 adapter unit + 12 aggregator integration tests | `docs/dex/TESTNET_INTEGRATION.md` |
 | **F6 DEX — Bug Bounty** | DEX-specific bounty tiers, RC-BOUNTY-CRITICAL pause, A5 integration | `docs/dex/BUG_BOUNTY.md` |
+| **F7 Analytics — Specification** | Off-chain analytics layer, error registry `ERROR_AN_0..ERROR_AN_9`, T-AN-1..T-AN-7, AN-AH-1..AN-AH-7 (#142, B3-gated) | `docs/analytics/SPECIFICATION.md` |
+| **F7 Analytics — Merchant Analytics** | `GET /v1/analytics/merchant` envelope, JWT `sub`-bound scope, K=5 top-customers gate, P95 < 2 s | `docs/analytics/MERCHANT_ANALYTICS.md` |
+| **F7 Analytics — Protocol Analytics** | `GET /v1/analytics/protocol` aggregate envelope, CDN cache directive (TTL=600 s + SWR=120 s) | `docs/analytics/PROTOCOL_ANALYTICS.md` |
+| **F7 Analytics — Public Dashboard** | `stats.tonbankcard.com` public dashboard, AN-M04 disconnect-grace banner, dashboard-load budget | `docs/analytics/PUBLIC_DASHBOARD.md` |
+| **F7 Analytics — Privacy** | K-anonymity floor (K=5) triple enforcement, hashed first-4/last-4 truncation, retention 3 yrs | `docs/analytics/PRIVACY.md` |
+| **F7 Analytics — Monitoring** | Alerts AN-M01..AN-M12, P0..P3 severity, DS-1..DS-6 data sources, DR drills DR-1..DR-6 | `docs/analytics/MONITORING.md` |
+| **F7 Analytics — Endpoint Hardening** | AN-AH-1..AN-AH-7 backlog, R-AN-AH-1..R-AN-AH-5 guardrails (B3-gated) | `docs/analytics/ENDPOINT_HARDENING.md` |
+| **F7 Analytics — Testnet Integration** | Staging deployment manifest, IDOR drill (6 cases), AC-7 IDOR-protection bar | `docs/analytics/TESTNET_INTEGRATION.md` |
+| **F7 Analytics — Bug Bounty** | Analytics-specific bounty tiers (Critical), A5 PROGRAM_BRIEF wiring, B3-READY activation gate | `docs/analytics/BUG_BOUNTY.md` |
 
 ---
 
