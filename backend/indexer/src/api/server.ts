@@ -225,6 +225,7 @@ export class ApiServer {
           paymentEvents: '/api/v1/payments/:invoice_id/events',
           accountHistory: '/api/v1/accounts/:nft_id/history',
           blockInfo: '/api/v1/blocks/:block_number',
+          transparencyMetrics: '/api/v1/transparency/metrics',
         },
         documentation: 'https://github.com/xlabtg/tonbankcard-protocol',
         advisory:

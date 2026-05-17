@@ -13,6 +13,10 @@ import {
   ErrorResponse,
   HealthCheckResponse,
   BlockInfoResponse,
+  TransparencyMetricsResponse,
+  TransparencyProtocolMetricsRow,
+  TransparencyLockActivityRow,
+  TransparencyParameterChangeRow,
 } from '../types/api';
 import { accountStateToString } from '../types/events';
 import { IndexerErrorCode } from '../types/errors';
@@ -354,6 +358,118 @@ export function createRouter(
           error: {
             code: IndexerErrorCode.API_REQUEST_FAILED,
             message: 'Failed to fetch block information',
+          },
+        };
+        res.status(500).json(errorResponse);
+      }
+    }
+  );
+
+  /**
+   * GET /transparency/metrics
+   * E4 (Issue #135) - On-Chain Transparency Reporting.
+   *
+   * Aggregated, privacy-preserving snapshot of the latest monthly
+   * checksums anchored on-chain by TransparencyRegistry plus a bounded
+   * history series. Schema is documented in
+   * docs/governance/TRANSPARENCY_REPORTING.md §4.1.
+   *
+   * Query params:
+   *   limit  - history rows per series (default 12, max 60)
+   */
+  router.get(
+    '/transparency/metrics',
+    async (req: Request, res: Response) => {
+      try {
+        const rawLimit = parseInt(req.query.limit as string, 10);
+        const limit = Math.min(
+          Math.max(Number.isFinite(rawLimit) ? rawLimit : 12, 1),
+          60
+        );
+
+        const latestMetrics = db.getLatestTransparencyProtocolMetrics();
+        const latestLockActivity = db.getLatestTransparencyLockActivity();
+        const metricsHistory = db.listTransparencyProtocolMetrics(limit);
+        const lockHistory = db.listTransparencyLockActivity(limit);
+        const parameterChanges = db.listTransparencyParameterChanges(limit);
+        const counts = db.getTransparencyCounts();
+
+        const mapMetrics = (row: any): TransparencyProtocolMetricsRow => ({
+          periodStart: row.period_start,
+          periodEnd: row.period_end,
+          activeAccounts: row.active_accounts,
+          tbcVolumeTransferred: row.tbc_volume_transferred,
+          transferCount: row.transfer_count,
+          blockNumber: row.block_number,
+          transactionHash: row.transaction_hash,
+        });
+        const mapLock = (row: any): TransparencyLockActivityRow => ({
+          periodStart: row.period_start,
+          periodEnd: row.period_end,
+          locksSet: row.locks_set,
+          locksCleared: row.locks_cleared,
+          locksActive: row.locks_active,
+          appealsFiled: row.appeals_filed,
+          appealsOverturned: row.appeals_overturned,
+          appealsUpheld: row.appeals_upheld,
+          blockNumber: row.block_number,
+          transactionHash: row.transaction_hash,
+        });
+        const mapParam = (row: any): TransparencyParameterChangeRow => ({
+          parameterId: row.parameter_id,
+          oldValueHash: row.old_value_hash,
+          newValueHash: row.new_value_hash,
+          effectiveBlock: row.effective_block,
+          governanceProposalId: row.governance_proposal_id,
+          blockNumber: row.block_number,
+          transactionHash: row.transaction_hash,
+          timestamp: row.timestamp,
+        });
+
+        const response: TransparencyMetricsResponse = {
+          disclaimer:
+            'This data is non-authoritative. Verify all data on-chain. ' +
+            'Governance outcomes are advisory only.',
+          snapshot: {
+            indexedAt: Math.floor(Date.now() / 1000),
+            latestBlockIndexed: db.getLatestBlockIndexed(),
+          },
+          protocolMetrics: {
+            latest: latestMetrics ? mapMetrics(latestMetrics) : null,
+            history: metricsHistory.map(mapMetrics),
+            periodCount: counts.metric_periods,
+          },
+          lockActivity: {
+            latest: latestLockActivity ? mapLock(latestLockActivity) : null,
+            history: lockHistory.map(mapLock),
+            periodCount: counts.lock_periods,
+          },
+          parameterChanges: {
+            total: counts.parameter_changes,
+            history: parameterChanges.map(mapParam),
+          },
+        };
+
+        // Cache for 60s — the underlying aggregates change at most monthly.
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        res.json(response);
+      } catch (error) {
+        logger.error(
+          {
+            requestId: req.requestId,
+            errorCode: IndexerErrorCode.API_REQUEST_FAILED,
+            path: req.originalUrl ?? req.path,
+            err:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { name: 'Unknown', message: String(error) },
+          },
+          'Error fetching transparency metrics'
+        );
+        const errorResponse: ErrorResponse = {
+          error: {
+            code: IndexerErrorCode.API_REQUEST_FAILED,
+            message: 'Failed to fetch transparency metrics',
           },
         };
         res.status(500).json(errorResponse);

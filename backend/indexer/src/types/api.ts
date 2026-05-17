@@ -114,3 +114,68 @@ export interface BlockInfoResponse {
   transactionCount: number;
   indexed: boolean;
 }
+
+/**
+ * Transparency metrics response (E4, Issue #135).
+ *
+ * Mirrors the JSON shape documented in
+ * docs/governance/TRANSPARENCY_REPORTING.md §4.1.
+ *
+ * All numbers are aggregated cohort counters anchored by an on-chain
+ * checksum. No addresses, no per-account state.
+ */
+export interface TransparencyMetricsResponse {
+  disclaimer: string;
+  snapshot: {
+    indexedAt: number;
+    latestBlockIndexed: number;
+  };
+  protocolMetrics: {
+    latest: TransparencyProtocolMetricsRow | null;
+    history: TransparencyProtocolMetricsRow[];
+    periodCount: number;
+  };
+  lockActivity: {
+    latest: TransparencyLockActivityRow | null;
+    history: TransparencyLockActivityRow[];
+    periodCount: number;
+  };
+  parameterChanges: {
+    total: number;
+    history: TransparencyParameterChangeRow[];
+  };
+}
+
+export interface TransparencyProtocolMetricsRow {
+  periodStart: number;
+  periodEnd: number;
+  activeAccounts: number;
+  tbcVolumeTransferred: string;
+  transferCount: number;
+  blockNumber: number;
+  transactionHash: string;
+}
+
+export interface TransparencyLockActivityRow {
+  periodStart: number;
+  periodEnd: number;
+  locksSet: number;
+  locksCleared: number;
+  locksActive: number;
+  appealsFiled: number;
+  appealsOverturned: number;
+  appealsUpheld: number;
+  blockNumber: number;
+  transactionHash: string;
+}
+
+export interface TransparencyParameterChangeRow {
+  parameterId: string;
+  oldValueHash: string;
+  newValueHash: string;
+  effectiveBlock: number;
+  governanceProposalId: number | null;
+  blockNumber: number;
+  transactionHash: string;
+  timestamp: number;
+}
