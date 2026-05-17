@@ -1,0 +1,24 @@
+{
+  "name": "@tonbankcard/gas-profile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gas profiling harness for Tonbankcard payment-hub contracts (Issue #128 / D2)",
+  "main": "profile.ts",
+  "scripts": {
+    "profile": "ts-node profile.ts",
+    "profile:baseline": "ts-node profile.ts --label baseline --out baseline.json",
+    "profile:optimized": "ts-node profile.ts --label optimized --out optimized.json",
+    "compare": "ts-node compare.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@ton/core": "^0.56.0",
+    "@ton/crypto": "^3.2.0",
+    "@ton/sandbox": "^0.16.0",
+    "@ton/test-utils": "^0.12.0",
+    "@types/node": "^20.10.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
