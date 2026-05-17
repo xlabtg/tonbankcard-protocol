@@ -1,0 +1,168 @@
+# Dependabot configuration for TONBANKCARD Protocol
+#
+# Purpose:
+#   * Continuously watch the six runtime npm workspaces (sdk, api,
+#     backend/indexer, wallet-ui, mobile, dashboard) plus the protocol
+#     root and the GitHub Actions workflows for newer versions of pinned
+#     dependencies (see docs/security/DEPENDENCY_AUDIT.md §"Automated
+#     Updates").
+#   * Auto-open pull requests for security and routine patch/minor
+#     updates so that supply-chain compromises and unpatched CVEs surface
+#     as actionable PRs reviewable by a human (see issue #131 §3
+#     "Automated Updates").
+#   * Require manual review for any major version bump on the three
+#     production-critical packages (sdk, api, backend/indexer) where a
+#     breaking change must never land without explicit sign-off.
+#
+# References:
+#   * https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#   * issue #131 (D5 — Dependency Audit and Updates)
+version: 2
+
+updates:
+  # --- npm workspaces --------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/sdk"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+      - "package:sdk"
+    commit-message:
+      prefix: "chore(deps/sdk)"
+      include: "scope"
+    # The SDK is distributed to external merchants and runs in their
+    # production environments — major bumps MUST be reviewed manually.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  - package-ecosystem: "npm"
+    directory: "/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+      - "package:api"
+    commit-message:
+      prefix: "chore(deps/api)"
+      include: "scope"
+    # Production merchant API — major bumps require manual review.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  - package-ecosystem: "npm"
+    directory: "/backend/indexer"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+      - "package:indexer"
+    commit-message:
+      prefix: "chore(deps/indexer)"
+      include: "scope"
+    # Production read-only indexer — major bumps require manual review.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  - package-ecosystem: "npm"
+    directory: "/wallet-ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+      - "package:wallet-ui"
+    commit-message:
+      prefix: "chore(deps/wallet-ui)"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/mobile"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+      - "package:mobile"
+    commit-message:
+      prefix: "chore(deps/mobile)"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/dashboard"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+      - "package:dashboard"
+    commit-message:
+      prefix: "chore(deps/dashboard)"
+      include: "scope"
+
+  # --- GitHub Actions --------------------------------------------------
+  # Workflow actions are themselves a supply-chain surface: pin and
+  # review them on the same cadence as code dependencies.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "type:dependencies"
+      - "track:D"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"

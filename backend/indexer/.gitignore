@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json is tracked for reproducible installs (see docs/security/DEPENDENCY_AUDIT.md, issue #131)
 yarn.lock
 
 # Build output
