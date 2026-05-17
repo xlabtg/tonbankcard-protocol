@@ -794,6 +794,7 @@ tests/
 | **F7 Analytics — Endpoint Hardening** | AN-AH-1..AN-AH-7 backlog, R-AN-AH-1..R-AN-AH-5 guardrails (B3-gated) | `docs/analytics/ENDPOINT_HARDENING.md` |
 | **F7 Analytics — Testnet Integration** | Staging deployment manifest, IDOR drill (6 cases), AC-7 IDOR-protection bar | `docs/analytics/TESTNET_INTEGRATION.md` |
 | **F7 Analytics — Bug Bounty** | Analytics-specific bounty tiers (Critical), A5 PROGRAM_BRIEF wiring, B3-READY activation gate | `docs/analytics/BUG_BOUNTY.md` |
+| **D6 Toolchain — Acton Evaluation** | Explicit **NO ADOPTION** decision for Acton (Tolk-first) with companion **EXPERIMENTS ONLY** posture under `experiments/acton/`. Tact + FunC + TypeScript stack remains authoritative; production FunC stays 🔒 frozen per §G.5; recommendations for D1/D2/A3/B1/B2 (Issue #143) | `docs/tooling/ACTON_EVALUATION.md` |
 
 ---
 
@@ -1102,6 +1103,7 @@ This appendix defines the formal code freeze criteria for the security audit.
 | **TON SDK** | Latest stable | For deployment scripts |
 | **Node.js** | 18+ LTS | Test execution |
 | **TypeScript** | 5.x | Test compilation |
+| **Acton (Tolk)** | Evaluated, not adopted | Evaluation under D6 / Issue #143; see [`docs/tooling/ACTON_EVALUATION.md`](tooling/ACTON_EVALUATION.md). `experiments/acton/` is a sandbox-only companion and is NOT wired into CI or the deploy chain. |
 
 > ⚠️ **Note:** Exact compiler versions should be captured at deployment time and recorded in the audit report.
 

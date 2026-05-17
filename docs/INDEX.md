@@ -191,6 +191,14 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 
 ---
 
+## Toolchain Evaluations (D6)
+
+| Document | Description |
+|----------|-------------|
+| [Acton Toolchain Evaluation](tooling/ACTON_EVALUATION.md) | Explicit **NO ADOPTION** decision for the Acton TON toolchain (Tolk-first) with companion **EXPERIMENTS ONLY** posture under `experiments/acton/`. Pinned Acton release `v1.0.0` (2026-05-11), Tact + FunC + TypeScript stack remains authoritative, recommendations for D1/D2/A3/B1/B2 owners, 4 reconsideration triggers, cost estimates (~20–35 dev-days partial / 3–4 months full), companion sandbox `experiments/acton/` with toy Tolk harness modelling `contracts/payments/account-locks.fc` (Issue #143, AC-1..AC-7) |
+
+---
+
 ## Integrations
 
 | Document | Description |
