@@ -121,6 +121,31 @@ Goals (see [Issue #129 (D3)](https://github.com/xlabtg/tonbankcard-protocol/issu
 | Proposal must be registered | `Proposal not found` | `governance/TransparencyRegistry.tact` |
 | Outcome must be valid | `Invalid outcome` | `governance/TransparencyRegistry.tact` |
 
+### `CrossChainBridge.tact` — response error codes
+
+Bridge entry points (`InitiateOutboundIntent`, `CompleteOutboundIntent`,
+`ProcessInboundIntent`) do **not** abort the transaction on validation failure;
+instead they emit a structured `BridgeResponse` carrying a numeric
+`error_code`. This keeps replay-protection auditing deterministic and lets the
+off-chain relayer surface the precise failure reason to the originator
+(F3 / Issue #138). Codes are stable; consumers MUST map by numeric value.
+
+| Code | Symbol | Meaning |
+|---:|---|---|
+| `0` | `ERROR_BR_NONE` | Operation accepted (success path). |
+| `1` | `ERROR_BR_NOT_OWNER` | Sender does not own the source NFT (invariants I1, I2). |
+| `2` | `ERROR_BR_INVALID_AMOUNT` | Amount is zero or otherwise out of range. |
+| `3` | `ERROR_BR_INVALID_CHAIN` | Target chain ID is not in the supported set (`docs/bridge/SUPPORTED_CHAINS.md`). |
+| `4` | `ERROR_BR_INTENT_NOT_FOUND` | Intent ID is unknown (anti-replay state lookup miss). |
+| `5` | `ERROR_BR_INTENT_NOT_PENDING` | Intent is not in `PENDING` (already `COMPLETED` / `REFUNDED` / `EXPIRED`) — see replay-protection state machine in `docs/bridge/REPLAY_PROTECTION.md`. |
+| `6` | `ERROR_BR_NFT_NOT_REGISTERED` | Source NFT has not been seeded into the resolver. |
+| `7` | `ERROR_BR_NOT_AUTHORIZED` | Caller is neither the NFT owner nor the configured relayer / validator. |
+
+See `docs/bridge/REPLAY_PROTECTION.md` for the canonical-hash construction
+referenced by these checks and `docs/bridge/CIRCUIT_BREAKERS.md` for the
+auto-pause reason codes (`RC-*`) that may suppress acceptance even when the
+above codes would otherwise return `ERROR_BR_NONE`.
+
 ### Test-only seeding (deployer guards)
 
 Several contracts expose `Register*` receivers behind a `sender() == self.deployer`
