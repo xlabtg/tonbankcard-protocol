@@ -144,6 +144,21 @@ This index provides navigation across all Tonbankcard Protocol documentation.
 
 ---
 
+## Multi-Sig Cards (F5)
+
+| Document | Description |
+|----------|-------------|
+| [Specification](multisig/SPECIFICATION.md) | M-of-N threshold models (2-of-3 personal, 3-of-5 corporate, custom ≤10), signing ceremony, signer add/remove, threat catalogue T-MSC-1..T-MSC-7, hardening backlog MS-CH-1..MS-CH-6 |
+| [Wallet UX](multisig/WALLET_UX.md) | Create flow, pending approvals screen, one-tap sign/reject, signer management, guardian recovery and notifications hooks (AC-4 / AC-5) |
+| [Guardian Recovery](multisig/GUARDIAN_RECOVERY.md) | Guardian set composition (2-of-3 default), recovery state machine, 72 h cooldown (259200 s), off-chain enforcement, MS-CH-6 on-chain deferral (AC-6) |
+| [Notifications](multisig/NOTIFICATIONS.md) | MS-N01..MS-N08 notification catalogue, channels, scheduling, opt-in, privacy posture |
+| [Monitoring](multisig/MONITORING.md) | Alert catalogue MS-M01..MS-M18, pager severity matrix, data sources DS-1..DS-4, DR drills DR-1..DR-5 |
+| [Contract Hardening](multisig/CONTRACT_HARDENING.md) | Hardening backlog MS-CH-1..MS-CH-6 and CI guardrails R-MS-CH-1..R-MS-CH-5 (A2-gated) |
+| [Testnet Deployment](multisig/TESTNET_DEPLOYMENT.md) | Deployment plan, end-to-end multi-sig flow, error-path coverage for codes 1..9, AC-8 wallet-ui test bar (28) |
+| [Bug Bounty](multisig/BUG_BOUNTY.md) | Multi-sig-specific bounty tiers, severity uplifts, RC-BOUNTY-CRITICAL pause, A2-READY activation gate |
+
+---
+
 ## Integrations
 
 | Document | Description |

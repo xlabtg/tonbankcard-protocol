@@ -175,6 +175,37 @@ shape and §7.4 for the registry mirror, and
 backlog item that will introduce `ERROR_RP_PAUSED = 10` once
 pause/resume lands.
 
+### `MultiSigCard.tact` — response error codes
+
+Multi-sig entry points (`CreateProposal`, `ApproveProposal`, `RejectProposal`,
+`SetMultiSigConfig`) follow the same response-rather-than-abort discipline as
+the bridge and recurring payments: every validation failure emits a structured
+`MultiSigResponse` carrying a numeric `error_code`. This keeps the proposal
+state machine (`SPECIFICATION.md` §5) auditable and lets the wallet surface
+the precise failure to the signer (F5 / Issue #140). Codes are stable;
+consumers MUST map by numeric value.
+
+| Code | Symbol | Meaning |
+|---:|---|---|
+| `0` | `ERROR_MS_NONE` | Operation accepted (success path). |
+| `1` | `ERROR_MS_NOT_OWNER` | `SetMultiSigConfig` sender does not own the target NFT card (invariants I1, I2). |
+| `2` | `ERROR_MS_NOT_SIGNER` | `CreateProposal` / `ApproveProposal` / `RejectProposal` sender is not in the configured signer set. |
+| `3` | `ERROR_MS_INVALID_THRESHOLD` | `SetMultiSigConfig` with `threshold == 0` or `threshold > signers_count`, or signer set exceeds `MAX_SIGNERS = 3` (raised to ≤10 once MS-CH-4 lands). |
+| `4` | `ERROR_MS_PROPOSAL_NOT_FOUND` | `ApproveProposal` / `RejectProposal` references an unknown proposal. |
+| `5` | `ERROR_MS_ALREADY_APPROVED` | Signer has already cast an approval for the referenced proposal. |
+| `6` | `ERROR_MS_PROPOSAL_NOT_PENDING` | Operation against a proposal already in `PROPOSAL_APPROVED` / `PROPOSAL_REJECTED` / `PROPOSAL_EXECUTED`. |
+| `7` | `ERROR_MS_NFT_NOT_REGISTERED` | `SetMultiSigConfig` for an NFT that the protocol has not yet seeded into `nft_owners`. |
+| `8` | `ERROR_MS_NO_CONFIG` | `CreateProposal` against an NFT card without an active multi-sig configuration. |
+| `9` | `ERROR_MS_INVALID_AMOUNT` | `CreateProposal` with `amount == 0`. |
+
+See `docs/multisig/SPECIFICATION.md` §7.2 for the response envelope
+(`MultiSigResponse`) shape and §5 for the proposal state machine,
+`docs/multisig/WALLET_UX.md` §§3–5 for the wallet-facing mapping of these
+codes to user messages, and `docs/multisig/CONTRACT_HARDENING.md` for the
+A2-gated MS-CH-1..MS-CH-6 backlog (notably MS-CH-4, which raises the
+`MAX_SIGNERS` cap from 3 to 10 once corporate 3-of-5 / custom presets land
+on-chain).
+
 ### Test-only seeding (deployer guards)
 
 Several contracts expose `Register*` receivers behind a `sender() == self.deployer`
