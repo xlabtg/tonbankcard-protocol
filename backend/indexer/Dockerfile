@@ -32,11 +32,12 @@ RUN npm install --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src
-# IndexerDatabase reads schema.sql via path.join(__dirname, 'schema.sql'),
-# which after compilation resolves to dist/db/schema.sql. tsc does not copy
-# non-TypeScript assets, so we stage it manually.
+# IndexerDatabase loads migration SQL files via path.join(__dirname,
+# 'migrations'), which after compilation resolves to dist/db/migrations/.
+# tsc does not copy non-TypeScript assets, so we stage them manually.
 RUN npx tsc \
-    && cp src/db/schema.sql dist/db/schema.sql
+    && mkdir -p dist/db/migrations \
+    && cp -R src/db/migrations/. dist/db/migrations/
 
 # Strip dev dependencies for the runtime image. better-sqlite3's prebuilt
 # binary is kept under node_modules and remains usable.

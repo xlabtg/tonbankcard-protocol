@@ -162,7 +162,7 @@ The indexer operates with **zero trust assumptions**:
 
 **Technology**: SQLite with WAL mode
 
-**Schema**: See `src/db/schema.sql`
+**Schema**: See `src/db/migrations/` (versioned migrations) and `docs/database-schema.md` (table reference)
 
 **Key Tables**:
 
