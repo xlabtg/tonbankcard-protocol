@@ -220,8 +220,8 @@ The following components are **explicitly excluded** from the audit:
   - Reason: Not implemented yet
 - ❌ **DAO Governance**
   - Reason: Not implemented yet
-- ❌ **Multi-Sig Cards**
-  - Reason: Not implemented yet
+- ❌ **Multi-Sig Cards (production-hardened)** — `contracts/MultiSigCard.tact`
+  - Reason: Issue #140 (F5) documents production-readiness requirements (specification, wallet UX, guardian recovery, notifications, monitoring, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/multisig/` for the full F5 specification.
 - ❌ **Recurring Payments (production-hardened)** — `contracts/RecurringPayments.tact`
   - Reason: Issue #139 (F4) documents production-readiness requirements (specification, dashboard, wallet UX, notifications, monitoring, hardening). Contract logic changes are **gated by A2 audit verdict=READY** and will land in a follow-up PR. See `docs/recurring-payments/` for the full F4 specification.
 - ❌ **Cross-Chain Bridge (production-hardened)** — `contracts/CrossChainBridge.tact`
