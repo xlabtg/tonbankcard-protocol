@@ -444,7 +444,7 @@ We welcome contributions that align with our non-custodial, decentralized princi
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Copyright (c) 2025 Anton Poroshin. All rights reserved. (LICENSE).
 
 ## Contact
 
