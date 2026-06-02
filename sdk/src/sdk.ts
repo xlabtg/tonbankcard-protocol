@@ -19,6 +19,7 @@ import {
   AccountInfo,
   AccountState,
   TransactionVerification,
+  SettlementMatchCriteria,
 } from './types';
 import { generateInvoiceId, isValidTonAddress } from './utils';
 
@@ -35,6 +36,13 @@ import { generateInvoiceId, isValidTonAddress } from './utils';
  * All payments require explicit user wallet consent.
  */
 export class TonbankcardSDK {
+  /**
+   * Tact op code (CRC32 of the message type name) for the `MerchantPayment`
+   * event emitted by the Payment Hub. Must stay in sync with
+   * `MerchantPaymentHub.tact` and `backend/indexer/src/parsers/event-parser.ts`.
+   */
+  private static readonly MERCHANT_PAYMENT_OP = 0x3b4c2365;
+
   private config: TonbankcardConfig;
   private client: TonClient;
 
@@ -208,10 +216,22 @@ export class TonbankcardSDK {
    * This is the AUTHORITATIVE verification method.
    * Only on-chain settlement events are trustworthy.
    *
-   * @param txHash - Transaction hash to verify
+   * SECURITY: `matchesInvoice` is `true` ONLY when the on-chain payment's
+   * merchant (recipient) NFT, amount, and — when supplied — payload hash all
+   * equal the expected invoice. To obtain a meaningful `matchesInvoice`, pass
+   * the target invoice (or its canonical fields) as `expected`. When `expected`
+   * is omitted, the on-chain payment cannot be checked against any invoice, so
+   * `matchesInvoice` is reported as `false`.
+   *
+   * @param txHash - Transaction hash to verify, formatted as "<lt>:<hash>"
+   * @param expected - Target invoice (or its canonical fields) to match the
+   *   on-chain payment against. An {@link Invoice} can be passed directly.
    * @returns Verification result
    */
-  async verifySettlement(txHash: string): Promise<TransactionVerification> {
+  async verifySettlement(
+    txHash: string,
+    expected?: SettlementMatchCriteria
+  ): Promise<TransactionVerification> {
     try {
       // txHash format: "<lt>:<hash>" — logical time and hash separated by colon
       const separatorIndex = txHash.indexOf(':');
@@ -250,13 +270,45 @@ export class TonbankcardSDK {
       const confirmations = masterchain.latestSeqno - Number(tx.lt);
 
       // Verify transaction success (not aborted)
-      const isValid = tx.description.type === 'generic' && !tx.description.aborted;
+      const isValid =
+        tx.description.type === 'generic' && !tx.description.aborted;
+
+      // Compare the on-chain payment against the expected invoice. Without
+      // expected criteria we cannot assert a match, so report `false` rather
+      // than blindly trusting the transaction.
+      let matchesInvoice = false;
+      let matchError: string | undefined;
+
+      if (!expected) {
+        matchError =
+          'No invoice provided; matchesInvoice cannot be verified. ' +
+          'Pass the target invoice to verifySettlement to enable matching.';
+      } else {
+        const payment = this.extractMerchantPayment(tx);
+        if (!payment) {
+          matchError = 'No MerchantPayment event found in transaction';
+        } else {
+          const merchantMatches = payment.merchantNft.equals(
+            expected.merchantNft
+          );
+          const amountMatches = payment.amountTbc === expected.amountTbc;
+          const payloadMatches =
+            expected.payloadHash === undefined ||
+            payment.payloadHash === expected.payloadHash;
+
+          matchesInvoice = merchantMatches && amountMatches && payloadMatches;
+          if (!matchesInvoice) {
+            matchError = 'On-chain payment does not match the expected invoice';
+          }
+        }
+      }
 
       return {
         isValid,
         txHash,
         confirmations,
-        matchesInvoice: true, // Additional verification can be added
+        matchesInvoice,
+        ...(matchError ? { error: matchError } : {}),
       };
     } catch (error) {
       return {
@@ -267,6 +319,66 @@ export class TonbankcardSDK {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /**
+   * Extract the `MerchantPayment` event emitted by the Payment Hub from a
+   * transaction's external-out messages.
+   *
+   * Tact's `emit()` produces an external-out message whose body cell starts
+   * with the 32-bit Tact op code followed by the serialised event fields. The
+   * `MerchantPayment` layout (see `MerchantPaymentHub.tact` and
+   * `backend/indexer/src/parsers/event-parser.ts`) is:
+   *
+   *   uint32         op = 0x3b4c2365
+   *   MsgAddressInt  payer_nft
+   *   MsgAddressInt  merchant_nft
+   *   coins          amount_tbc
+   *   int257         payload_hash
+   *   uint32         timestamp
+   *
+   * @param tx - Parsed transaction (from `@ton/ton` `getTransaction`)
+   * @returns The merchant NFT, amount, and payload hash, or `null` if no
+   *   `MerchantPayment` event is present.
+   */
+  private extractMerchantPayment(
+    tx: any
+  ): { merchantNft: Address; amountTbc: bigint; payloadHash: bigint } | null {
+    const outMessages = tx?.outMessages;
+    if (!outMessages || typeof outMessages.values !== 'function') {
+      return null;
+    }
+
+    for (const message of outMessages.values()) {
+      // emit() sends external-out messages (destination = addr_none)
+      if (message?.info?.type !== 'external-out' || !message.body) {
+        continue;
+      }
+
+      try {
+        const slice = message.body.beginParse();
+        if (slice.remainingBits < 32) {
+          continue;
+        }
+
+        const op = slice.loadUint(32);
+        if (op !== TonbankcardSDK.MERCHANT_PAYMENT_OP) {
+          continue;
+        }
+
+        slice.loadAddress(); // payer_nft (not needed for invoice matching)
+        const merchantNft = slice.loadAddress();
+        const amountTbc = slice.loadCoins();
+        const payloadHash = slice.loadIntBig(257);
+
+        return { merchantNft, amountTbc, payloadHash };
+      } catch {
+        // Malformed body — skip and keep looking for a valid event
+        continue;
+      }
+    }
+
+    return null;
   }
 
   /**
