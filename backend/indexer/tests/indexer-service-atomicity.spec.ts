@@ -85,8 +85,11 @@ function makeService(db: IndexerDatabase, events: IndexedEvent[]) {
     transactions: [],
   });
 
+  // Routing keys off the real on-chain account (in_msg.destination), not a
+  // synthesized field (INDEXER-H4), so the stubbed transaction mirrors the real
+  // toncenter shape.
   service.fetchContractTransactions = async () => [
-    { destination: PAYMENT_HUB, hash: 'tx-hash' },
+    { in_msg: { destination: PAYMENT_HUB }, hash: 'tx-hash' },
   ];
 
   service.parser.parseTransaction = () => events;

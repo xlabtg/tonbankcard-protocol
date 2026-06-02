@@ -159,20 +159,33 @@ describe('EventParser', () => {
   const parser = new EventParser();
   const CONTRACT_ADDR = ADDR_FROM.toString();
 
+  // Block attribution and the event timestamp are now supplied explicitly by
+  // the caller (INDEXER-H4). These tests derive them from the synthetic
+  // transaction's `block_number`/`utime` metadata so the existing assertions
+  // about per-event blockNumber/timestamp still describe the contract: the
+  // parser stamps events with exactly the values it is handed.
+  const parse = (tx: any, contractAddress: string = CONTRACT_ADDR) =>
+    parser.parseTransaction(
+      tx,
+      contractAddress,
+      tx?.block_number ?? 0,
+      tx?.utime ?? 0
+    );
+
   // -------------------------------------------------------------------------
   describe('parseTransaction – empty / invalid input', () => {
     it('returns empty array for null transaction', () => {
-      expect(parser.parseTransaction(null, CONTRACT_ADDR)).toEqual([]);
+      expect(parse(null, CONTRACT_ADDR)).toEqual([]);
     });
 
     it('returns empty array for transaction with no out_msgs', () => {
       const tx = makeTransaction([]);
-      expect(parser.parseTransaction(tx, CONTRACT_ADDR)).toEqual([]);
+      expect(parse(tx, CONTRACT_ADDR)).toEqual([]);
     });
 
     it('returns empty array when out_msg has no body', () => {
       const tx = makeTransaction([{ destination: '', source: CONTRACT_ADDR }]);
-      expect(parser.parseTransaction(tx, CONTRACT_ADDR)).toEqual([]);
+      expect(parse(tx, CONTRACT_ADDR)).toEqual([]);
     });
 
     it('returns empty array for unknown op code', () => {
@@ -180,13 +193,13 @@ describe('EventParser', () => {
       const cell = beginCell().storeUint(0xdeadbeef, 32).endCell();
       const msg = makeExternalOutMsg(cell.toBoc().toString('base64'));
       const tx = makeTransaction([msg]);
-      expect(parser.parseTransaction(tx, CONTRACT_ADDR)).toEqual([]);
+      expect(parse(tx, CONTRACT_ADDR)).toEqual([]);
     });
 
     it('returns empty array for malformed base64 body', () => {
       const msg = { destination: '', source: CONTRACT_ADDR, msg_data: { body: 'not-valid-base64!!!' } };
       const tx = makeTransaction([msg]);
-      expect(parser.parseTransaction(tx, CONTRACT_ADDR)).toEqual([]);
+      expect(parse(tx, CONTRACT_ADDR)).toEqual([]);
     });
 
     it('returns empty array for body that is too short (< 32 bits)', () => {
@@ -194,7 +207,7 @@ describe('EventParser', () => {
       const cell = beginCell().storeUint(0xff, 8).endCell();
       const msg = makeExternalOutMsg(cell.toBoc().toString('base64'));
       const tx = makeTransaction([msg]);
-      expect(parser.parseTransaction(tx, CONTRACT_ADDR)).toEqual([]);
+      expect(parse(tx, CONTRACT_ADDR)).toEqual([]);
     });
   });
 
@@ -209,7 +222,7 @@ describe('EventParser', () => {
       const msg = makeExternalOutMsg(bodyBoc);
       const tx = makeTransaction([msg], 42, 'hash_transfer', 1700000000);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
 
       expect(events).toHaveLength(1);
       const ev = events[0];
@@ -235,7 +248,7 @@ describe('EventParser', () => {
 
       // Internal messages with InternalTransferEvent op are not treated as
       // emitted events – they would be treated as NFT/ownership ops only
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(0);
     });
 
@@ -246,7 +259,7 @@ describe('EventParser', () => {
         makeExternalOutMsg(bodyBoc),
       ]);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(2);
       expect(events[0].logIndex).toBe(0);
       expect(events[1].logIndex).toBe(1);
@@ -260,7 +273,7 @@ describe('EventParser', () => {
       const msg = makeExternalOutMsg(bodyBoc);
       const tx = makeTransaction([msg], 10, 'hash_state', 1700000001);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(1);
       const ev = events[0];
       expect(ev.eventType).toBe('AccountStateChanged');
@@ -277,7 +290,7 @@ describe('EventParser', () => {
       const msg = makeExternalOutMsg(bodyBoc);
       const tx = makeTransaction([msg]);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(1);
       const ev = events[0];
       expect(ev.eventType).toBe('AccountStateChanged');
@@ -289,7 +302,7 @@ describe('EventParser', () => {
 
     it('parses COLLATERAL_LOCKED -> CLOSED state change', () => {
       const bodyBoc = buildAccountStateChangedBody(ADDR_FROM, 2, 3, 1700000003);
-      const events = parser.parseTransaction(makeTransaction([makeExternalOutMsg(bodyBoc)]), CONTRACT_ADDR);
+      const events = parse(makeTransaction([makeExternalOutMsg(bodyBoc)]), CONTRACT_ADDR);
       expect(events[0].eventType).toBe('AccountStateChanged');
       if (events[0].eventType === 'AccountStateChanged') {
         expect(events[0].oldState).toBe(AccountState.COLLATERAL_LOCKED);
@@ -307,7 +320,7 @@ describe('EventParser', () => {
       const msg = makeExternalOutMsg(bodyBoc);
       const tx = makeTransaction([msg], 55, 'hash_merchant', 1700000010);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(1);
       const ev = events[0];
       expect(ev.eventType).toBe('MerchantPayment');
@@ -323,7 +336,7 @@ describe('EventParser', () => {
 
     it('handles zero payload hash', () => {
       const bodyBoc = buildMerchantPaymentBody(ADDR_FROM, ADDR_TO, 1000n, 0n, 0);
-      const events = parser.parseTransaction(makeTransaction([makeExternalOutMsg(bodyBoc)]), CONTRACT_ADDR);
+      const events = parse(makeTransaction([makeExternalOutMsg(bodyBoc)]), CONTRACT_ADDR);
       expect(events).toHaveLength(1);
       expect(events[0].eventType).toBe('MerchantPayment');
     });
@@ -339,7 +352,7 @@ describe('EventParser', () => {
       const msg = makeInternalMsg(nftSource, newOwnerAddr, bodyBoc);
       const tx = makeTransaction([msg], 77, 'hash_nft', 1700000020);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(1);
       const ev = events[0];
       expect(ev.eventType).toBe('NFTOwnershipChange');
@@ -363,7 +376,7 @@ describe('EventParser', () => {
       const msg = makeInternalMsg(ADDR_TO.toString(), ADDR_FROM.toString(), bodyBoc);
       const tx = makeTransaction([msg]);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(1);
       const ev = events[0];
       expect(ev.eventType).toBe('NFTOwnershipChange');
@@ -386,7 +399,7 @@ describe('EventParser', () => {
         makeExternalOutMsg(merchantBoc),
       ]);
 
-      const events = parser.parseTransaction(tx, CONTRACT_ADDR);
+      const events = parse(tx, CONTRACT_ADDR);
       expect(events).toHaveLength(3);
 
       const types = events.map((e) => e.eventType);

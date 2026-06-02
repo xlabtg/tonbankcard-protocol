@@ -61,6 +61,9 @@ function makeStubDb() {
     },
     markBlocksConfirmed: () => {},
     handleReorg: () => {},
+    // syncBlocks persists the chain head via setLatestChainSeqno (INDEXER-H1);
+    // the stub must expose it so the sync loop runs to completion here.
+    setLatestChainSeqno: () => {},
   };
 }
 
