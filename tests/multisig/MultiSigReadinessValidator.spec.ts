@@ -614,23 +614,25 @@ describe('checkContractEvidence', () => {
         expect(failures(checkContractEvidence(tampered))).toContain('CT.max-signers');
     });
 
-    it('flags landing of MS-CH-1 proposalKey hash-combinator without doc update', () => {
-        // Simulate MS-CH-1 landing by replacing the integer-addition combinator
-        // in proposalKey with a hash-based combinator. The validator must detect
-        // the divergence and demand a paired SPECIFICATION.md §3.3 update.
+    it('flags a regression of proposalKey back to the broken integer-addition combinator', () => {
+        // MS-CH-1 has landed: proposalKey now derives its key from a packed-cell
+        // hash. Simulate a regression that reintroduces the old
+        // `sha256(nft_address.asSlice()) + proposal_id` combinator (which reverts
+        // on-chain with exit 9 and is collision-prone). The validator must trip
+        // and demand a paired SPECIFICATION.md §3.3 / CONTRACT_HARDENING.md revert.
         const tampered = realContract.replace(
-            /sha256\(nft_address\.asSlice\(\)\)\s*\+\s*proposal_id;/g,
-            'sha256(beginCell().storeSlice(nft_address.asSlice()).storeUint(proposal_id, 64).endCell().asSlice());',
+            /fun proposalKey[\s\S]*?\n    \}/,
+            'fun proposalKey(nft_address: Address, proposal_id: Int): Int {\n        return sha256(nft_address.asSlice()) + proposal_id;\n    }',
         );
-        expect(failures(checkContractEvidence(tampered))).toContain('CT.proposalKey.addition');
+        expect(failures(checkContractEvidence(tampered))).toContain('CT.proposalKey.hardened');
     });
 
-    it('flags landing of MS-CH-1 approvalKey hash-combinator without doc update', () => {
+    it('flags a regression of approvalKey back to the broken integer-addition combinator', () => {
         const tampered = realContract.replace(
-            /sha256\(nft_address\.asSlice\(\)\)\s*\+\s*proposal_id\s*\*\s*1000\s*\+\s*sha256\(signer\.asSlice\(\)\)/g,
-            'sha256(beginCell().storeSlice(nft_address.asSlice()).storeUint(proposal_id, 64).storeSlice(signer.asSlice()).endCell().asSlice())',
+            /fun approvalKey[\s\S]*?\n    \}/,
+            'fun approvalKey(nft_address: Address, proposal_id: Int, signer: Address): Int {\n        return sha256(nft_address.asSlice()) + proposal_id * 1000 + sha256(signer.asSlice());\n    }',
         );
-        expect(failures(checkContractEvidence(tampered))).toContain('CT.approvalKey.addition');
+        expect(failures(checkContractEvidence(tampered))).toContain('CT.approvalKey.hardened');
     });
 
     it('flags landing of MS-CH-2 (removal of RegisterNFTOwnerMultiSig) without doc update', () => {

@@ -745,23 +745,29 @@ export function checkContractEvidence(content: string | null): CheckResult[] {
         detail: 'SPECIFICATION.md §4 / MS-CH-4 contract surface',
     });
 
-    // Pre-MS-CH-1 marker: proposalKey still uses integer addition.
-    // If a PR replaces the combinator without ALSO updating §3.3 of
-    // SPECIFICATION.md and CONTRACT_HARDENING.md §3 MS-CH-1, this trips.
+    // MS-CH-1 landed: proposalKey must derive its storage key from the
+    // representation hash of a cell packing the NFT address and proposal id,
+    // NOT from the old `sha256(nft_address.asSlice()) + proposal_id` addition
+    // (which both reverted on-chain — sha256 over a 267-bit Address slice is
+    // not byte-aligned, exit 9 — and was collision-prone). A regression back
+    // to the addition form trips this, demanding a paired §3.3 /
+    // CONTRACT_HARDENING.md §3 MS-CH-1 revert as well.
     results.push({
-        id: 'CT.proposalKey.addition',
-        name: 'MultiSigCard.tact proposalKey still uses integer addition (MS-CH-1 pending)',
-        passed: /fun proposalKey[\s\S]{0,200}sha256\(nft_address\.asSlice\(\)\)\s*\+\s*proposal_id/.test(content),
-        detail: 'Confirms MS-CH-1 has not landed yet — see CONTRACT_HARDENING.md §3',
+        id: 'CT.proposalKey.hardened',
+        name: 'MultiSigCard.tact proposalKey uses a packed-cell hash (MS-CH-1 landed)',
+        // Tempered-greedy `(?:(?!\bfun )[\s\S])*?` keeps the match inside the
+        // proposalKey body so it cannot bleed into the approvalKey function.
+        passed: /fun proposalKey\b(?:(?!\bfun )[\s\S])*?beginCell\(\)(?:(?!\bfun )[\s\S])*?storeAddress\(nft_address\)(?:(?!\bfun )[\s\S])*?storeUint\(proposal_id,\s*64\)(?:(?!\bfun )[\s\S])*?endCell\(\)\s*\.hash\(\)/.test(content),
+        detail: 'MS-CH-1 closed on-chain — see CONTRACT_HARDENING.md §3 and SPECIFICATION.md §3.3',
     });
 
-    // Pre-MS-CH-1 marker: approvalKey still uses integer addition with the
-    // current scaling factor of 1000.
+    // MS-CH-1 landed: approvalKey must likewise pack NFT address, proposal id
+    // AND signer into a single cell and hash it, binding all three fields.
     results.push({
-        id: 'CT.approvalKey.addition',
-        name: 'MultiSigCard.tact approvalKey still uses integer addition (MS-CH-1 pending)',
-        passed: /fun approvalKey[\s\S]{0,200}sha256\(nft_address\.asSlice\(\)\)\s*\+\s*proposal_id\s*\*\s*1000\s*\+\s*sha256\(signer\.asSlice\(\)\)/.test(content),
-        detail: 'Confirms MS-CH-1 has not landed yet — see CONTRACT_HARDENING.md §3',
+        id: 'CT.approvalKey.hardened',
+        name: 'MultiSigCard.tact approvalKey uses a packed-cell hash (MS-CH-1 landed)',
+        passed: /fun approvalKey\b(?:(?!\bfun )[\s\S])*?beginCell\(\)(?:(?!\bfun )[\s\S])*?storeAddress\(nft_address\)(?:(?!\bfun )[\s\S])*?storeUint\(proposal_id,\s*64\)(?:(?!\bfun )[\s\S])*?storeAddress\(signer\)(?:(?!\bfun )[\s\S])*?endCell\(\)\s*\.hash\(\)/.test(content),
+        detail: 'MS-CH-1 closed on-chain — see CONTRACT_HARDENING.md §3 and SPECIFICATION.md §3.3',
     });
 
     // Pre-MS-CH-2 marker: test-only handler still present (lines 569–573).
