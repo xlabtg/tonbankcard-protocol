@@ -382,7 +382,15 @@ contract CrossChainBridge {
     }
 
     fun intentKey(nft_address: Address, intent_id: Int): Int {
-        return sha256(nft_address.asSlice()) + intent_id;
+        // Collision-resistant composite key: hash of the serialized (nft_address, intent_id)
+        // tuple. Integer addition is not injective, so distinct (address, id) pairs could
+        // collide to the same sum; hashing the serialized cell keeps the pairs distinct
+        // (audit CONTRACTS-H1).
+        return beginCell()
+            .storeAddress(nft_address)
+            .storeInt(intent_id, 257)
+            .endCell()
+            .hash();
     }
 
     fun sendResponse(to: Address, success: Bool, error_code: Int, nft_address: Address, intent_id: Int) {
