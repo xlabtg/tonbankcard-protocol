@@ -27,11 +27,13 @@ interface AccountHistoryResult {
 }
 
 interface AccountHistoryCache {
+  nftAddress: string;
   result: AccountHistoryResult;
   cachedAt: number;
 }
 
 const CACHE_TTL_MS = 5000; // 5 seconds
+export const ACCOUNT_HISTORY_CACHE_MAX_ENTRIES = 1024;
 
 export class IndexerDatabase {
   private db: Database.Database;
@@ -476,6 +478,9 @@ export class IndexerDatabase {
          ON CONFLICT(nft_address) DO UPDATE SET current_owner = ?, last_updated = ?`
       )
       .run(event.nftAddress, event.newOwner, now, event.newOwner, now);
+
+    // Invalidate history cache for affected account
+    this.invalidateHistoryCache(event.nftAddress);
   }
 
   /**
@@ -515,8 +520,14 @@ export class IndexerDatabase {
     const cacheKey = `${nftAddress}:${limit}:${offset}:${JSON.stringify(before ?? '')}`;
     const now = Date.now();
     const cached = this.historyCache.get(cacheKey);
-    if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
-      return cached.result;
+    if (cached) {
+      if (now - cached.cachedAt < CACHE_TTL_MS) {
+        this.historyCache.delete(cacheKey);
+        this.historyCache.set(cacheKey, cached);
+        return cached.result;
+      }
+
+      this.historyCache.delete(cacheKey);
     }
 
     // Build UNION ALL query: each sub-query selects from one table with a common shape.
@@ -637,8 +648,21 @@ export class IndexerDatabase {
     });
 
     const result: AccountHistoryResult = { events, totalCount };
-    this.historyCache.set(cacheKey, { result, cachedAt: now });
+    this.setHistoryCacheEntry(cacheKey, { nftAddress, result, cachedAt: now });
     return result;
+  }
+
+  private setHistoryCacheEntry(cacheKey: string, entry: AccountHistoryCache): void {
+    this.historyCache.delete(cacheKey);
+    this.historyCache.set(cacheKey, entry);
+
+    while (this.historyCache.size > ACCOUNT_HISTORY_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.historyCache.keys().next().value;
+      if (oldestKey === undefined) {
+        break;
+      }
+      this.historyCache.delete(oldestKey);
+    }
   }
 
   /**
@@ -646,8 +670,8 @@ export class IndexerDatabase {
    * Called internally when new events are inserted for that account.
    */
   private invalidateHistoryCache(nftAddress: string): void {
-    for (const key of this.historyCache.keys()) {
-      if (key.startsWith(`${nftAddress}:`)) {
+    for (const [key, entry] of this.historyCache.entries()) {
+      if (entry.nftAddress === nftAddress) {
         this.historyCache.delete(key);
       }
     }

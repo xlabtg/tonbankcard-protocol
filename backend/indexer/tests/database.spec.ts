@@ -3,8 +3,12 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
-import { IndexerDatabase } from '../src/db/database';
+import { ACCOUNT_HISTORY_CACHE_MAX_ENTRIES, IndexerDatabase } from '../src/db/database';
 import { AccountState } from '../src/types/events';
+
+function historyCacheSize(db: IndexerDatabase): number {
+  return (db as unknown as { historyCache: Map<string, unknown> }).historyCache.size;
+}
 
 describe('IndexerDatabase', () => {
   let db: IndexerDatabase;
@@ -439,6 +443,14 @@ describe('IndexerDatabase', () => {
       expect(second).toBe(first); // same object reference from cache
     });
 
+    it('should bound the history cache even with many distinct pagination keys', () => {
+      for (let offset = 0; offset < ACCOUNT_HISTORY_CACHE_MAX_ENTRIES + 76; offset++) {
+        db.getAccountHistory('EQA...', 10, offset);
+      }
+
+      expect(historyCacheSize(db)).toBeLessThanOrEqual(ACCOUNT_HISTORY_CACHE_MAX_ENTRIES);
+    });
+
     it('should invalidate cache after new event insertion', () => {
       const before = db.getAccountHistory('EQA...', 10, 0);
 
@@ -457,6 +469,36 @@ describe('IndexerDatabase', () => {
       const after = db.getAccountHistory('EQA...', 10, 0);
       expect(after).not.toBe(before); // different object - cache was invalidated
       expect(after.totalCount).toBeGreaterThan(before.totalCount);
+    });
+
+    it('should invalidate cache after NFT ownership change insertion', () => {
+      const before = db.getAccountHistory('EQA...', 10, 0);
+
+      db.insertNFTOwnershipChange({
+        blockNumber: 2,
+        transactionHash: 'tx_owner_new',
+        logIndex: 1,
+        timestamp: 2000,
+        nftAddress: 'EQA...',
+        collectionAddress: 'EQC...',
+        oldOwner: null,
+        newOwner: 'OWNER_NEW',
+      });
+
+      const after = db.getAccountHistory('EQA...', 10, 0);
+      expect(after).not.toBe(before);
+    });
+
+    it('should invalidate warmed history cache after reorg removes cached events', () => {
+      const before = db.getAccountHistory('EQA...', 10, 0);
+      expect(before.totalCount).toBe(2);
+
+      db.handleReorg(2);
+
+      const after = db.getAccountHistory('EQA...', 10, 0);
+      expect(after).not.toBe(before);
+      expect(after.totalCount).toBe(1);
+      expect(after.events.map((event) => event.transactionHash)).toEqual(['tx1']);
     });
 
     it('should get payment by payload hash', () => {
