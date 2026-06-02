@@ -29,6 +29,11 @@ import {
   SIGNATURE_HEADER,
   signWebhook,
 } from '../utils/webhookSignature';
+import {
+  assertSafeWebhookUrl,
+  SsrfError,
+  type SsrfGuardOptions,
+} from '../utils/ssrfGuard';
 
 /** Registered webhook endpoint. */
 export interface WebhookEndpoint {
@@ -64,6 +69,8 @@ export interface DeliverOptions {
   timestamp?: number;
   /** Request timeout in milliseconds. Default 5_000. */
   timeoutMs?: number;
+  /** SSRF guard options forwarded to assertSafeWebhookUrl (used in tests). */
+  ssrfGuard?: SsrfGuardOptions;
 }
 
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -77,8 +84,16 @@ export class WebhookService {
    *
    * Both arguments come from the merchant (URL via dashboard, secret
    * generated server-side and shown once).
+   *
+   * Throws {@link SsrfError} when the URL fails SSRF validation.
    */
-  register(merchantNft: string, url: string, secret: string): WebhookEndpoint {
+  async register(
+    merchantNft: string,
+    url: string,
+    secret: string,
+    ssrfGuard?: SsrfGuardOptions,
+  ): Promise<WebhookEndpoint> {
+    await assertSafeWebhookUrl(url, ssrfGuard);
     const endpointId = `wh_${crypto.randomBytes(8).toString('hex')}`;
     const endpoint: WebhookEndpoint = {
       endpoint_id: endpointId,
@@ -140,6 +155,19 @@ export class WebhookService {
       };
     }
 
+    // Re-validate at delivery time to shrink the DNS-rebinding window and
+    // catch any redirect that would pivot the request to an internal target.
+    try {
+      await assertSafeWebhookUrl(endpoint.url, options.ssrfGuard);
+    } catch (err) {
+      return {
+        ok: false,
+        status: 0,
+        durationMs: 0,
+        error: err instanceof SsrfError ? `SSRF guard: ${err.message}` : String(err),
+      };
+    }
+
     const rawBody = JSON.stringify(payload);
     const signatureHeader = signWebhook(endpoint.secret, rawBody, options.timestamp);
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -157,6 +185,9 @@ export class WebhookService {
         },
         body: rawBody,
         signal: controller.signal,
+        // Prevent redirect-based bypass: an external HTTPS host could 302 to
+        // an internal target if we followed redirects.
+        redirect: 'error',
       });
 
       return {

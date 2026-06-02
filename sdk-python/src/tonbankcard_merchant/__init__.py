@@ -48,12 +48,16 @@ from .models import (
 )
 from .webhooks import (
     DEFAULT_SIGNATURE_HEADER,
+    DEFAULT_TOLERANCE_SECONDS,
+    SIGNATURE_VERSION,
     compute_signature,
     verify_webhook,
 )
 
 __all__ = [
     "DEFAULT_SIGNATURE_HEADER",
+    "DEFAULT_TOLERANCE_SECONDS",
+    "SIGNATURE_VERSION",
     "ApiError",
     "AsyncMerchantClient",
     "AuthenticationError",
@@ -77,4 +81,4 @@ __all__ = [
     "verify_webhook",
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
