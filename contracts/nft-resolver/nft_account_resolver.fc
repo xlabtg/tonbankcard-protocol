@@ -2,6 +2,21 @@
 ;; Purpose: Links NFT cards to owners and validates NFT-based accounts
 ;; Security: Stateless, read-only, no fund custody
 ;; Standard: TEP-62 compliant
+;;
+;; ============================================================================
+;; STATUS: NON-PRODUCTION REFERENCE STUB — NOT IN THE DEPLOYABLE SET
+;; ============================================================================
+;; Audit finding CONTRACTS-H3 (#260) documents that on-chain TEP-62 owner
+;; resolution is an asynchronous cross-contract flow on TON and cannot be done
+;; from a synchronous get method. The production NFT ownership authority is the
+;; async resolver consumed by the Tact contracts (see ProposalRegistry, #248).
+;;
+;; This FunC file is kept ONLY as audit reference and is excluded from every
+;; deployable manifest (scripts/deploy/deployable-contracts.ts). As a defence in
+;; depth, resolve_owner_with_validation below refuses to mark an empty/addr_none
+;; owner as valid, so no consumer can obtain a dummy owner that passes an
+;; ownership-based access-control check.
+;; ============================================================================
 
 #include "stdlib.fc";
 
@@ -62,8 +77,14 @@ int is_whitelisted_collection?(slice collection_addr) inline {
     ;; Validate collection
     int is_whitelisted = is_whitelisted_collection?(collection_addr);
 
-    ;; Validate NFT is initialized (not burned)
-    int is_valid = is_initialized & is_whitelisted;
+    ;; Reject dummy/empty owners. A valid TEP-62 std owner address is 267 bits
+    ;; (tag + workchain + 256-bit hash); addr_none is 2 bits and an empty slice
+    ;; is 0 bits. Never report an account as valid for a non-address owner, so a
+    ;; dummy owner can never satisfy an ownership-based access-control check.
+    int owner_present = (owner_addr.slice_bits() >= 267);
+
+    ;; Validate NFT is initialized (not burned), whitelisted, and has a real owner
+    int is_valid = is_initialized & is_whitelisted & owner_present;
 
     return (owner_addr, is_valid, collection_addr, index);
 }
