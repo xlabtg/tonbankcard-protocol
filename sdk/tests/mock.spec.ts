@@ -152,6 +152,46 @@ describe('MockTonbankcardSDK', () => {
       expect(result.isValid).toBe(true);
       expect(result.confirmations).toBe(10);
     });
+
+    it('should report matchesInvoice false without an invoice to match', async () => {
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC('10.00'),
+      });
+      sdk.simulateSettlement(invoice.id, 'match_tx');
+
+      const result = await sdk.verifySettlement('match_tx');
+      expect(result.isValid).toBe(true);
+      expect(result.matchesInvoice).toBe(false);
+      expect(result.error).toContain('No invoice provided');
+    });
+
+    it('should report matchesInvoice true when the settlement matches the invoice', async () => {
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC('10.00'),
+      });
+      sdk.simulateSettlement(invoice.id, 'match_tx');
+
+      const result = await sdk.verifySettlement('match_tx', invoice);
+      expect(result.matchesInvoice).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should report matchesInvoice false when the amount differs', async () => {
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC('10.00'),
+      });
+      sdk.simulateSettlement(invoice.id, 'match_tx');
+
+      const result = await sdk.verifySettlement('match_tx', {
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC('99.00'),
+      });
+      expect(result.matchesInvoice).toBe(false);
+      expect(result.error).toContain('does not match');
+    });
   });
 
   describe('getAccountInfo', () => {

@@ -2,10 +2,62 @@
  * Unit tests for TonbankcardSDK
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
-import { Address } from '@ton/core';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { Address, beginCell, Cell } from '@ton/core';
 import { TonbankcardSDK } from '../src/sdk';
 import { parseTBC } from '../src/utils';
+
+/**
+ * Tact op code for the `MerchantPayment` event emitted by the Payment Hub.
+ * Mirrors the constant in `src/sdk.ts` and the indexer's event parser.
+ */
+const MERCHANT_PAYMENT_OP = 0x3b4c2365;
+
+/**
+ * Build the body cell of a `MerchantPayment` external-out event as Tact's
+ * `emit()` would serialise it.
+ */
+function buildMerchantPaymentBody(params: {
+  payerNft: Address;
+  merchantNft: Address;
+  amountTbc: bigint;
+  payloadHash?: bigint;
+  timestamp?: number;
+}): Cell {
+  return beginCell()
+    .storeUint(MERCHANT_PAYMENT_OP, 32)
+    .storeAddress(params.payerNft)
+    .storeAddress(params.merchantNft)
+    .storeCoins(params.amountTbc)
+    .storeInt(params.payloadHash ?? 0n, 257)
+    .storeUint(params.timestamp ?? 1_700_000_000, 32)
+    .endCell();
+}
+
+/**
+ * Build a parsed-transaction stub matching the shape `@ton/ton`'s
+ * `getTransaction` returns, carrying the supplied external-out event bodies.
+ */
+function buildTransactionStub(eventBodies: Cell[], options?: {
+  aborted?: boolean;
+  descriptionType?: string;
+  lt?: bigint;
+}): any {
+  const messages = eventBodies.map((body) => ({
+    info: { type: 'external-out' },
+    body,
+  }));
+  return {
+    lt: options?.lt ?? 100n,
+    description: {
+      type: options?.descriptionType ?? 'generic',
+      aborted: options?.aborted ?? false,
+    },
+    outMessages: {
+      values: () => messages,
+    },
+  };
+}
 
 describe('TonbankcardSDK', () => {
   let sdk: TonbankcardSDK;
@@ -246,6 +298,193 @@ describe('TonbankcardSDK', () => {
       });
 
       expect(apiSdk).toBeDefined();
+    });
+  });
+
+  describe('verifySettlement', () => {
+    // Regression coverage for SDK-H1: `matchesInvoice` must reflect a real
+    // comparison of the on-chain payment against the invoice, not a hardcoded
+    // `true`. See https://github.com/xlabtg/tonbankcard-protocol/issues/266
+    const payerNft = Address.parse(
+      'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'
+    );
+    const otherMerchantNft = Address.parse(
+      'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7'
+    );
+    const txHash = '100:abcdef';
+
+    /** Replace the SDK's TonClient with a stub returning the given transaction. */
+    function stubClient(tx: any): void {
+      (sdk as any).client = {
+        getTransaction: jest.fn(async () => tx),
+        getMasterchainInfo: jest.fn(async () => ({ latestSeqno: 1000 })),
+      };
+    }
+
+    function makeInvoice(amount = '10.50') {
+      return sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC(amount),
+        orderId: 'ORDER-1',
+      });
+    }
+
+    it('should report matchesInvoice true for a correct payment', async () => {
+      const invoice = makeInvoice();
+      stubClient(
+        buildTransactionStub([
+          buildMerchantPaymentBody({
+            payerNft,
+            merchantNft: invoice.merchantNft,
+            amountTbc: invoice.amountTbc,
+          }),
+        ])
+      );
+
+      const result = await sdk.verifySettlement(txHash, invoice);
+
+      expect(result.isValid).toBe(true);
+      expect(result.matchesInvoice).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.confirmations).toBeGreaterThan(0);
+    });
+
+    it('should report matchesInvoice false for a payment to a different merchant', async () => {
+      const invoice = makeInvoice();
+      stubClient(
+        buildTransactionStub([
+          buildMerchantPaymentBody({
+            payerNft,
+            merchantNft: otherMerchantNft, // wrong recipient
+            amountTbc: invoice.amountTbc,
+          }),
+        ])
+      );
+
+      const result = await sdk.verifySettlement(txHash, invoice);
+
+      expect(result.isValid).toBe(true);
+      expect(result.matchesInvoice).toBe(false);
+      expect(result.error).toContain('does not match');
+    });
+
+    it('should report matchesInvoice false for a payment with the wrong amount', async () => {
+      const invoice = makeInvoice('10.50');
+      stubClient(
+        buildTransactionStub([
+          buildMerchantPaymentBody({
+            payerNft,
+            merchantNft: invoice.merchantNft,
+            amountTbc: parseTBC('1.00'), // underpayment
+          }),
+        ])
+      );
+
+      const result = await sdk.verifySettlement(txHash, invoice);
+
+      expect(result.matchesInvoice).toBe(false);
+      expect(result.error).toContain('does not match');
+    });
+
+    it('should compare payload hash when expected payloadHash is provided', async () => {
+      const invoice = makeInvoice();
+      const expectedPayloadHash = 0x1234n;
+      stubClient(
+        buildTransactionStub([
+          buildMerchantPaymentBody({
+            payerNft,
+            merchantNft: invoice.merchantNft,
+            amountTbc: invoice.amountTbc,
+            payloadHash: 0x9999n, // wrong payload hash
+          }),
+        ])
+      );
+
+      const result = await sdk.verifySettlement(txHash, {
+        merchantNft: invoice.merchantNft,
+        amountTbc: invoice.amountTbc,
+        payloadHash: expectedPayloadHash,
+      });
+
+      expect(result.matchesInvoice).toBe(false);
+    });
+
+    it('should match when payload hash also matches', async () => {
+      const invoice = makeInvoice();
+      const payloadHash = 0xdeadbeefn;
+      stubClient(
+        buildTransactionStub([
+          buildMerchantPaymentBody({
+            payerNft,
+            merchantNft: invoice.merchantNft,
+            amountTbc: invoice.amountTbc,
+            payloadHash,
+          }),
+        ])
+      );
+
+      const result = await sdk.verifySettlement(txHash, {
+        merchantNft: invoice.merchantNft,
+        amountTbc: invoice.amountTbc,
+        payloadHash,
+      });
+
+      expect(result.matchesInvoice).toBe(true);
+    });
+
+    it('should report matchesInvoice false when no invoice is provided', async () => {
+      const invoice = makeInvoice();
+      stubClient(
+        buildTransactionStub([
+          buildMerchantPaymentBody({
+            payerNft,
+            merchantNft: invoice.merchantNft,
+            amountTbc: invoice.amountTbc,
+          }),
+        ])
+      );
+
+      const result = await sdk.verifySettlement(txHash);
+
+      expect(result.isValid).toBe(true);
+      expect(result.matchesInvoice).toBe(false);
+      expect(result.error).toContain('No invoice provided');
+    });
+
+    it('should report matchesInvoice false when no MerchantPayment event is present', async () => {
+      const invoice = makeInvoice();
+      stubClient(buildTransactionStub([])); // no emitted events
+
+      const result = await sdk.verifySettlement(txHash, invoice);
+
+      expect(result.matchesInvoice).toBe(false);
+      expect(result.error).toContain('No MerchantPayment event');
+    });
+
+    it('should report invalid for a malformed txHash', async () => {
+      const result = await sdk.verifySettlement('no-separator');
+      expect(result.isValid).toBe(false);
+      expect(result.matchesInvoice).toBe(false);
+      expect(result.error).toContain('Invalid txHash format');
+    });
+
+    it('should not mark an aborted transaction as valid', async () => {
+      const invoice = makeInvoice();
+      stubClient(
+        buildTransactionStub(
+          [
+            buildMerchantPaymentBody({
+              payerNft,
+              merchantNft: invoice.merchantNft,
+              amountTbc: invoice.amountTbc,
+            }),
+          ],
+          { aborted: true }
+        )
+      );
+
+      const result = await sdk.verifySettlement(txHash, invoice);
+      expect(result.isValid).toBe(false);
     });
   });
 });

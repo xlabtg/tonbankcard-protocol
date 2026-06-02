@@ -9,6 +9,29 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [1.3.0] — 2026-06-02
+
+### Security — `verifySettlement` now actually checks the payment (SDK-H1, Issue #266)
+
+`TonbankcardSDK.verifySettlement` (and `MockTonbankcardSDK.verifySettlement`)
+previously hardcoded `matchesInvoice: true`, so any successful transaction at
+the Payment Hub was reported as matching the invoice — including payments to a
+different merchant or for the wrong amount.
+
+- `verifySettlement(txHash, expected?)` now accepts the target invoice (or its
+  canonical fields via the new `SettlementMatchCriteria` type) and parses the
+  on-chain `MerchantPayment` event to compare the merchant (recipient) NFT,
+  amount, and — when supplied — the payload hash.
+- `matchesInvoice` is `true` **only** when all compared fields match; a
+  mismatch returns `false`.
+- When no invoice is passed, the payment cannot be checked against any invoice,
+  so `matchesInvoice` is now `false` (previously `true`) with an explanatory
+  `error` note. **Callers relying on the old always-`true` behaviour must pass
+  the invoice to obtain `matchesInvoice: true`.**
+- New exported type `SettlementMatchCriteria`.
+
+---
+
 ## [1.2.0] — 2026-05-17
 
 ### Added — Public Testnet Sandbox (Issue #124)
