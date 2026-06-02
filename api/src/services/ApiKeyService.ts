@@ -18,10 +18,25 @@
  * database (PostgreSQL, MongoDB, etc.).
  */
 
+import crypto from 'crypto';
 import { ApiKey, ApiKeyPermission } from '../types/invoice';
 import { hashApiKey } from '../utils/helpers';
 import { ValidationError } from '../utils/validation';
 import { ErrorCode } from '../types/invoice';
+
+/**
+ * Generate a unique, non-guessable public key identifier.
+ *
+ * The id is derived from a CSPRNG (`crypto.randomBytes`) — never from the
+ * plaintext key — so that two keys sharing a prefix (e.g. every `tbc_live_…`
+ * key) can never collide on the same `key_id`. 16 random bytes (128 bits of
+ * entropy) make accidental collisions and guessing infeasible.
+ *
+ * @returns Public identifier in the form `key_<32 hex chars>`
+ */
+function generateKeyId(): string {
+  return `key_${crypto.randomBytes(16).toString('hex')}`;
+}
 
 /**
  * In-memory API key registry keyed by key_hash.
@@ -61,7 +76,11 @@ export class ApiKeyService {
     expiresAt: string | null = null
   ): ApiKey {
     const keyHash = hashApiKey(plaintextKey);
-    const keyId = `key_${plaintextKey.substring(0, 8)}`;
+    // Unique per key: derived from a CSPRNG, NOT from the plaintext prefix.
+    // Deriving from `plaintextKey.substring(0, 8)` collapsed every live key to
+    // `key_tbc_live` and every test key to `key_tbc_test`, so lookups and
+    // revocations targeted an arbitrary key (audit finding API-C1).
+    const keyId = generateKeyId();
 
     const apiKey: ApiKey = {
       key_id: keyId,
@@ -209,7 +228,7 @@ export class ApiKeyService {
    * Used by the revocation endpoint (DELETE /v1/keys/:keyId) which must
    * resolve a key without ever seeing the plaintext value.
    *
-   * @param keyId - Public key identifier (e.g. `key_tbc_live_a1b2c3d4`)
+   * @param keyId - Public key identifier (e.g. `key_9f86d081884c7d65…`)
    * @returns Matching ApiKey or `null` if no key has that identifier
    */
   findByKeyId(keyId: string): ApiKey | null {
