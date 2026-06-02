@@ -103,6 +103,21 @@ describe('Utils', () => {
       expect(isValidTonAddress('')).toBe(false);
       expect(isValidTonAddress('0x1234')).toBe(false);
     });
+
+    it('should reject addresses with a corrupted CRC16 checksum', () => {
+      // Same as the valid address above but with the final character flipped,
+      // which invalidates the CRC16 checksum.
+      expect(
+        isValidTonAddress('EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Lf')
+      ).toBe(false);
+    });
+
+    it('should accept raw address form', () => {
+      const raw = Address.parse(
+        'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'
+      ).toRawString();
+      expect(isValidTonAddress(raw)).toBe(true);
+    });
   });
 
   describe('shortAddress', () => {
