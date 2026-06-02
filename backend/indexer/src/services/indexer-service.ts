@@ -17,6 +17,29 @@ function toErrInfo(error: unknown): { name: string; message: string } {
   return { name: 'Unknown', message: String(error) };
 }
 
+/**
+ * Extract the latest masterchain seqno from a `getMasterchainInfo()` response.
+ *
+ * The `@ton/ton` `TonClient` wrapper flattens the tip onto `latestSeqno`, while
+ * the raw toncenter HTTP API (and other clients) nest it under `last.seqno`
+ * (INDEXER-H3). Reading only one shape lets a wrapper/version swap silently
+ * yield `undefined`, which would propagate to `NaN` sync bounds and stall the
+ * loop without an error. We accept both shapes and let the caller validate the
+ * result is a finite number.
+ */
+function extractLatestSeqno(info: unknown): number {
+  if (info && typeof info === 'object') {
+    const obj = info as { latestSeqno?: unknown; last?: { seqno?: unknown } };
+    if (typeof obj.latestSeqno === 'number') {
+      return obj.latestSeqno;
+    }
+    if (obj.last && typeof obj.last.seqno === 'number') {
+      return obj.last.seqno;
+    }
+  }
+  return NaN;
+}
+
 export class IndexerService {
   private client: TonClient;
   private db: IndexerDatabase;
@@ -620,12 +643,29 @@ export class IndexerService {
    * Get latest block from chain
    *
    * Returns masterchain info with the latest seqno. Uses TonClient
-   * which wraps the /getMasterchainInfo endpoint.
+   * which wraps the /getMasterchainInfo endpoint. The tip is read from
+   * either `latestSeqno` (TonClient shape) or `last.seqno` (raw HTTP shape)
+   * so a client/version swap cannot silently produce `undefined` (INDEXER-H3).
+   *
+   * A non-finite seqno is rejected with a clear error and returns `null`,
+   * which makes `syncBlocks` skip the poll rather than computing `NaN` bounds
+   * that would silently stall the loop.
    */
   private async getLatestBlock(): Promise<{ seqno: number } | null> {
     try {
       const info = await this.client.getMasterchainInfo();
-      return { seqno: info.latestSeqno };
+      const seqno = extractLatestSeqno(info);
+      if (!Number.isFinite(seqno)) {
+        this.logger.error(
+          {
+            errorCode: IndexerErrorCode.LATEST_BLOCK_UNAVAILABLE,
+            info,
+          },
+          'getMasterchainInfo returned a non-finite seqno'
+        );
+        return null;
+      }
+      return { seqno };
     } catch (error) {
       this.logger.error(
         {
