@@ -991,6 +991,14 @@ signing secret from `WEBHOOK_SIGNING_SECRET` (or a per-endpoint secret
 configured by the operator). Merchants receive the secret over the same
 out-of-band channel that delivers their API key.
 
+**Secret storage at rest**: a webhook signing secret is a symmetric HMAC key —
+the API must recover its plaintext to sign each delivery, so it cannot be
+one-way hashed. Registered per-endpoint secrets are therefore encrypted at rest
+with AES-256-GCM, keyed by `WEBHOOK_SECRET_ENCRYPTION_KEY` (see
+`api/src/utils/secretCipher.ts`). A dump of the endpoint store yields only
+ciphertext; the plaintext is decrypted transiently in memory at delivery time
+and never persisted in the clear.
+
 **Delivery semantics**:
 - Transport: `POST <merchant URL>`
 - Headers:
