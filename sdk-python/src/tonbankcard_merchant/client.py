@@ -23,7 +23,7 @@ from .models import (
     InvoiceMetadata,
     InvoiceStatusResponse,
 )
-from .webhooks import compute_signature, verify_webhook
+from .webhooks import DEFAULT_TOLERANCE_SECONDS, compute_signature, verify_webhook
 
 DEFAULT_BASE_URL = "https://api.tonbankcard.io/v1"
 DEFAULT_TIMEOUT = 30.0
@@ -245,19 +245,28 @@ class MerchantClient(_ClientBase):
 
     @staticmethod
     def verify_webhook(
-        secret: Union[str, bytes], payload: Union[str, bytes], signature: str
+        secret: Union[str, bytes],
+        payload: Union[str, bytes],
+        signature: str,
+        *,
+        tolerance: int = DEFAULT_TOLERANCE_SECONDS,
+        now: Optional[float] = None,
     ) -> Any:
         """Verify a webhook signature and return the parsed payload.
 
         Thin wrapper around :func:`tonbankcard_merchant.webhooks.verify_webhook`
         for ergonomic discoverability via the client object.
         """
-        return verify_webhook(secret=secret, payload=payload, signature=signature)
+        return verify_webhook(
+            secret=secret, payload=payload, signature=signature, tolerance=tolerance, now=now
+        )
 
     @staticmethod
-    def compute_signature(secret: Union[str, bytes], payload: Union[str, bytes]) -> str:
-        """Compute the canonical HMAC-SHA256 hex signature for a payload."""
-        return compute_signature(secret=secret, payload=payload)
+    def compute_signature(
+        secret: Union[str, bytes], timestamp: Union[str, int], payload: Union[str, bytes]
+    ) -> str:
+        """Compute the HMAC-SHA256 hex signature over ``f"{timestamp}.{payload}"``."""
+        return compute_signature(secret=secret, timestamp=timestamp, payload=payload)
 
 
 class AsyncMerchantClient(_ClientBase):
@@ -336,10 +345,19 @@ class AsyncMerchantClient(_ClientBase):
 
     @staticmethod
     def verify_webhook(
-        secret: Union[str, bytes], payload: Union[str, bytes], signature: str
+        secret: Union[str, bytes],
+        payload: Union[str, bytes],
+        signature: str,
+        *,
+        tolerance: int = DEFAULT_TOLERANCE_SECONDS,
+        now: Optional[float] = None,
     ) -> Any:
-        return verify_webhook(secret=secret, payload=payload, signature=signature)
+        return verify_webhook(
+            secret=secret, payload=payload, signature=signature, tolerance=tolerance, now=now
+        )
 
     @staticmethod
-    def compute_signature(secret: Union[str, bytes], payload: Union[str, bytes]) -> str:
-        return compute_signature(secret=secret, payload=payload)
+    def compute_signature(
+        secret: Union[str, bytes], timestamp: Union[str, int], payload: Union[str, bytes]
+    ) -> str:
+        return compute_signature(secret=secret, timestamp=timestamp, payload=payload)

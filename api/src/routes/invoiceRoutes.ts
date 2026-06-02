@@ -83,11 +83,38 @@ export async function createInvoice(req: Request, res: Response): Promise<Respon
  *
  * Public endpoint — no authentication. Rate-limited per-IP to defeat
  * cheap enumeration attempts.
+ *
+ * Returns only the payer-facing projection of the invoice (amount,
+ * currency, status, expiry, payment URL). Merchant identity
+ * (`merchant_nft`), arbitrary `metadata` (which may contain customer PII),
+ * and `settlement` details are intentionally NOT exposed here — the
+ * authenticated `GET /v1/invoice/:invoice_id/detail` route serves the full
+ * invoice to its owning merchant.
+ *
+ * @see https://github.com/xlabtg/tonbankcard-protocol/issues/253
  */
 export async function getInvoice(req: Request, res: Response): Promise<Response> {
   try {
     const { invoice_id } = req.params;
-    const invoice = await invoiceService.getInvoice(invoice_id);
+    const invoice = await invoiceService.getPublicInvoice(invoice_id);
+    return res.status(200).json(invoice);
+  } catch (error) {
+    return sendErrorResponse(req, res, error as Error);
+  }
+}
+
+/**
+ * GET /v1/invoice/:invoice_id/detail
+ *
+ * Authenticated merchant view — returns the FULL invoice (merchant
+ * identity, metadata, settlement). The API key must be authorized for the
+ * invoice's merchant, otherwise an UNAUTHORIZED_MERCHANT error is returned.
+ */
+export async function getInvoiceDetail(req: Request, res: Response): Promise<Response> {
+  try {
+    const apiKey = extractApiKey(req);
+    const { invoice_id } = req.params;
+    const invoice = await invoiceService.getInvoiceDetail(invoice_id, apiKey);
     return res.status(200).json(invoice);
   } catch (error) {
     return sendErrorResponse(req, res, error as Error);
@@ -221,9 +248,15 @@ export function setupInvoiceRoutes(app: any): void {
     getInvoiceStatus,
   );
 
-  // Reserved for an authenticated invoice-detail variant; documented for
-  // future use even though the public route above is mounted first.
-  void invoiceReadRateLimiter;
+  // Authenticated full invoice detail: returns merchant identity, metadata
+  // and settlement to the owning merchant only. Mounted on a distinct
+  // `/detail` sub-path so it does not collide with the public route above.
+  app.get(
+    '/v1/invoice/:invoice_id/detail',
+    authenticateWithPermission('invoice:read'),
+    invoiceReadRateLimiter,
+    getInvoiceDetail,
+  );
 
   // Health check (no rate limit so liveness probes never trip a 429).
   app.get('/v1/health', (req: Request, res: Response) => {
