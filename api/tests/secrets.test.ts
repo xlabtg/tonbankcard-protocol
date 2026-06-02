@@ -13,10 +13,12 @@ import { describe, it, expect } from '@jest/globals';
 import {
   resolveApiKeySecret,
   resolveSettlementIndexerSecret,
+  resolveWebhookSecretEncryptionKey,
   assertApiKeySecretConfigured,
   InsecureSecretError,
   TEST_API_KEY_SECRET,
   TEST_SETTLEMENT_INDEXER_SECRET,
+  TEST_WEBHOOK_SECRET_ENCRYPTION_KEY,
   MIN_API_KEY_SECRET_LENGTH,
 } from '../src/config/secrets';
 
@@ -150,6 +152,56 @@ describe('resolveSettlementIndexerSecret', () => {
     // A configured API key secret must not satisfy the indexer secret.
     expect(() =>
       resolveSettlementIndexerSecret(
+        env({ NODE_ENV: 'production', API_KEY_SECRET: STRONG_SECRET })
+      )
+    ).toThrow(InsecureSecretError);
+  });
+});
+
+describe('resolveWebhookSecretEncryptionKey', () => {
+  describe('production (and other non-test environments)', () => {
+    it('throws when WEBHOOK_SECRET_ENCRYPTION_KEY is unset', () => {
+      expect(() =>
+        resolveWebhookSecretEncryptionKey(env({ NODE_ENV: 'production' }))
+      ).toThrow(InsecureSecretError);
+    });
+
+    it('throws on a known weak/default value', () => {
+      expect(() =>
+        resolveWebhookSecretEncryptionKey(
+          env({ NODE_ENV: 'production', WEBHOOK_SECRET_ENCRYPTION_KEY: 'changeme' })
+        )
+      ).toThrow(InsecureSecretError);
+    });
+
+    it('throws when the key is shorter than the minimum length', () => {
+      expect(() =>
+        resolveWebhookSecretEncryptionKey(
+          env({ NODE_ENV: 'production', WEBHOOK_SECRET_ENCRYPTION_KEY: 'short' })
+        )
+      ).toThrow(InsecureSecretError);
+    });
+
+    it('accepts and returns a strong, unique key', () => {
+      expect(
+        resolveWebhookSecretEncryptionKey(
+          env({ NODE_ENV: 'production', WEBHOOK_SECRET_ENCRYPTION_KEY: STRONG_SECRET })
+        )
+      ).toBe(STRONG_SECRET);
+    });
+  });
+
+  describe('test environment', () => {
+    it('falls back to the deterministic test key when unset', () => {
+      expect(resolveWebhookSecretEncryptionKey(env({ NODE_ENV: 'test' }))).toBe(
+        TEST_WEBHOOK_SECRET_ENCRYPTION_KEY
+      );
+    });
+  });
+
+  it('uses a distinct env var from the API key secret', () => {
+    expect(() =>
+      resolveWebhookSecretEncryptionKey(
         env({ NODE_ENV: 'production', API_KEY_SECRET: STRONG_SECRET })
       )
     ).toThrow(InsecureSecretError);
