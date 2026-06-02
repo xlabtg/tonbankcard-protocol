@@ -62,7 +62,7 @@
     "ts-jest": "^29.4.6",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.3"
+    "typescript-eslint": "^8.59.4"
   },
   "peerDependencies": {
     "@ton/core": ">=0.56.0",
