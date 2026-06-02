@@ -3,10 +3,18 @@ package tonbankcard
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 )
 
 const webhookSecret = "shhh-very-secret"
+
+// fixedNow returns a clock pinned to ts (unix seconds) so freshness checks are
+// deterministic in tests.
+func fixedNow(ts int64) func() time.Time {
+	return func() time.Time { return time.Unix(ts, 0) }
+}
 
 func samplePayload(t *testing.T) []byte {
 	t.Helper()
@@ -22,11 +30,24 @@ func samplePayload(t *testing.T) []byte {
 	return body
 }
 
+func TestComputeSignatureMatchesServerScheme(t *testing.T) {
+	t.Parallel()
+	// Cross-language fixture: HMAC-SHA256(secret, "${ts}.${body}") locks the
+	// preimage to `${timestamp}.${rawBody}` exactly as the server helper
+	// (api/src/utils/webhookSignature.ts) and the TypeScript/Python SDKs do.
+	got := ComputeSignature([]byte("secret"), "1700000000", []byte("{}"))
+	const want = "b8569b78799ff9e3cbff0fc2d63a33a2b57f3282abd07c37ae5e8e7d79a5f163"
+	if got != want {
+		t.Fatalf("signature scheme drift: got %q, want %q", got, want)
+	}
+}
+
 func TestVerifyWebhookSuccess(t *testing.T) {
 	t.Parallel()
 	body := samplePayload(t)
-	sig := ComputeSignature([]byte(webhookSecret), body)
-	payload, err := VerifyWebhook([]byte(webhookSecret), body, sig)
+	var ts int64 = 1_700_000_000
+	sig := SignWebhook([]byte(webhookSecret), body, ts)
+	payload, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts)))
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
@@ -41,19 +62,46 @@ func TestVerifyWebhookSuccess(t *testing.T) {
 	}
 }
 
-func TestVerifyWebhookAcceptsSha256Prefix(t *testing.T) {
+func TestVerifyWebhookWithinTolerance(t *testing.T) {
 	t.Parallel()
 	body := samplePayload(t)
-	sig := "sha256=" + ComputeSignature([]byte(webhookSecret), body)
-	if _, err := VerifyWebhook([]byte(webhookSecret), body, sig); err != nil {
-		t.Fatalf("expected prefixed signature to be accepted: %v", err)
+	var ts int64 = 1_700_000_000
+	sig := SignWebhook([]byte(webhookSecret), body, ts)
+	// 4 minutes later — inside the default 5-minute window.
+	if _, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts+240))); err != nil {
+		t.Fatalf("expected delivery within tolerance to verify, got %v", err)
+	}
+}
+
+func TestVerifyWebhookRejectsStaleTimestamp(t *testing.T) {
+	t.Parallel()
+	body := samplePayload(t)
+	var ts int64 = 1_700_000_000
+	sig := SignWebhook([]byte(webhookSecret), body, ts)
+	// 6 minutes later — outside the default 5-minute window (replay protection).
+	_, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts+360)))
+	if !errors.Is(err, ErrSignatureVerification) {
+		t.Fatalf("expected stale timestamp to be rejected, got %v", err)
+	}
+}
+
+func TestVerifyWebhookCustomTolerance(t *testing.T) {
+	t.Parallel()
+	body := samplePayload(t)
+	var ts int64 = 1_700_000_000
+	sig := SignWebhook([]byte(webhookSecret), body, ts)
+	if _, err := VerifyWebhook([]byte(webhookSecret), body, sig,
+		WithNow(fixedNow(ts+600)), WithTolerance(15*time.Minute)); err != nil {
+		t.Fatalf("expected delivery within custom tolerance to verify, got %v", err)
 	}
 }
 
 func TestVerifyWebhookRejectsWrongSignature(t *testing.T) {
 	t.Parallel()
 	body := samplePayload(t)
-	_, err := VerifyWebhook([]byte(webhookSecret), body, "00")
+	var ts int64 = 1_700_000_000
+	sig := fmt.Sprintf("t=%d,v1=%s", ts, "00")
+	_, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts)))
 	if err == nil {
 		t.Fatal("expected signature mismatch error")
 	}
@@ -65,25 +113,55 @@ func TestVerifyWebhookRejectsWrongSignature(t *testing.T) {
 func TestVerifyWebhookRejectsTampering(t *testing.T) {
 	t.Parallel()
 	body := samplePayload(t)
-	sig := ComputeSignature([]byte(webhookSecret), body)
+	var ts int64 = 1_700_000_000
+	sig := SignWebhook([]byte(webhookSecret), body, ts)
 	tampered := append([]byte{}, body...)
 	tampered[len(tampered)-2] = byte('X')
-	if _, err := VerifyWebhook([]byte(webhookSecret), tampered, sig); !errors.Is(err, ErrSignatureVerification) {
+	if _, err := VerifyWebhook([]byte(webhookSecret), tampered, sig, WithNow(fixedNow(ts))); !errors.Is(err, ErrSignatureVerification) {
 		t.Fatalf("expected tampered body to fail verification, got %v", err)
 	}
 }
 
-func TestVerifyWebhookRejectsNonHex(t *testing.T) {
+func TestVerifyWebhookRejectsWrongSecret(t *testing.T) {
 	t.Parallel()
 	body := samplePayload(t)
-	if _, err := VerifyWebhook([]byte(webhookSecret), body, "not-hex"); !errors.Is(err, ErrSignatureVerification) {
-		t.Fatalf("expected non-hex signature to be rejected, got %v", err)
+	var ts int64 = 1_700_000_000
+	sig := SignWebhook([]byte("other-secret"), body, ts)
+	if _, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts))); !errors.Is(err, ErrSignatureVerification) {
+		t.Fatalf("expected wrong secret to fail verification, got %v", err)
+	}
+}
+
+func TestVerifyWebhookRejectsMalformedHeader(t *testing.T) {
+	t.Parallel()
+	body := samplePayload(t)
+	var ts int64 = 1_700_000_000
+	for _, sig := range []string{
+		"not-hex",               // no key=value structure
+		"v1=" + "ab",            // missing timestamp
+		fmt.Sprintf("t=%d", ts), // missing signature
+		"t=abc,v1=ab",           // non-numeric timestamp
+	} {
+		if _, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts))); !errors.Is(err, ErrSignatureVerification) {
+			t.Fatalf("expected malformed header %q to be rejected, got %v", sig, err)
+		}
+	}
+}
+
+func TestVerifyWebhookRejectsUnsupportedVersion(t *testing.T) {
+	t.Parallel()
+	body := samplePayload(t)
+	var ts int64 = 1_700_000_000
+	digest := ComputeSignature([]byte(webhookSecret), fmt.Sprintf("%d", ts), body)
+	sig := fmt.Sprintf("t=%d,v2=%s", ts, digest)
+	if _, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts))); !errors.Is(err, ErrSignatureVerification) {
+		t.Fatalf("expected unsupported version to be rejected, got %v", err)
 	}
 }
 
 func TestVerifyWebhookRejectsEmptyInputs(t *testing.T) {
 	t.Parallel()
-	if _, err := VerifyWebhook(nil, samplePayload(t), "abc"); !errors.Is(err, ErrSignatureVerification) {
+	if _, err := VerifyWebhook(nil, samplePayload(t), "t=1,v1=abc"); !errors.Is(err, ErrSignatureVerification) {
 		t.Fatal("expected empty secret to be rejected")
 	}
 	if _, err := VerifyWebhook([]byte(webhookSecret), samplePayload(t), ""); !errors.Is(err, ErrSignatureVerification) {
@@ -94,8 +172,9 @@ func TestVerifyWebhookRejectsEmptyInputs(t *testing.T) {
 func TestVerifyWebhookRejectsNonObjectJSON(t *testing.T) {
 	t.Parallel()
 	body := []byte("\"just a string\"")
-	sig := ComputeSignature([]byte(webhookSecret), body)
-	if _, err := VerifyWebhook([]byte(webhookSecret), body, sig); !errors.Is(err, ErrSignatureVerification) {
+	var ts int64 = 1_700_000_000
+	sig := SignWebhook([]byte(webhookSecret), body, ts)
+	if _, err := VerifyWebhook([]byte(webhookSecret), body, sig, WithNow(fixedNow(ts))); !errors.Is(err, ErrSignatureVerification) {
 		t.Fatalf("expected non-object payload to be rejected, got %v", err)
 	}
 }
