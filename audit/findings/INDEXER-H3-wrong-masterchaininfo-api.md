@@ -49,9 +49,24 @@ The indexer silently indexes nothing.
 
 ## Acceptance Criteria
 
-- [ ] `getLatestBlock` returns the tip from `info.last.seqno`.
-- [ ] A non-finite seqno is rejected with a clear error and does not silently halt the loop.
-- [ ] A regression test mocks `getMasterchainInfo()` returning `{ last: { seqno } }` and asserts the sync range and loop advance.
+- [x] `getLatestBlock` returns the tip from `info.last.seqno`.
+- [x] A non-finite seqno is rejected with a clear error and does not silently halt the loop.
+- [x] A regression test mocks `getMasterchainInfo()` returning `{ last: { seqno } }` and asserts the sync range and loop advance.
+
+## Resolution
+
+`getLatestBlock` now extracts the tip via `extractLatestSeqno`, which reads
+both the `@ton/ton` `TonClient` shape (`latestSeqno`) and the raw toncenter
+HTTP shape (`last.seqno`). A non-finite result is rejected with the
+`INDEXER_LATEST_BLOCK_UNAVAILABLE` error code and returns `null`, so
+`syncBlocks` skips the poll instead of computing `NaN` bounds that silently
+stall the loop.
+
+> Note: with the pinned `@ton/ton@13.11.2`, `TonClient.getMasterchainInfo()`
+> flattens the tip onto `latestSeqno` (it wraps the raw `{ last: { seqno } }`
+> response), so the previous code was not broken for that exact version. The
+> fix makes the read robust to both shapes so a client/version swap cannot
+> silently regress the sync loop, and adds the missing non-finite guard.
 
 ## References
 
