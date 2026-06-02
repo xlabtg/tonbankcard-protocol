@@ -20,8 +20,17 @@ import {
   AccountInfo,
   AccountState,
   TransactionVerification,
+  SettlementMatchCriteria,
 } from './types';
 import { generateInvoiceId } from './utils';
+
+/**
+ * Note returned in `error` when `verifySettlement` is called without an invoice
+ * to match against. Mirrors the message used by the real SDK.
+ */
+const NO_INVOICE_MATCH_NOTE =
+  'No invoice provided; matchesInvoice cannot be verified. ' +
+  'Pass the target invoice to verifySettlement to enable matching.';
 
 /**
  * Options for configuring the mock SDK behavior
@@ -264,9 +273,21 @@ export class MockTonbankcardSDK {
   }
 
   /**
-   * Verify settlement — returns mock result without network call
+   * Verify settlement — returns mock result without network call.
+   *
+   * Mirrors {@link TonbankcardSDK.verifySettlement}: when `expected` is
+   * supplied, `matchesInvoice` is `true` only if the recorded settlement's
+   * merchant NFT and amount (and payload hash, when provided) match. When
+   * `expected` is omitted, `matchesInvoice` is reported as `false` because the
+   * payment cannot be checked against any invoice.
+   *
+   * @param txHash - Transaction hash to verify
+   * @param expected - Target invoice (or its canonical fields) to match against
    */
-  async verifySettlement(txHash: string): Promise<TransactionVerification> {
+  async verifySettlement(
+    txHash: string,
+    expected?: SettlementMatchCriteria
+  ): Promise<TransactionVerification> {
     await this.delay();
 
     if (this.options.autoApproveSettlements) {
@@ -274,18 +295,21 @@ export class MockTonbankcardSDK {
         isValid: true,
         txHash,
         confirmations: this.options.defaultConfirmations,
-        matchesInvoice: true,
+        matchesInvoice: this.computeMatch(undefined, expected),
+        ...(expected ? {} : { error: NO_INVOICE_MATCH_NOTE }),
       };
     }
 
     // Check if any settlement matches this tx hash
     for (const settlement of this.settlementStore.values()) {
       if (settlement.txHash === txHash) {
+        const matchesInvoice = this.computeMatch(settlement, expected);
         return {
           isValid: true,
           txHash,
           confirmations: this.options.defaultConfirmations,
-          matchesInvoice: true,
+          matchesInvoice,
+          ...(this.matchNote(settlement, expected, matchesInvoice)),
         };
       }
     }
@@ -297,6 +321,46 @@ export class MockTonbankcardSDK {
       matchesInvoice: false,
       error: 'Transaction not found in mock store',
     };
+  }
+
+  /**
+   * Determine whether a recorded settlement satisfies the expected invoice
+   * criteria. With no `expected` criteria a match cannot be asserted, so this
+   * returns `false`. With no recorded settlement (auto-approve mode) only the
+   * presence of `expected` is required, since the mock cannot inspect chain
+   * data.
+   */
+  private computeMatch(
+    settlement: PaymentSettlement | undefined,
+    expected?: SettlementMatchCriteria
+  ): boolean {
+    if (!expected) {
+      return false;
+    }
+    if (!settlement) {
+      // autoApproveSettlements has no recorded payment to compare against
+      return true;
+    }
+    const merchantMatches = settlement.merchantNft.equals(expected.merchantNft);
+    const amountMatches = settlement.amountTbc === expected.amountTbc;
+    return merchantMatches && amountMatches;
+  }
+
+  /**
+   * Produce the optional `error` note describing why a match was not asserted.
+   */
+  private matchNote(
+    settlement: PaymentSettlement | undefined,
+    expected: SettlementMatchCriteria | undefined,
+    matchesInvoice: boolean
+  ): { error?: string } {
+    if (!expected) {
+      return { error: NO_INVOICE_MATCH_NOTE };
+    }
+    if (settlement && !matchesInvoice) {
+      return { error: 'On-chain payment does not match the expected invoice' };
+    }
+    return {};
   }
 
   /**

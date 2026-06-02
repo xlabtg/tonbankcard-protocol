@@ -50,8 +50,12 @@ write_files:
             NODE_ENV: production
             PORT: "3000"
             HOST: 0.0.0.0
+          # Bind to loopback only: Docker's iptables rules sit below the UFW
+          # chains, so a published 0.0.0.0 port would be internet-reachable
+          # despite `ufw default deny incoming`. Loopback publishing keeps the
+          # API reachable only via the local Caddy reverse proxy (80/443).
           ports:
-            - "3001:3000"
+            - "127.0.0.1:3001:3000"
           deploy:
             replicas: ${api_replica_count}
           healthcheck:
@@ -70,8 +74,10 @@ write_files:
             PORT: "3000"
             HOST: 0.0.0.0
             DB_PATH: /app/data/indexer.db
+          # Loopback-only publishing (see the api service above): keeps the
+          # indexer off the public interface regardless of UFW ordering.
           ports:
-            - "3002:3000"
+            - "127.0.0.1:3002:3000"
           volumes:
             - indexer-data:/app/data
           healthcheck:
@@ -113,6 +119,13 @@ runcmd:
   - systemctl enable --now docker
 
   # Firewall: allow ssh + http(s) only.
+  #
+  # NOTE: UFW does NOT govern Docker's published ports. Docker installs its
+  # own iptables rules (DOCKER / DOCKER-USER chains) that are evaluated before
+  # the ufw-* chains, so a container port published on 0.0.0.0 stays
+  # internet-reachable even with `ufw default deny incoming`. We therefore rely
+  # on loopback publishing (127.0.0.1:PORT) for the api/indexer above rather
+  # than on UFW to keep those ports private. See infra/terraform/README.md.
   - ufw default deny incoming
   - ufw default allow outgoing
   - ufw allow 22/tcp

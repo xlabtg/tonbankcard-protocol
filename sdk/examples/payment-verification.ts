@@ -18,13 +18,25 @@ async function paymentVerificationExample() {
   console.log('Payment Verification Example');
   console.log('============================\n');
 
+  // The invoice the merchant expects this payment to settle. In a real
+  // integration this comes from the merchant's own store / database.
+  const invoice = sdk.createInvoice({
+    merchantNft: Address.parse('EQ...YourMerchantNFT'),
+    amountTbc: 10_000_000_000n, // 10 TBC
+    orderId: 'ORDER-123',
+  });
+
   // Scenario: User claims they paid via transaction hash
-  const txHash = 'abc123...'; // Transaction hash from user
+  const txHash = '12345:abc123...'; // Transaction hash from user ("<lt>:<hash>")
 
   console.log('Verifying transaction:', txHash);
 
-  // Verify settlement on-chain
-  const verification = await sdk.verifySettlement(txHash);
+  // Verify settlement on-chain. Passing the invoice lets the SDK compare the
+  // on-chain payment's merchant NFT, amount (and optional payload hash) against
+  // it — `matchesInvoice` is `true` ONLY when they match. Calling
+  // verifySettlement(txHash) without the invoice cannot assert a match and
+  // returns matchesInvoice: false.
+  const verification = await sdk.verifySettlement(txHash, invoice);
 
   console.log('\nVerification result:');
   console.log('- Valid:', verification.isValid);
