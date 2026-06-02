@@ -241,25 +241,49 @@ export class IndexerService {
       // Fetch transactions for tracked contract addresses
       const transactions = await this.fetchContractTransactions(blockNumber);
 
-      // Store block
-      this.db.insertBlock(
+      // Parse all events up-front (no DB writes) so the write phase below is a
+      // purely synchronous, all-or-nothing transaction. Parsing must happen
+      // outside the transaction because `better-sqlite3` transactions cannot
+      // span `await` boundaries.
+      const pendingEvents = this.collectBlockEvents(
+        transactions,
         blockNumber,
-        blockHash,
-        parentHash,
-        timestamp,
-        transactions.length
+        timestamp
       );
 
-      // Process transactions
-      for (const tx of transactions) {
-        await this.processTransaction(tx, blockNumber, timestamp);
-      }
+      // Atomically commit the block row, every event, and the cursor advance.
+      // If any event insert throws, the whole transaction rolls back: the block
+      // row is not persisted and the cursor is not advanced, so the block is
+      // re-fetched and retried on the next poll instead of being silently
+      // skipped with missing events (INDEXER-C3).
+      this.db.transaction(() => {
+        this.db.insertBlock(
+          blockNumber,
+          blockHash,
+          parentHash,
+          timestamp,
+          transactions.length
+        );
 
-      // Update latest indexed
-      this.db.updateLatestBlock(blockNumber, timestamp);
+        for (const pending of pendingEvents) {
+          this.storeEvent(
+            pending.event,
+            blockNumber,
+            pending.txHash,
+            pending.logIndex,
+            timestamp
+          );
+        }
+
+        this.db.updateLatestBlock(blockNumber, timestamp);
+      });
 
       this.logger.debug(
-        { blockNumber, txCount: transactions.length },
+        {
+          blockNumber,
+          txCount: transactions.length,
+          eventCount: pendingEvents.length,
+        },
         'Block processed'
       );
     } catch (error) {
@@ -408,16 +432,18 @@ export class IndexerService {
   }
 
   /**
-   * Process a transaction and extract events
+   * Parse every tracked transaction in a block into the events to persist.
+   *
+   * This is intentionally side-effect free (no DB writes): the caller commits
+   * the returned events inside a single transaction so the block is indexed
+   * atomically. Parsing is synchronous, which lets the write phase run as a
+   * `better-sqlite3` transaction (those cannot span `await`).
    */
-  private async processTransaction(
-    transaction: any,
-    blockNumber: number,
-    timestamp: number
-  ): Promise<void> {
-    const txHash = this.getTransactionHash(transaction);
-
-    // Check if transaction involves our tracked contracts
+  private collectBlockEvents(
+    transactions: any[],
+    _blockNumber: number,
+    _timestamp: number
+  ): Array<{ event: IndexedEvent; txHash: string; logIndex: number }> {
     const relevantContracts = [
       this.config.contracts.paymentHub,
       this.config.contracts.merchantPaymentHub,
@@ -425,23 +451,36 @@ export class IndexerService {
       ...this.config.contracts.nftCollections,
     ].filter((addr) => addr !== '');
 
-    const txDestination = this.getTransactionDestination(transaction);
-    if (!relevantContracts.includes(txDestination)) {
-      return; // Not relevant
+    const pending: Array<{
+      event: IndexedEvent;
+      txHash: string;
+      logIndex: number;
+    }> = [];
+
+    for (const transaction of transactions) {
+      const txDestination = this.getTransactionDestination(transaction);
+      if (!relevantContracts.includes(txDestination)) {
+        continue; // Not relevant
+      }
+
+      const txHash = this.getTransactionHash(transaction);
+      const events = this.parser.parseTransaction(transaction, txDestination);
+
+      for (let i = 0; i < events.length; i++) {
+        pending.push({ event: events[i], txHash, logIndex: i });
+      }
     }
 
-    // Parse events from transaction
-    const events = this.parser.parseTransaction(transaction, txDestination);
-
-    // Store events
-    for (let i = 0; i < events.length; i++) {
-      const event = events[i];
-      this.storeEvent(event, blockNumber, txHash, i, timestamp);
-    }
+    return pending;
   }
 
   /**
-   * Store event in database
+   * Store a single parsed event in the database.
+   *
+   * Errors are NOT swallowed: a failed insert must propagate so the enclosing
+   * block transaction (see `processBlock`) rolls back and the block is retried
+   * rather than recorded with missing events (INDEXER-C3). The error is logged
+   * with context before being re-thrown.
    */
   private storeEvent(
     event: IndexedEvent,
@@ -558,6 +597,9 @@ export class IndexerService {
         },
         'Error storing event'
       );
+      // Re-throw so the enclosing block transaction rolls back. Swallowing here
+      // would let the cursor advance past a block with missing events.
+      throw error;
     }
   }
 

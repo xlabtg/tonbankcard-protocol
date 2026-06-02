@@ -53,6 +53,18 @@ export class IndexerDatabase {
   }
 
   /**
+   * Run `fn` inside a single SQLite transaction (all-or-nothing).
+   *
+   * `better-sqlite3` transactions are synchronous: every write issued inside
+   * `fn` commits together, and any thrown error rolls the whole batch back.
+   * The indexer uses this to make a block's row, its events, and the cursor
+   * advance commit atomically — see INDEXER-C3.
+   */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
+  /**
    * Get latest indexed block number
    */
   getLatestBlockIndexed(): number {
