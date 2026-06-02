@@ -12,9 +12,11 @@
 import { describe, it, expect } from '@jest/globals';
 import {
   resolveApiKeySecret,
+  resolveSettlementIndexerSecret,
   assertApiKeySecretConfigured,
   InsecureSecretError,
   TEST_API_KEY_SECRET,
+  TEST_SETTLEMENT_INDEXER_SECRET,
   MIN_API_KEY_SECRET_LENGTH,
 } from '../src/config/secrets';
 
@@ -100,6 +102,57 @@ describe('resolveApiKeySecret', () => {
         resolveApiKeySecret(env({ NODE_ENV: 'test', API_KEY_SECRET: 'short' }))
       ).toBe('short');
     });
+  });
+});
+
+describe('resolveSettlementIndexerSecret', () => {
+  describe('production (and other non-test environments)', () => {
+    it('throws when SETTLEMENT_INDEXER_SECRET is unset', () => {
+      expect(() =>
+        resolveSettlementIndexerSecret(env({ NODE_ENV: 'production' }))
+      ).toThrow(InsecureSecretError);
+    });
+
+    it('throws on a known weak/default value', () => {
+      expect(() =>
+        resolveSettlementIndexerSecret(
+          env({ NODE_ENV: 'production', SETTLEMENT_INDEXER_SECRET: 'changeme' })
+        )
+      ).toThrow(InsecureSecretError);
+    });
+
+    it('throws when the secret is shorter than the minimum length', () => {
+      expect(() =>
+        resolveSettlementIndexerSecret(
+          env({ NODE_ENV: 'production', SETTLEMENT_INDEXER_SECRET: 'short' })
+        )
+      ).toThrow(InsecureSecretError);
+    });
+
+    it('accepts and returns a strong, unique secret', () => {
+      expect(
+        resolveSettlementIndexerSecret(
+          env({ NODE_ENV: 'production', SETTLEMENT_INDEXER_SECRET: STRONG_SECRET })
+        )
+      ).toBe(STRONG_SECRET);
+    });
+  });
+
+  describe('test environment', () => {
+    it('falls back to the deterministic test secret when unset', () => {
+      expect(resolveSettlementIndexerSecret(env({ NODE_ENV: 'test' }))).toBe(
+        TEST_SETTLEMENT_INDEXER_SECRET
+      );
+    });
+  });
+
+  it('uses a distinct env var from the API key secret', () => {
+    // A configured API key secret must not satisfy the indexer secret.
+    expect(() =>
+      resolveSettlementIndexerSecret(
+        env({ NODE_ENV: 'production', API_KEY_SECRET: STRONG_SECRET })
+      )
+    ).toThrow(InsecureSecretError);
   });
 });
 

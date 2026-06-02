@@ -48,6 +48,15 @@ export const KNOWN_WEAK_API_KEY_SECRETS: ReadonlySet<string> = new Set([
  */
 export const TEST_API_KEY_SECRET = 'test-only-api-key-secret-do-not-use-in-prod';
 
+/**
+ * Deterministic secret used ONLY when `NODE_ENV === 'test'` for the settlement
+ * indexer attestation HMAC (see `utils/settlementAttestation.ts`). Mirrors
+ * {@link TEST_API_KEY_SECRET}: stable for tests, obviously non-production, and
+ * never used outside the test environment.
+ */
+export const TEST_SETTLEMENT_INDEXER_SECRET =
+  'test-only-settlement-indexer-secret-do-not-use-in-prod';
+
 /** Error thrown when `API_KEY_SECRET` is missing or insecurely configured. */
 export class InsecureSecretError extends Error {
   constructor(message: string) {
@@ -61,6 +70,59 @@ function isTestEnv(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
+ * Resolve and validate a strong HMAC secret read from `env[varName]`.
+ *
+ * Shared core for every server-side secret so the fail-fast policy (reject
+ * missing / weak / too-short values outside test mode, deterministic fallback
+ * inside it) is implemented in exactly one place.
+ *
+ * @param env          - Environment to read from
+ * @param varName      - Environment variable holding the secret
+ * @param testFallback - Deterministic value returned under `NODE_ENV === 'test'`
+ *                       when the variable is unset/empty
+ * @returns The validated secret
+ * @throws {InsecureSecretError} outside test mode when the secret is missing,
+ *         empty, a known weak/default value, or shorter than
+ *         {@link MIN_API_KEY_SECRET_LENGTH}.
+ */
+function resolveStrongSecret(
+  env: NodeJS.ProcessEnv,
+  varName: string,
+  testFallback: string
+): string {
+  const secret = (env[varName] ?? '').trim();
+  const testEnv = isTestEnv(env);
+
+  if (secret === '') {
+    if (testEnv) return testFallback;
+    throw new InsecureSecretError(
+      `${varName} is not set. Refusing to start: this secret protects a security ` +
+        'boundary and must not fall back to a publicly known constant. Generate a ' +
+        `secret with \`openssl rand -hex 32\` and set ${varName} before starting the API.`
+    );
+  }
+
+  if (KNOWN_WEAK_API_KEY_SECRETS.has(secret.toLowerCase())) {
+    if (testEnv) return secret;
+    throw new InsecureSecretError(
+      `${varName} is set to a known weak/default value. Refusing to start. ` +
+        'Generate a unique secret with `openssl rand -hex 32`.'
+    );
+  }
+
+  if (secret.length < MIN_API_KEY_SECRET_LENGTH) {
+    if (testEnv) return secret;
+    throw new InsecureSecretError(
+      `${varName} is too short (${secret.length} characters). A minimum of ` +
+        `${MIN_API_KEY_SECRET_LENGTH} characters is required. Generate one with ` +
+        '`openssl rand -hex 32`.'
+    );
+  }
+
+  return secret;
+}
+
+/**
  * Resolve and validate the API key HMAC secret.
  *
  * @param env - Environment to read from (defaults to `process.env`; injectable for tests)
@@ -70,36 +132,32 @@ function isTestEnv(env: NodeJS.ProcessEnv): boolean {
  *         {@link MIN_API_KEY_SECRET_LENGTH}.
  */
 export function resolveApiKeySecret(env: NodeJS.ProcessEnv = process.env): string {
-  const secret = (env.API_KEY_SECRET ?? '').trim();
-  const testEnv = isTestEnv(env);
+  return resolveStrongSecret(env, 'API_KEY_SECRET', TEST_API_KEY_SECRET);
+}
 
-  if (secret === '') {
-    if (testEnv) return TEST_API_KEY_SECRET;
-    throw new InsecureSecretError(
-      'API_KEY_SECRET is not set. Refusing to start: API keys would be hashed ' +
-        'with a publicly known constant. Generate a secret with ' +
-        '`openssl rand -hex 32` and set API_KEY_SECRET before starting the API.'
-    );
-  }
-
-  if (KNOWN_WEAK_API_KEY_SECRETS.has(secret.toLowerCase())) {
-    if (testEnv) return secret;
-    throw new InsecureSecretError(
-      'API_KEY_SECRET is set to a known weak/default value. Refusing to start. ' +
-        'Generate a unique secret with `openssl rand -hex 32`.'
-    );
-  }
-
-  if (secret.length < MIN_API_KEY_SECRET_LENGTH) {
-    if (testEnv) return secret;
-    throw new InsecureSecretError(
-      `API_KEY_SECRET is too short (${secret.length} characters). A minimum of ` +
-        `${MIN_API_KEY_SECRET_LENGTH} characters is required. Generate one with ` +
-        '`openssl rand -hex 32`.'
-    );
-  }
-
-  return secret;
+/**
+ * Resolve and validate the settlement indexer attestation secret.
+ *
+ * This HMAC key authenticates settlement events submitted to
+ * `InvoiceService.processSettlementEvent`. Only the trusted, authenticated
+ * indexer knows it, so a forged event from any other source cannot flip an
+ * invoice to `settled` (audit finding API-H3, issue #252). The same fail-fast
+ * policy as {@link resolveApiKeySecret} applies.
+ *
+ * @param env - Environment to read from (defaults to `process.env`; injectable for tests)
+ * @returns The validated secret
+ * @throws {InsecureSecretError} outside test mode when the secret is missing,
+ *         empty, a known weak/default value, or shorter than
+ *         {@link MIN_API_KEY_SECRET_LENGTH}.
+ */
+export function resolveSettlementIndexerSecret(
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return resolveStrongSecret(
+    env,
+    'SETTLEMENT_INDEXER_SECRET',
+    TEST_SETTLEMENT_INDEXER_SECRET
+  );
 }
 
 /**

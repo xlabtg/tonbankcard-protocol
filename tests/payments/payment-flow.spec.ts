@@ -27,6 +27,19 @@ import {
   hashMetadata,
   generatePaymentUrl,
 } from '../../api/src/utils/helpers';
+import {
+  SettlementEvent,
+  signSettlementEvent,
+} from '../../api/src/utils/settlementAttestation';
+import { resolveSettlementIndexerSecret } from '../../api/src/config/secrets';
+
+/**
+ * Attach a trusted-indexer attestation to an event. The indexer is the only
+ * authorised source of settlement events (audit finding API-H3).
+ */
+function attestEvent(event: SettlementEvent): string {
+  return signSettlementEvent(resolveSettlementIndexerSecret(), event);
+}
 
 describe('Phase 2: Payment Flow Integration', () => {
   let invoiceService: InvoiceService;
@@ -116,18 +129,22 @@ describe('Phase 2: Payment Flow Integration', () => {
         order_id: 'SETTLE-001',
       });
 
-      await invoiceService.processSettlementEvent(
-        {
-          payer_nft: testPayerNft,
-          merchant_nft: testMerchantNft,
-          amount_tbc: '1000000000',
-          payload_hash: payloadHash,
-          block_number: 12345,
-          tx_hash: 'abc123def456',
-          timestamp: Math.floor(Date.now() / 1000),
-        },
-        12351 // current block (6 confirmations)
-      );
+      const settlementEvent: SettlementEvent = {
+        payer_nft: testPayerNft,
+        merchant_nft: testMerchantNft,
+        amount_tbc: '1000000000',
+        payload_hash: payloadHash,
+        block_number: 12345,
+        tx_hash: 'abc123def456',
+        timestamp: Math.floor(Date.now() / 1000),
+      };
+
+      const result = await invoiceService.processSettlementEvent(settlementEvent, {
+        attestation: attestEvent(settlementEvent),
+        currentBlockNumber: 12351, // current block (6 confirmations)
+      });
+
+      expect(result.settled).toBe(true);
 
       // Step 3: Verify status is updated
       const status = await invoiceService.getInvoiceStatus(
@@ -143,7 +160,7 @@ describe('Phase 2: Payment Flow Integration', () => {
       expect(status.settlement!.is_final).toBe(true);
     });
 
-    it('should mark settlement with insufficient confirmations as not final', async () => {
+    it('should NOT settle when confirmations are insufficient (stays pending)', async () => {
       const invoice = await invoiceService.createInvoice(
         {
           merchant_nft: testMerchantNft,
@@ -159,27 +176,74 @@ describe('Phase 2: Payment Flow Integration', () => {
         order_id: 'CONFIRM-001',
       });
 
-      await invoiceService.processSettlementEvent(
-        {
-          payer_nft: testPayerNft,
-          merchant_nft: testMerchantNft,
-          amount_tbc: '750000000',
-          payload_hash: payloadHash,
-          block_number: 100,
-          tx_hash: 'lowconf123',
-          timestamp: Math.floor(Date.now() / 1000),
-        },
-        102 // Only 2 confirmations
-      );
+      const settlementEvent: SettlementEvent = {
+        payer_nft: testPayerNft,
+        merchant_nft: testMerchantNft,
+        amount_tbc: '750000000',
+        payload_hash: payloadHash,
+        block_number: 100,
+        tx_hash: 'lowconf123',
+        timestamp: Math.floor(Date.now() / 1000),
+      };
+
+      const result = await invoiceService.processSettlementEvent(settlementEvent, {
+        attestation: attestEvent(settlementEvent),
+        currentBlockNumber: 102, // Only 2 confirmations — below MIN_CONFIRMATIONS
+      });
+
+      // The blockchain is the source of truth: without finality the API must
+      // not present the invoice as settled (audit finding API-H3).
+      expect(result.settled).toBe(false);
+      expect(result.reason).toBe('insufficient_confirmations');
 
       const status = await invoiceService.getInvoiceStatus(
         invoice.invoice_id,
         'test-key'
       );
 
-      expect(status.status).toBe('settled');
-      expect(status.settlement!.confirmations).toBe(2);
-      expect(status.settlement!.is_final).toBe(false);
+      expect(status.status).toBe('pending');
+      expect(status.settlement).toBeUndefined();
+    });
+
+    it('should reject a forged (unattested) settlement event', async () => {
+      const invoice = await invoiceService.createInvoice(
+        {
+          merchant_nft: testMerchantNft,
+          amount_tbc: '500000000',
+          currency: 'TBC',
+          metadata: { order_id: 'FORGED-001' },
+        },
+        'test-key'
+      );
+
+      const payloadHash = hashMetadata({
+        invoice_id: invoice.invoice_id,
+        order_id: 'FORGED-001',
+      });
+
+      // No attestation: this event did not come from the trusted indexer.
+      await expect(
+        invoiceService.processSettlementEvent(
+          {
+            payer_nft: testPayerNft,
+            merchant_nft: testMerchantNft,
+            amount_tbc: '500000000',
+            payload_hash: payloadHash,
+            block_number: 200,
+            tx_hash: 'forged123',
+            timestamp: Math.floor(Date.now() / 1000),
+          },
+          { currentBlockNumber: 999 } // plenty of confirmations, but forged
+        )
+      ).rejects.toThrow();
+
+      const status = await invoiceService.getInvoiceStatus(
+        invoice.invoice_id,
+        'test-key'
+      );
+
+      expect(status.status).toBe('pending');
+      expect(status.settlement).toBeUndefined();
     });
   });
 

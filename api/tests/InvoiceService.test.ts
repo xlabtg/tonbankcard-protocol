@@ -7,8 +7,14 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { InvoiceService } from '../src/services/InvoiceService';
 import { ApiKeyService } from '../src/services/ApiKeyService';
-import { CreateInvoiceRequest } from '../src/types/invoice';
+import { CreateInvoiceRequest, CONSTANTS, ErrorCode } from '../src/types/invoice';
 import { ValidationError } from '../src/utils/validation';
+import { hashMetadata } from '../src/utils/helpers';
+import {
+  SettlementEvent,
+  signSettlementEvent,
+} from '../src/utils/settlementAttestation';
+import { resolveSettlementIndexerSecret } from '../src/config/secrets';
 
 describe('InvoiceService', () => {
   let service: InvoiceService;
@@ -268,24 +274,182 @@ describe('InvoiceService', () => {
         merchant_nft: TEST_MERCHANT_NFT,
         amount_tbc: '1000000000',
         currency: 'TBC',
+        metadata: { order_id: 'SETTLE-OK' },
       };
 
       const invoice = await service.createInvoice(createRequest, TEST_API_KEY);
-
-      // Simulate settlement event processing
-      await service.processSettlementEvent({
-        payer_nft: 'EQCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+      const event: SettlementEvent = {
+        payer_nft: OTHER_MERCHANT_NFT,
         merchant_nft: TEST_MERCHANT_NFT,
         amount_tbc: '1000000000',
-        payload_hash: 'test_hash',
-        block_number: 12345678,
+        payload_hash: hashMetadata({ invoice_id: invoice.invoice_id, order_id: 'SETTLE-OK' }),
+        block_number: 1000,
         tx_hash: '0xabc123',
         timestamp: Math.floor(Date.now() / 1000),
+      };
+
+      // Attested by the trusted indexer, with enough confirmations to be final.
+      const result = await service.processSettlementEvent(event, {
+        attestation: signSettlementEvent(resolveSettlementIndexerSecret(), event),
+        currentBlockNumber: event.block_number + CONSTANTS.MIN_CONFIRMATIONS,
       });
 
-      // Note: In reference implementation, payload hash matching would need
-      // to be properly implemented for this test to pass
-      // For now, this tests the structure
+      expect(result.settled).toBe(true);
+      expect(result.invoiceId).toBe(invoice.invoice_id);
+
+      const status = await service.getInvoiceStatus(invoice.invoice_id, TEST_API_KEY);
+      expect(status.status).toBe('settled');
+      expect(status.settlement).toBeDefined();
+      expect(status.settlement!.on_chain_verified).toBe(true);
+      expect(status.settlement!.confirmations).toBe(CONSTANTS.MIN_CONFIRMATIONS);
+      expect(status.settlement!.is_final).toBe(true);
+    });
+  });
+
+  // Regression coverage for audit finding API-H3 (issue #252): the API is
+  // informational only — the blockchain is the single source of truth — so
+  // settlement requires (1) a trusted-indexer attestation and (2) finality.
+  describe('processSettlementEvent (settlement integrity)', () => {
+    /** Build a settlement event whose payload_hash matches the given invoice. */
+    function buildSettlementEvent(
+      invoiceId: string,
+      metadata: Record<string, string> = {},
+      overrides: Partial<SettlementEvent> = {}
+    ): SettlementEvent {
+      return {
+        payer_nft: OTHER_MERCHANT_NFT,
+        merchant_nft: TEST_MERCHANT_NFT,
+        amount_tbc: '1000000000',
+        payload_hash: hashMetadata({ invoice_id: invoiceId, ...metadata }),
+        block_number: 1000,
+        tx_hash: '0xabc123',
+        timestamp: Math.floor(Date.now() / 1000),
+        ...overrides,
+      };
+    }
+
+    /** Sign an event with the resolved (test) indexer secret. */
+    function attest(event: SettlementEvent): string {
+      return signSettlementEvent(resolveSettlementIndexerSecret(), event);
+    }
+
+    async function createPendingInvoice(metadata: Record<string, string> = {}) {
+      return service.createInvoice(
+        {
+          merchant_nft: TEST_MERCHANT_NFT,
+          amount_tbc: '1000000000',
+          currency: 'TBC',
+          metadata,
+        },
+        TEST_API_KEY
+      );
+    }
+
+    it('rejects a forged event (no attestation) and leaves the invoice pending', async () => {
+      const invoice = await createPendingInvoice({ order_id: 'FORGE-1' });
+      const event = buildSettlementEvent(invoice.invoice_id, { order_id: 'FORGE-1' });
+
+      // A forged event carries no valid attestation — even with plenty of
+      // confirmations it must be rejected, not settled.
+      await expect(
+        service.processSettlementEvent(event, {
+          currentBlockNumber: event.block_number + CONSTANTS.MIN_CONFIRMATIONS,
+        })
+      ).rejects.toThrow(ValidationError);
+
+      const status = await service.getInvoiceStatus(invoice.invoice_id, TEST_API_KEY);
+      expect(status.status).toBe('pending');
+      expect(status.settlement).toBeUndefined();
+    });
+
+    it('rejects an event with a tampered field (attestation mismatch)', async () => {
+      const invoice = await createPendingInvoice({ order_id: 'TAMPER-1' });
+      const event = buildSettlementEvent(invoice.invoice_id, { order_id: 'TAMPER-1' });
+      const attestation = attest(event);
+
+      // Attacker keeps the real attestation but inflates the amount.
+      const tampered: SettlementEvent = { ...event, amount_tbc: '9999999999' };
+
+      let thrown: unknown;
+      try {
+        await service.processSettlementEvent(tampered, {
+          attestation,
+          currentBlockNumber: event.block_number + CONSTANTS.MIN_CONFIRMATIONS,
+        });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(ValidationError);
+      expect((thrown as ValidationError).code).toBe(
+        ErrorCode.UNTRUSTED_SETTLEMENT_SOURCE
+      );
+
+      const status = await service.getInvoiceStatus(invoice.invoice_id, TEST_API_KEY);
+      expect(status.status).toBe('pending');
+    });
+
+    it('does not settle an attested event with insufficient confirmations', async () => {
+      const invoice = await createPendingInvoice({ order_id: 'CONF-LOW' });
+      const event = buildSettlementEvent(invoice.invoice_id, { order_id: 'CONF-LOW' });
+
+      const result = await service.processSettlementEvent(event, {
+        attestation: attest(event),
+        // One short of MIN_CONFIRMATIONS.
+        currentBlockNumber: event.block_number + CONSTANTS.MIN_CONFIRMATIONS - 1,
+      });
+
+      expect(result.settled).toBe(false);
+      expect(result.reason).toBe('insufficient_confirmations');
+
+      const status = await service.getInvoiceStatus(invoice.invoice_id, TEST_API_KEY);
+      expect(status.status).toBe('pending');
+      expect(status.settlement).toBeUndefined();
+    });
+
+    it('does not settle an attested event when confirmations are unknown', async () => {
+      const invoice = await createPendingInvoice({ order_id: 'CONF-NONE' });
+      const event = buildSettlementEvent(invoice.invoice_id, { order_id: 'CONF-NONE' });
+
+      // No currentBlockNumber → confirmations undefined → not final.
+      const result = await service.processSettlementEvent(event, {
+        attestation: attest(event),
+      });
+
+      expect(result.settled).toBe(false);
+      expect(result.reason).toBe('insufficient_confirmations');
+
+      const status = await service.getInvoiceStatus(invoice.invoice_id, TEST_API_KEY);
+      expect(status.status).toBe('pending');
+    });
+
+    it('settles an attested, final event and records on-chain proof', async () => {
+      const invoice = await createPendingInvoice({ order_id: 'CONF-OK' });
+      const event = buildSettlementEvent(invoice.invoice_id, { order_id: 'CONF-OK' });
+
+      const result = await service.processSettlementEvent(event, {
+        attestation: attest(event),
+        currentBlockNumber: event.block_number + CONSTANTS.MIN_CONFIRMATIONS,
+      });
+
+      expect(result.settled).toBe(true);
+
+      const status = await service.getInvoiceStatus(invoice.invoice_id, TEST_API_KEY);
+      expect(status.status).toBe('settled');
+      expect(status.settlement!.is_final).toBe(true);
+      expect(status.settlement!.confirmations).toBe(CONSTANTS.MIN_CONFIRMATIONS);
+      expect(status.settlement!.on_chain_verified).toBe(true);
+    });
+
+    it('reports no_matching_invoice for an attested, final event with no match', async () => {
+      const event = buildSettlementEvent('inv_does_not_exist', { order_id: 'X' });
+
+      const result = await service.processSettlementEvent(event, {
+        attestation: attest(event),
+        currentBlockNumber: event.block_number + CONSTANTS.MIN_CONFIRMATIONS,
+      });
+
+      expect(result.settled).toBe(false);
+      expect(result.reason).toBe('no_matching_invoice');
     });
   });
 
