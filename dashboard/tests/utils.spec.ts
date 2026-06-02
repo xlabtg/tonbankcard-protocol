@@ -184,5 +184,83 @@ describe('Utils', () => {
       expect(link).toContain('Full%20package');
       expect(link).toContain('exp=');
     });
+
+    // --- Security regression tests (audit finding FRONTEND-H1) ---
+
+    it('should reject an amount that injects extra query parameters', () => {
+      expect(() =>
+        generateInvoiceLink(merchantNft, {
+          amountTbc: '10&bin=evil',
+        })
+      ).toThrow(/Invalid amount/);
+    });
+
+    it('should reject a non-numeric amount', () => {
+      expect(() =>
+        generateInvoiceLink(merchantNft, {
+          amountTbc: 'abc',
+        })
+      ).toThrow(/Invalid amount/);
+    });
+
+    it('should reject a negative amount', () => {
+      expect(() =>
+        generateInvoiceLink(merchantNft, {
+          amountTbc: '-1',
+        })
+      ).toThrow(/Invalid amount/);
+    });
+
+    it('should reject an empty amount', () => {
+      expect(() =>
+        generateInvoiceLink(merchantNft, {
+          amountTbc: '',
+        })
+      ).toThrow(/Invalid amount/);
+    });
+
+    it('should accept a decimal amount', () => {
+      const link = generateInvoiceLink(merchantNft, {
+        amountTbc: '1.5',
+      });
+      expect(link).toContain('amount=1.5');
+    });
+
+    it('should reject an invalid merchant address', () => {
+      expect(() =>
+        generateInvoiceLink('not-a-ton-address', {
+          amountTbc: '1000000000',
+        })
+      ).toThrow(/Invalid TON address/);
+    });
+
+    it('should reject a merchant address carrying an injected parameter', () => {
+      expect(() =>
+        generateInvoiceLink(`${merchantNft}?bin=evil`, {
+          amountTbc: '1000000000',
+        })
+      ).toThrow(/Invalid TON address/);
+    });
+
+    it('should not inject parameters from the description field', () => {
+      const link = generateInvoiceLink(merchantNft, {
+        amountTbc: '1000000000',
+        description: 'Pay&bin=evil',
+      });
+      // The raw `&bin=` must be encoded inside text, not appear as its own param.
+      expect(link).not.toContain('&bin=evil');
+      expect(link).toContain('bin%3Devil');
+    });
+
+    it('should produce exactly one amount parameter', () => {
+      const link = generateInvoiceLink(merchantNft, {
+        amountTbc: '1000000000',
+        orderId: 'ORD-1',
+        description: 'Plan',
+        expirationMinutes: 15,
+      });
+      const amountMatches = link.match(/[?&]amount=/g) ?? [];
+      expect(amountMatches).toHaveLength(1);
+    });
   });
 });
