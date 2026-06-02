@@ -116,6 +116,17 @@ export enum ErrorCode {
 
   /** Upstream TON node / RPC is unreachable. HTTP 503. */
   BLOCKCHAIN_UNAVAILABLE = 'BLOCKCHAIN_UNAVAILABLE',
+
+  /**
+   * A settlement event was submitted without a valid trusted-indexer
+   * attestation. HTTP 403.
+   *
+   * The Merchant API is informational only — the blockchain is the single
+   * source of truth — so settlement events are accepted only from the trusted,
+   * authenticated indexer. A forged or unauthenticated event is rejected with
+   * this code and never flips an invoice to `settled` (audit finding API-H3).
+   */
+  UNTRUSTED_SETTLEMENT_SOURCE = 'UNTRUSTED_SETTLEMENT_SOURCE',
 }
 
 /**
@@ -137,6 +148,7 @@ export const ERROR_CODE_HTTP_STATUS: Record<ErrorCode, number> = {
   [ErrorCode.RATE_LIMIT_EXCEEDED]: 429,
   [ErrorCode.INTERNAL_ERROR]: 500,
   [ErrorCode.BLOCKCHAIN_UNAVAILABLE]: 503,
+  [ErrorCode.UNTRUSTED_SETTLEMENT_SOURCE]: 403,
 };
 
 /**

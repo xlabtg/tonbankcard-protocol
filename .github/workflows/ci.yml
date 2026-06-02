@@ -210,6 +210,14 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Test API
+        working-directory: api
+        run: npm test
+
       - name: Install SDK dependencies
         working-directory: sdk
         run: npm ci
@@ -276,6 +284,14 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '20'
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: TypeScript check API
+        working-directory: api
+        run: npm run typecheck
 
       - name: Install SDK dependencies
         working-directory: sdk

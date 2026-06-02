@@ -23,6 +23,29 @@ const BLOCK_TX_PAGE_SIZE = 256;
 /** Safety cap on `getBlockTransactions` pages per shard block (anti-runaway). */
 const MAX_BLOCK_TX_PAGES = 1000;
 
+/**
+ * Extract the latest masterchain seqno from a `getMasterchainInfo()` response.
+ *
+ * The `@ton/ton` `TonClient` wrapper flattens the tip onto `latestSeqno`, while
+ * the raw toncenter HTTP API (and other clients) nest it under `last.seqno`
+ * (INDEXER-H3). Reading only one shape lets a wrapper/version swap silently
+ * yield `undefined`, which would propagate to `NaN` sync bounds and stall the
+ * loop without an error. We accept both shapes and let the caller validate the
+ * result is a finite number.
+ */
+function extractLatestSeqno(info: unknown): number {
+  if (info && typeof info === 'object') {
+    const obj = info as { latestSeqno?: unknown; last?: { seqno?: unknown } };
+    if (typeof obj.latestSeqno === 'number') {
+      return obj.latestSeqno;
+    }
+    if (obj.last && typeof obj.last.seqno === 'number') {
+      return obj.last.seqno;
+    }
+  }
+  return NaN;
+}
+
 export class IndexerService {
   private client: TonClient;
   private db: IndexerDatabase;
@@ -116,6 +139,11 @@ export class IndexerService {
         return;
       }
 
+      // Persist the chain head so confirmation depth is derived from one
+      // canonical value everywhere (INDEXER-H1). The API reads the same seqno
+      // when reporting payment status.
+      this.db.setLatestChainSeqno(latestBlock.seqno);
+
       this.logger.debug(
         { latestIndexed, latestChain: latestBlock.seqno },
         'Sync status'
@@ -165,8 +193,14 @@ export class IndexerService {
         await this.syncBlockRange(currentBlock, batchEnd);
       }
 
-      // Mark older blocks as confirmed
-      const confirmUpTo = endBlock - confirmationBlocks;
+      // Mark confirmed blocks. `endBlock` is already `chainHead -
+      // confirmationBlocks`, i.e. the highest block at the required
+      // confirmation depth, so it IS the confirmation cutoff. Subtracting the
+      // depth again here (the previous behaviour) left a band of width
+      // `confirmationBlocks` of genuinely confirmed blocks flagged unconfirmed
+      // (INDEXER-H1). The cutoff matches `isBlockConfirmed(chainHead, b, K)`
+      // used by the API: b <= chainHead - K  <=>  chainHead - b >= K.
+      const confirmUpTo = endBlock;
       if (confirmUpTo > 0) {
         this.db.markBlocksConfirmed(confirmUpTo);
       }
@@ -304,25 +338,49 @@ export class IndexerService {
       // so attributing it to the current block below is correct (INDEXER-H2).
       const transactions = await this.fetchBlockTransactions(blockNumber);
 
-      // Store block
-      this.db.insertBlock(
+      // Parse all events up-front (no DB writes) so the write phase below is a
+      // purely synchronous, all-or-nothing transaction. Parsing must happen
+      // outside the transaction because `better-sqlite3` transactions cannot
+      // span `await` boundaries.
+      const pendingEvents = this.collectBlockEvents(
+        transactions,
         blockNumber,
-        blockHash,
-        parentHash,
-        timestamp,
-        transactions.length
+        timestamp
       );
 
-      // Process transactions
-      for (const tx of transactions) {
-        await this.processTransaction(tx, blockNumber, timestamp);
-      }
+      // Atomically commit the block row, every event, and the cursor advance.
+      // If any event insert throws, the whole transaction rolls back: the block
+      // row is not persisted and the cursor is not advanced, so the block is
+      // re-fetched and retried on the next poll instead of being silently
+      // skipped with missing events (INDEXER-C3).
+      this.db.transaction(() => {
+        this.db.insertBlock(
+          blockNumber,
+          blockHash,
+          parentHash,
+          timestamp,
+          transactions.length
+        );
 
-      // Update latest indexed
-      this.db.updateLatestBlock(blockNumber, timestamp);
+        for (const pending of pendingEvents) {
+          this.storeEvent(
+            pending.event,
+            blockNumber,
+            pending.txHash,
+            pending.logIndex,
+            timestamp
+          );
+        }
+
+        this.db.updateLatestBlock(blockNumber, timestamp);
+      });
 
       this.logger.debug(
-        { blockNumber, txCount: transactions.length },
+        {
+          blockNumber,
+          txCount: transactions.length,
+          eventCount: pendingEvents.length,
+        },
         'Block processed'
       );
     } catch (error) {
@@ -661,16 +719,18 @@ export class IndexerService {
   }
 
   /**
-   * Process a transaction and extract events
+   * Parse every tracked transaction in a block into the events to persist.
+   *
+   * This is intentionally side-effect free (no DB writes): the caller commits
+   * the returned events inside a single transaction so the block is indexed
+   * atomically. Parsing is synchronous, which lets the write phase run as a
+   * `better-sqlite3` transaction (those cannot span `await`).
    */
-  private async processTransaction(
-    transaction: any,
-    blockNumber: number,
-    timestamp: number
-  ): Promise<void> {
-    const txHash = this.getTransactionHash(transaction);
-
-    // Check if transaction involves our tracked contracts
+  private collectBlockEvents(
+    transactions: any[],
+    _blockNumber: number,
+    _timestamp: number
+  ): Array<{ event: IndexedEvent; txHash: string; logIndex: number }> {
     const relevantContracts = [
       this.config.contracts.paymentHub,
       this.config.contracts.merchantPaymentHub,
@@ -678,23 +738,36 @@ export class IndexerService {
       ...this.config.contracts.nftCollections,
     ].filter((addr) => addr !== '');
 
-    const txDestination = this.getTransactionDestination(transaction);
-    if (!relevantContracts.includes(txDestination)) {
-      return; // Not relevant
+    const pending: Array<{
+      event: IndexedEvent;
+      txHash: string;
+      logIndex: number;
+    }> = [];
+
+    for (const transaction of transactions) {
+      const txDestination = this.getTransactionDestination(transaction);
+      if (!relevantContracts.includes(txDestination)) {
+        continue; // Not relevant
+      }
+
+      const txHash = this.getTransactionHash(transaction);
+      const events = this.parser.parseTransaction(transaction, txDestination);
+
+      for (let i = 0; i < events.length; i++) {
+        pending.push({ event: events[i], txHash, logIndex: i });
+      }
     }
 
-    // Parse events from transaction
-    const events = this.parser.parseTransaction(transaction, txDestination);
-
-    // Store events
-    for (let i = 0; i < events.length; i++) {
-      const event = events[i];
-      this.storeEvent(event, blockNumber, txHash, i, timestamp);
-    }
+    return pending;
   }
 
   /**
-   * Store event in database
+   * Store a single parsed event in the database.
+   *
+   * Errors are NOT swallowed: a failed insert must propagate so the enclosing
+   * block transaction (see `processBlock`) rolls back and the block is retried
+   * rather than recorded with missing events (INDEXER-C3). The error is logged
+   * with context before being re-thrown.
    */
   private storeEvent(
     event: IndexedEvent,
@@ -811,6 +884,9 @@ export class IndexerService {
         },
         'Error storing event'
       );
+      // Re-throw so the enclosing block transaction rolls back. Swallowing here
+      // would let the cursor advance past a block with missing events.
+      throw error;
     }
   }
 
@@ -818,12 +894,29 @@ export class IndexerService {
    * Get latest block from chain
    *
    * Returns masterchain info with the latest seqno. Uses TonClient
-   * which wraps the /getMasterchainInfo endpoint.
+   * which wraps the /getMasterchainInfo endpoint. The tip is read from
+   * either `latestSeqno` (TonClient shape) or `last.seqno` (raw HTTP shape)
+   * so a client/version swap cannot silently produce `undefined` (INDEXER-H3).
+   *
+   * A non-finite seqno is rejected with a clear error and returns `null`,
+   * which makes `syncBlocks` skip the poll rather than computing `NaN` bounds
+   * that would silently stall the loop.
    */
   private async getLatestBlock(): Promise<{ seqno: number } | null> {
     try {
       const info = await this.client.getMasterchainInfo();
-      return { seqno: info.latestSeqno };
+      const seqno = extractLatestSeqno(info);
+      if (!Number.isFinite(seqno)) {
+        this.logger.error(
+          {
+            errorCode: IndexerErrorCode.LATEST_BLOCK_UNAVAILABLE,
+            info,
+          },
+          'getMasterchainInfo returned a non-finite seqno'
+        );
+        return null;
+      }
+      return { seqno };
     } catch (error) {
       this.logger.error(
         {

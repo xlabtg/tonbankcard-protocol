@@ -339,6 +339,7 @@ All `api/` endpoints respond with the standardized envelope on failure:
 | `RATE_LIMIT_EXCEEDED` | 429 | Per-key sliding window rate limit hit; `Retry-After` header is set. |
 | `INTERNAL_ERROR` | 500 | Unhandled server error; client should retry with backoff. |
 | `BLOCKCHAIN_UNAVAILABLE` | 503 | TON RPC / indexer dependency is unreachable; client should retry with backoff. |
+| `UNTRUSTED_SETTLEMENT_SOURCE` | 403 | A settlement event was submitted without a valid trusted-indexer attestation. The blockchain is the single source of truth, so settlement events are accepted only from the authenticated indexer; forged or unauthenticated events are rejected and never mark an invoice settled. |
 
 ### Security rules
 
