@@ -33,6 +33,7 @@ export {
   AccountInfo,
   TonbankcardConfig,
   TransactionVerification,
+  SettlementMatchCriteria,
   MerchantPaymentEvent,
   // Phase 4 Types
   MultiSigConfig,
