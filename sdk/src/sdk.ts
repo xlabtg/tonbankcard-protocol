@@ -20,7 +20,7 @@ import {
   AccountState,
   TransactionVerification,
 } from './types';
-import { generateInvoiceId } from './utils';
+import { generateInvoiceId, isValidTonAddress } from './utils';
 
 /** Masterchain identifiers (workchain -1, full shard) used for block lookups. */
 const MASTERCHAIN_WORKCHAIN = -1;
@@ -469,11 +469,19 @@ export class TonbankcardSDK {
 
   /**
    * Helper: Validate TON address
+   *
+   * Serializes the address to its friendly string form and re-parses it via
+   * `Address.parse`, which verifies the workchain/account structure and the
+   * CRC16 checksum. Both friendly (base64 / base64url) and raw forms are
+   * accepted when valid; malformed or checksum-corrupted addresses are
+   * rejected. Guards against non-`Address` values passed through `as any`.
    */
   private isValidAddress(address: Address): boolean {
     try {
-      // Check if address is valid
-      return address.toString().length > 0;
+      if (address == null || typeof address.toString !== 'function') {
+        return false;
+      }
+      return isValidTonAddress(address.toString());
     } catch {
       return false;
     }
