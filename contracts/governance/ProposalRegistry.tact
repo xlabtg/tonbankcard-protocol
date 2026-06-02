@@ -44,6 +44,11 @@ const ERROR_VOTING_NOT_ENDED: Int = 108;
 const ERROR_NOT_ELIGIBLE_VOTER: Int = 109;
 const ERROR_INVALID_VOTE_TYPE: Int = 110;
 const ERROR_ZERO_QUORUM: Int = 111;
+const ERROR_RESOLVER_NOT_SET: Int = 112;
+
+// Ownership-resolution request kinds (used to route the resolver callback)
+const REQUEST_KIND_VOTE: Int = 0;
+const REQUEST_KIND_PROPOSAL: Int = 1;
 
 // Default voting window (7 days in seconds)
 const DEFAULT_VOTING_DURATION: Int = 604800;
@@ -68,6 +73,24 @@ struct Proposal {
     quorum_threshold: Int as uint64;      // Minimum votes required
 }
 
+// Pending vote awaiting on-chain ownership confirmation from the resolver.
+struct PendingVote {
+    proposal_id: Int as uint64;
+    nft_id: Int as uint64;                // Voter's claimed Diamond NFT ID
+    vote: Int as uint8;                   // 0=FOR, 1=AGAINST, 2=ABSTAIN
+    claimant: Address;                    // Original sender that must own nft_id
+}
+
+// Pending proposal awaiting on-chain ownership confirmation from the resolver.
+struct PendingProposal {
+    metadata_hash: Int as uint256;
+    author_nft_id: Int as uint64;         // Author's claimed Diamond NFT ID
+    category: Int as uint8;
+    voting_duration: Int as uint64;       // Resolved voting duration (seconds)
+    quorum_threshold: Int as uint64;      // Resolved quorum threshold
+    claimant: Address;                    // Original sender that must own author_nft_id
+}
+
 // Proposal submission message
 message SubmitProposal {
     metadata_hash: Int as uint256;        // Hash of off-chain proposal content
@@ -87,6 +110,42 @@ message CastVote {
 // Finalize proposal message
 message FinalizeProposal {
     proposal_id: Int as uint64;           // Proposal to finalize
+}
+
+// One-time configuration message: set the NFT ownership resolver address.
+// Only the deployer can call this, and only once (the resolver is immutable
+// afterwards). The resolver is the on-chain authority that maps a Diamond NFT
+// ID to its current owner (TEP-62 owner resolution / NFT Account Resolver).
+message SetOwnerResolver {
+    resolver: Address;                    // Address of the NFT ownership resolver
+}
+
+// ==================== OWNERSHIP-VERIFICATION PROTOCOL ====================
+//
+// Voting and proposal submission never trust a caller-supplied NFT ID. Instead
+// the registry asks a trusted on-chain resolver "who owns Diamond NFT N?" and
+// only records the action once the resolver confirms that the original sender
+// is the owner. This is an asynchronous request/response flow:
+//
+//   1. User -> ProposalRegistry: CastVote / SubmitProposal (records a PENDING
+//      request keyed by query_id, binds it to sender()).
+//   2. ProposalRegistry -> Resolver: ResolveOwnership{nft_id, claimant}.
+//   3. Resolver -> ProposalRegistry: OwnershipResolved{nft_id, owner}.
+//   4. ProposalRegistry records the vote/proposal IFF owner == claimant.
+
+// Sent by the registry to the resolver to ask who owns a Diamond NFT.
+message ResolveOwnership {
+    query_id: Int as uint64;              // Correlates the request with its reply
+    nft_id: Int as uint64;                // Diamond NFT ID whose owner is requested
+    claimant: Address;                    // Address that claims to own nft_id
+    request_kind: Int as uint8;           // 0 = vote, 1 = proposal
+}
+
+// Sent by the resolver back to the registry with the resolved on-chain owner.
+message OwnershipResolved {
+    query_id: Int as uint64;              // Echoes the request's query_id
+    nft_id: Int as uint64;                // Echoes the request's nft_id
+    owner: Address;                       // Current on-chain owner of nft_id
 }
 
 // ==================== EVENTS ====================
@@ -121,8 +180,11 @@ message ProposalFinalized {
 
 contract ProposalRegistry with Deployable {
 
-    // TBC Diamonds NFT collection address (222 total supply)
-    const DIAMONDS_COLLECTION: Address = address("EQDiamondsCollectionAddressPlaceholder123456789");
+    // TBC Diamonds NFT collection address (222 total supply).
+    // Placeholder zero-address; replace with the real collection address at
+    // deployment. Must be a syntactically valid TON address so the contract
+    // compiles.
+    const DIAMONDS_COLLECTION: Address = address("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c");
 
     // Total supply of TBC Diamonds
     const DIAMONDS_TOTAL_SUPPLY: Int = 222;
@@ -135,12 +197,38 @@ contract ProposalRegistry with Deployable {
     // Key: proposal_id * 1000 + nft_id (simple composite key)
     votes_cast: map<Int, Bool>;
 
-    // Snapshot storage: maps proposal_id to snapshot of eligible voters
-    // In production, this would be populated by off-chain indexer at voting start
-    // For now, we validate against current ownership (simplified implementation)
+    // Deployer address — the only account allowed to configure the resolver.
+    // Recorded once at init() and never mutated.
+    deployer: Address;
+
+    // NFT ownership resolver (TEP-62 owner resolution / NFT Account Resolver).
+    // Set once by the deployer via SetOwnerResolver. Until configured, voting and
+    // proposal submission are rejected so a vote can never be recorded without an
+    // on-chain ownership check.
+    owner_resolver: Address?;
+
+    // Monotonic counter correlating ownership requests with their replies.
+    next_query_id: Int as uint64;
+
+    // In-flight ownership-resolution requests, keyed by query_id. A vote/proposal
+    // is only materialised once the resolver confirms the claimant owns the NFT.
+    pending_votes: map<Int, PendingVote>;
+    pending_proposals: map<Int, PendingProposal>;
 
     init() {
         self.proposal_count = 0;
+        self.deployer = sender();
+        self.owner_resolver = null;
+        self.next_query_id = 0;
+    }
+
+    // ==================== CONFIGURATION ====================
+
+    // Configure the NFT ownership resolver (one-time, deployer only).
+    receive(msg: SetOwnerResolver) {
+        require(sender() == self.deployer, "Only deployer can set resolver");
+        require(self.owner_resolver == null, "Resolver already set");
+        self.owner_resolver = msg.resolver;
     }
 
     // ==================== SUBMIT PROPOSAL ====================
@@ -160,50 +248,46 @@ contract ProposalRegistry with Deployable {
             "Invalid Diamond NFT ID"
         );
 
-        // NOTE: In production, we would verify the sender owns the Diamond NFT
-        // This requires a cross-contract call to the NFT collection
-        // For this implementation, we trust the caller to provide valid ownership proof
-
-        // Calculate voting window
-        let voting_start: Int = now();
+        // Resolve the voting window / quorum now so that invalid configuration is
+        // rejected synchronously (before any cross-contract round-trip).
         let voting_duration: Int = msg.voting_duration > 0 ? msg.voting_duration : DEFAULT_VOTING_DURATION;
-        let voting_end: Int = voting_start + voting_duration;
 
         // Validate quorum threshold
         let quorum: Int = msg.quorum_threshold > 0 ? msg.quorum_threshold : DEFAULT_QUORUM_THRESHOLD;
         require(quorum > 0, "Quorum must be positive");
         require(quorum <= self.DIAMONDS_TOTAL_SUPPLY, "Quorum exceeds total supply");
 
-        // Increment proposal count
-        self.proposal_count = self.proposal_count + 1;
+        // The proposal is NOT recorded here. The sender's ownership of
+        // author_nft_id must first be confirmed on-chain by the resolver. We
+        // stash the request and ask the resolver who owns the Diamond NFT; the
+        // proposal is only materialised in the OwnershipResolved callback when
+        // the resolved owner equals this sender. A caller-supplied author_nft_id
+        // can therefore never, on its own, create a proposal.
+        let resolver: Address = self.requireResolver();
+        let qid: Int = self.next_query_id;
+        self.next_query_id = self.next_query_id + 1;
 
-        // Create proposal
-        let proposal: Proposal = Proposal{
-            id: self.proposal_count,
+        self.pending_proposals.set(qid, PendingProposal{
             metadata_hash: msg.metadata_hash,
             author_nft_id: msg.author_nft_id,
             category: msg.category,
-            voting_start: voting_start,
-            voting_end: voting_end,
-            status: STATUS_ACTIVE,
-            votes_for: 0,
-            votes_against: 0,
-            votes_abstain: 0,
-            quorum_threshold: quorum
-        };
+            voting_duration: voting_duration,
+            quorum_threshold: quorum,
+            claimant: sender()
+        });
 
-        // Store proposal (append-only operation)
-        self.proposals.set(self.proposal_count, proposal);
-
-        // Emit event for indexing
-        emit(ProposalSubmitted{
-            proposal_id: self.proposal_count,
-            metadata_hash: msg.metadata_hash,
-            author_nft_id: msg.author_nft_id,
-            category: msg.category,
-            voting_start: voting_start,
-            voting_end: voting_end
-        }.toCell());
+        send(SendParameters{
+            to: resolver,
+            value: 0,
+            mode: SendRemainingValue,
+            bounce: false,
+            body: ResolveOwnership{
+                query_id: qid,
+                nft_id: msg.author_nft_id,
+                claimant: sender(),
+                request_kind: REQUEST_KIND_PROPOSAL
+            }.toCell()
+        });
     }
 
     // ==================== CAST VOTE ====================
@@ -237,34 +321,161 @@ contract ProposalRegistry with Deployable {
             "Invalid vote type"
         );
 
-        // Check if already voted (using composite key)
+        // Check if already voted (using composite key). This is an early
+        // rejection only; the authoritative dedup check is re-run when the vote
+        // is actually recorded in the OwnershipResolved callback.
         let vote_key: Int = msg.proposal_id * 1000 + msg.voter_nft_id;
         require(self.votes_cast.get(vote_key) == null, "Already voted");
 
-        // NOTE: In production, we would verify:
-        // 1. Sender owns the Diamond NFT
-        // 2. NFT was owned at snapshot time
-        // This requires cross-contract calls or off-chain verification
+        // The vote is NOT recorded here. We bind the request to sender() and ask
+        // the resolver who owns voter_nft_id on-chain. The vote is only recorded
+        // in the OwnershipResolved callback when the resolved owner equals this
+        // sender. A caller-supplied voter_nft_id can therefore never, on its own,
+        // record a vote — defeating the "iterate 1..222 from one wallet" attack.
+        let resolver: Address = self.requireResolver();
+        let qid: Int = self.next_query_id;
+        self.next_query_id = self.next_query_id + 1;
 
-        // Record vote
+        self.pending_votes.set(qid, PendingVote{
+            proposal_id: msg.proposal_id,
+            nft_id: msg.voter_nft_id,
+            vote: msg.vote,
+            claimant: sender()
+        });
+
+        send(SendParameters{
+            to: resolver,
+            value: 0,
+            mode: SendRemainingValue,
+            bounce: false,
+            body: ResolveOwnership{
+                query_id: qid,
+                nft_id: msg.voter_nft_id,
+                claimant: sender(),
+                request_kind: REQUEST_KIND_VOTE
+            }.toCell()
+        });
+    }
+
+    // ==================== OWNERSHIP RESOLUTION CALLBACK ====================
+
+    // Reply from the trusted resolver carrying the on-chain owner of an NFT.
+    // This is the ONLY place a vote or proposal is materialised, and it does so
+    // only when the resolved owner matches the address that originally requested
+    // the action. Spoofed callbacks are rejected because the sender must be the
+    // configured resolver.
+    receive(msg: OwnershipResolved) {
+        // Only the configured resolver may confirm ownership.
+        require(self.owner_resolver != null, "Resolver not set");
+        require(sender() == self.owner_resolver!!, "Unauthorized resolver");
+
+        // Route to a pending vote, if any.
+        let pv: PendingVote? = self.pending_votes.get(msg.query_id);
+        if (pv != null) {
+            let v: PendingVote = pv!!;
+            self.pending_votes.del(msg.query_id);
+            self.finalizeVote(v, msg.nft_id, msg.owner);
+            return;
+        }
+
+        // Otherwise route to a pending proposal, if any.
+        let pp: PendingProposal? = self.pending_proposals.get(msg.query_id);
+        if (pp != null) {
+            let pr: PendingProposal = pp!!;
+            self.pending_proposals.del(msg.query_id);
+            self.finalizeProposal(pr, msg.nft_id, msg.owner);
+            return;
+        }
+
+        // No matching request — nothing to do (stale or duplicate reply).
+    }
+
+    // ==================== INTERNAL HELPERS ====================
+
+    // Resolve the configured resolver address or abort if it has not been set.
+    fun requireResolver(): Address {
+        require(self.owner_resolver != null, "Owner resolver not configured");
+        return self.owner_resolver!!;
+    }
+
+    // Record a vote once ownership has been confirmed. Silently drops the vote
+    // (without aborting) when the resolved owner is not the claimant or when the
+    // proposal is no longer votable, so that pending state is always cleaned up.
+    fun finalizeVote(v: PendingVote, resolved_nft_id: Int, resolved_owner: Address) {
+        // The reply must concern the NFT we asked about and the resolved owner
+        // must be the original sender.
+        if (resolved_nft_id != v.nft_id) { return; }
+        if (resolved_owner != v.claimant) { return; }
+
+        // Re-validate the proposal is still open (time may have advanced).
+        let proposal: Proposal? = self.proposals.get(v.proposal_id);
+        if (proposal == null) { return; }
+        let p: Proposal = proposal!!;
+        if (p.status != STATUS_ACTIVE) { return; }
+        if (now() < p.voting_start || now() > p.voting_end) { return; }
+
+        // Authoritative double-vote guard.
+        let vote_key: Int = v.proposal_id * 1000 + v.nft_id;
+        if (self.votes_cast.get(vote_key) != null) { return; }
         self.votes_cast.set(vote_key, true);
 
         // Update vote counts
-        if (msg.vote == VOTE_FOR) {
+        if (v.vote == VOTE_FOR) {
             p.votes_for = p.votes_for + 1;
-        } else if (msg.vote == VOTE_AGAINST) {
+        } else if (v.vote == VOTE_AGAINST) {
             p.votes_against = p.votes_against + 1;
         } else {
             p.votes_abstain = p.votes_abstain + 1;
         }
 
-        // Update proposal
-        self.proposals.set(msg.proposal_id, p);
+        self.proposals.set(v.proposal_id, p);
 
         // Emit event (NFT ID not included for privacy)
         emit(VoteCast{
-            proposal_id: msg.proposal_id,
-            vote_type: msg.vote
+            proposal_id: v.proposal_id,
+            vote_type: v.vote
+        }.toCell());
+    }
+
+    // Record a proposal once authorship has been confirmed. Silently drops the
+    // request when the resolved owner is not the claimant.
+    fun finalizeProposal(pr: PendingProposal, resolved_nft_id: Int, resolved_owner: Address) {
+        if (resolved_nft_id != pr.author_nft_id) { return; }
+        if (resolved_owner != pr.claimant) { return; }
+
+        // Calculate voting window relative to confirmation time.
+        let voting_start: Int = now();
+        let voting_end: Int = voting_start + pr.voting_duration;
+
+        // Increment proposal count
+        self.proposal_count = self.proposal_count + 1;
+
+        // Create proposal
+        let proposal: Proposal = Proposal{
+            id: self.proposal_count,
+            metadata_hash: pr.metadata_hash,
+            author_nft_id: pr.author_nft_id,
+            category: pr.category,
+            voting_start: voting_start,
+            voting_end: voting_end,
+            status: STATUS_ACTIVE,
+            votes_for: 0,
+            votes_against: 0,
+            votes_abstain: 0,
+            quorum_threshold: pr.quorum_threshold
+        };
+
+        // Store proposal (append-only operation)
+        self.proposals.set(self.proposal_count, proposal);
+
+        // Emit event for indexing
+        emit(ProposalSubmitted{
+            proposal_id: self.proposal_count,
+            metadata_hash: pr.metadata_hash,
+            author_nft_id: pr.author_nft_id,
+            category: pr.category,
+            voting_start: voting_start,
+            voting_end: voting_end
         }.toCell());
     }
 
@@ -410,5 +621,15 @@ contract ProposalRegistry with Deployable {
     // Get default voting duration
     get fun getDefaultVotingDuration(): Int {
         return DEFAULT_VOTING_DURATION;
+    }
+
+    // Get the configured NFT ownership resolver (null until set by the deployer)
+    get fun getOwnerResolver(): Address? {
+        return self.owner_resolver;
+    }
+
+    // Get the deployer address (resolver configuration authority)
+    get fun getDeployer(): Address {
+        return self.deployer;
     }
 }
