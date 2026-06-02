@@ -33,7 +33,7 @@
     "@ton/core": "0.63.1",
     "@ton/ton": "13.11.2",
     "better-sqlite3": "11.10.0",
-    "dotenv": "16.4.7",
+    "dotenv": "16.6.1",
     "express": "4.22.2",
     "ioredis": "5.10.1",
     "pino": "8.21.0",
@@ -47,7 +47,7 @@
     "@types/ioredis": "4.28.10",
     "@types/jest": "29.5.14",
     "@types/node": "20.19.41",
-    "@types/pg": "8.11.10",
+    "@types/pg": "8.20.0",
     "@typescript-eslint/eslint-plugin": "8.59.3",
     "@typescript-eslint/parser": "8.59.3",
     "eslint": "8.57.1",
@@ -58,7 +58,7 @@
     "typescript": "5.9.3"
   },
   "optionalDependencies": {
-    "pg": "8.13.1"
+    "pg": "8.20.0"
   },
   "engines": {
     "node": ">=20.0.0"
