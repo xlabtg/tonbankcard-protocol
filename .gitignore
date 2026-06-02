@@ -22,9 +22,12 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environment
+# Ignore every secret-bearing .env file (e.g. .env.sandbox, .env.local,
+# .env.production.local) but keep the tracked *.example templates. See issue #261.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 
 # IDEs
 .vscode/

@@ -48,6 +48,7 @@ const silentLogger = pino({ level: 'silent' });
 /** Stub DB that tracks the cursor so we can observe whether sync advanced. */
 function makeStubDb() {
   let cursor = 0;
+  let latestChainSeqno = 0;
   const inserted: number[] = [];
   return {
     inserted,
@@ -59,11 +60,14 @@ function makeStubDb() {
     updateLatestBlock: (n: number) => {
       cursor = n;
     },
+    // Persisted by syncBlocks so confirmation depth derives from one canonical
+    // chain head (INDEXER-H1). Tracked here so the stub matches the real DB.
+    setLatestChainSeqno: (n: number) => {
+      latestChainSeqno = n;
+    },
+    getLatestChainSeqno: () => latestChainSeqno,
     markBlocksConfirmed: () => {},
     handleReorg: () => {},
-    // syncBlocks persists the chain head via setLatestChainSeqno (INDEXER-H1);
-    // the stub must expose it so the sync loop runs to completion here.
-    setLatestChainSeqno: () => {},
   };
 }
 
