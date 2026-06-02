@@ -20,6 +20,7 @@ import {
   InvoiceStatus,
   Settlement,
   ErrorCode,
+  CONSTANTS,
 } from '../types/invoice';
 
 import {
@@ -45,6 +46,13 @@ import {
 
 import { ApiKeyService, apiKeyService } from './ApiKeyService';
 
+import { resolveSettlementIndexerSecret } from '../config/secrets';
+
+import {
+  SettlementEvent,
+  verifySettlementAttestation,
+} from '../utils/settlementAttestation';
+
 import {
   IInvoiceStorage,
   IIdempotencyStorage,
@@ -57,6 +65,57 @@ import {
 
 /** Default TTL for idempotency keys (24 hours in milliseconds) */
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Options accepted by {@link InvoiceService.processSettlementEvent}.
+ */
+export interface ProcessSettlementOptions {
+  /**
+   * Attestation proving the event came from the trusted, authenticated indexer
+   * (HMAC of the canonical event under `SETTLEMENT_INDEXER_SECRET`). Required:
+   * an event without a valid attestation is rejected so a forged event cannot
+   * flip an invoice to `settled` (audit finding API-H3).
+   *
+   * @see api/src/utils/settlementAttestation.ts
+   */
+  attestation?: string;
+
+  /**
+   * Current chain head block number, used to compute confirmations. Required
+   * for finality: without it confirmations are unknown and the invoice is NOT
+   * marked settled.
+   */
+  currentBlockNumber?: number;
+
+  /**
+   * Override the indexer secret used to verify the attestation. Defaults to the
+   * validated `SETTLEMENT_INDEXER_SECRET`. Primarily an injection point for
+   * tests.
+   */
+  indexerSecret?: string;
+}
+
+/** Machine-readable reason a settlement event did not settle an invoice. */
+export type SettlementRejectionReason =
+  /** Event lacked a valid trusted-indexer attestation. */
+  | 'untrusted_source'
+  /** Confirmations were absent or below `MIN_CONFIRMATIONS` (not yet final). */
+  | 'insufficient_confirmations'
+  /** No pending invoice matched the event. */
+  | 'no_matching_invoice';
+
+/**
+ * Outcome of {@link InvoiceService.processSettlementEvent}.
+ *
+ * `settled` is `true` only when an invoice was transitioned to `settled` with a
+ * final, on-chain-verified settlement. Otherwise `reason` explains why not.
+ */
+export interface ProcessSettlementResult {
+  settled: boolean;
+  reason?: SettlementRejectionReason;
+  /** The settled invoice's id, present only when `settled === true`. */
+  invoiceId?: string;
+}
 
 /**
  * Invoice Service
@@ -393,86 +452,111 @@ export class InvoiceService {
   }
 
   /**
-   * Process on-chain settlement event (stub for reference implementation)
+   * Process an on-chain settlement event reported by the blockchain indexer.
    *
-   * This would be called by the blockchain indexer when a MerchantPayment
-   * event is detected.
+   * Settlement state is owned by the blockchain — the API is informational only
+   * (see `index.ts`). This method therefore enforces two guards before it will
+   * ever mark an invoice `settled`, closing audit finding API-H3:
    *
-   * @param event - MerchantPayment event from blockchain
-   * @param currentBlockNumber - Current block number for confirmation calculation
+   * 1. **Trusted source.** The event MUST carry a valid attestation proving it
+   *    came from the authenticated indexer (HMAC over the canonical event under
+   *    `SETTLEMENT_INDEXER_SECRET`). A forged or unauthenticated event is
+   *    rejected with `UNTRUSTED_SETTLEMENT_SOURCE` and never mutates an invoice.
+   *
+   * 2. **Finality.** The invoice is marked `settled` only when the event has
+   *    `confirmations >= MIN_CONFIRMATIONS` (i.e. `is_final === true`). An event
+   *    with absent or insufficient confirmations leaves the invoice `pending` —
+   *    the API never presents a premature settlement as authoritative.
+   *
+   * @param event   - MerchantPayment event observed on-chain by the indexer
+   * @param options - Trusted-source attestation, current block, and overrides
+   * @returns Structured outcome describing whether (and why not) it settled
+   * @throws {ValidationError} `UNTRUSTED_SETTLEMENT_SOURCE` when the attestation
+   *         is missing or invalid.
    */
   async processSettlementEvent(
-    event: {
-      payer_nft: string;
-      merchant_nft: string;
-      amount_tbc: string;
-      payload_hash: string;
-      block_number: number;
-      tx_hash: string;
-      timestamp: number;
-    },
-    currentBlockNumber?: number
-  ): Promise<void> {
-    // Find matching invoice by payload_hash
-    // The payload should contain the invoice_id, allowing us to match events to invoices
+    event: SettlementEvent,
+    options: ProcessSettlementOptions = {}
+  ): Promise<ProcessSettlementResult> {
+    const { attestation, currentBlockNumber } = options;
 
-    // In production:
-    // 1. Extract invoice_id from payload (if payload was stored)
-    // 2. Or iterate through pending invoices and match by:
-    //    - merchant_nft
-    //    - amount_tbc
-    //    - payload_hash (computed from invoice metadata)
+    // Guard 1: reject events that do not originate from the trusted indexer.
+    // Without this, any caller able to reach the API could forge a settlement.
+    const indexerSecret = options.indexerSecret ?? resolveSettlementIndexerSecret();
+    if (!verifySettlementAttestation(indexerSecret, event, attestation)) {
+      console.warn(
+        `[AUDIT] Rejected settlement event from untrusted source: ` +
+          `merchant_nft="${event.merchant_nft}" ` +
+          `tx_hash="${event.tx_hash}" ` +
+          `timestamp="${new Date().toISOString()}"`
+      );
+      throw new ValidationError(
+        ErrorCode.UNTRUSTED_SETTLEMENT_SOURCE,
+        'Settlement event is not attested by the trusted indexer'
+      );
+    }
 
-    // For reference implementation, we'll iterate through pending invoices
-    for (const [invoiceId, invoice] of await this.invoiceStorage.entries()) {
+    // Guard 2: confirmations must be known and meet the finality threshold.
+    // confirmations / is_final are undefined when the current block is unknown,
+    // which is treated as "not final" — never settled.
+    const confirmations =
+      currentBlockNumber !== undefined
+        ? currentBlockNumber - event.block_number
+        : undefined;
+    const isFinal =
+      confirmations !== undefined && confirmations >= CONSTANTS.MIN_CONFIRMATIONS;
+
+    if (!isFinal) {
+      return { settled: false, reason: 'insufficient_confirmations' };
+    }
+
+    // Find matching invoice by merchant NFT, amount, and payload hash.
+    // In production the invoice_id would be extracted from the payload; the
+    // reference implementation iterates the pending invoices.
+    for (const [, invoice] of await this.invoiceStorage.entries()) {
       if (invoice.status !== 'pending') {
         continue;
       }
 
-      // Match by merchant NFT and amount
       if (
-        invoice.merchant_nft === event.merchant_nft &&
-        invoice.amount_tbc === event.amount_tbc
+        invoice.merchant_nft !== event.merchant_nft ||
+        invoice.amount_tbc !== event.amount_tbc
       ) {
-        // Verify payload hash
-        const expectedHash = hashMetadata({
-          invoice_id: invoice.invoice_id,
-          ...invoice.metadata,
-        });
-
-        if (expectedHash === event.payload_hash) {
-          // Calculate confirmations if current block is provided
-          const confirmations = currentBlockNumber
-            ? currentBlockNumber - event.block_number
-            : undefined;
-
-          const isFinal = confirmations !== undefined
-            ? confirmations >= 6 // CONSTANTS.MIN_CONFIRMATIONS
-            : undefined;
-
-          // Settlement matched!
-          const settlement: Settlement = {
-            payer_nft: event.payer_nft,
-            merchant_nft: event.merchant_nft,
-            amount_tbc: event.amount_tbc,
-            block_number: event.block_number,
-            tx_hash: event.tx_hash,
-            timestamp: new Date(event.timestamp * 1000).toISOString(),
-            payload_hash: event.payload_hash,
-            on_chain_verified: true,
-            verification_url: generateExplorerUrl(event.tx_hash),
-            confirmations,
-            is_final: isFinal,
-          };
-
-          invoice.status = 'settled';
-          invoice.settlement = settlement;
-          await this.invoiceStorage.set(invoice);
-
-          break;
-        }
+        continue;
       }
+
+      const expectedHash = hashMetadata({
+        invoice_id: invoice.invoice_id,
+        ...invoice.metadata,
+      });
+
+      if (expectedHash !== event.payload_hash) {
+        continue;
+      }
+
+      // Settlement matched and final — record the on-chain-verified proof.
+      const settlement: Settlement = {
+        payer_nft: event.payer_nft,
+        merchant_nft: event.merchant_nft,
+        amount_tbc: event.amount_tbc,
+        block_number: event.block_number,
+        tx_hash: event.tx_hash,
+        timestamp: new Date(event.timestamp * 1000).toISOString(),
+        payload_hash: event.payload_hash,
+        on_chain_verified: true,
+        verification_url: generateExplorerUrl(event.tx_hash),
+        confirmations,
+        is_final: true,
+      };
+
+      invoice.status = 'settled';
+      invoice.settlement = settlement;
+      await this.invoiceStorage.set(invoice);
+
+      return { settled: true, invoiceId: invoice.invoice_id };
     }
+
+    return { settled: false, reason: 'no_matching_invoice' };
   }
 
   /**

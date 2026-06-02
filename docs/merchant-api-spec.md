@@ -770,14 +770,29 @@ continue to receive 429 until the window expires.
 ### 7.6 Settlement Verification
 
 **On-Chain Verification Process**:
-1. API receives `MerchantPayment` event from blockchain indexer
-2. Validates:
+1. API receives a `MerchantPayment` event from the blockchain indexer
+2. Authenticates the source (audit finding API-H3):
+   - The event MUST carry a valid HMAC-SHA256 attestation produced by the
+     trusted indexer with the shared `SETTLEMENT_INDEXER_SECRET`.
+   - Forged or unauthenticated events are rejected with
+     `UNTRUSTED_SETTLEMENT_SOURCE` (HTTP 403) and never change invoice state.
+3. Validates:
    - `merchant_nft` matches invoice
    - `amount_tbc` matches invoice
    - `payload_hash` matches invoice metadata hash
-   - Event is in confirmed block (≥6 confirmations)
-3. Marks invoice as `settled`
-4. Stores block number, tx hash, timestamp
+   - Event reached **finality**: it is in a confirmed block with
+     `≥6 confirmations` (`MIN_CONFIRMATIONS`). An event with fewer
+     confirmations — or with `is_final === false` / unknown confirmations —
+     leaves the invoice in its current (non-`settled`) state.
+4. Only when both the source is authenticated **and** finality is reached
+   does the API mark the invoice `settled`
+5. Stores block number, tx hash, timestamp, confirmations, and `is_final`
+
+**Settlement integrity guarantees** (audit finding API-H3):
+- An invoice is never marked `settled` without verified confirmations
+  `≥ MIN_CONFIRMATIONS`.
+- Settlement events are accepted only from the authenticated indexer; the API
+  is never a source of truth independent of chain state.
 
 **Merchant Responsibility**:
 - Merchants MUST independently verify settlement via blockchain
