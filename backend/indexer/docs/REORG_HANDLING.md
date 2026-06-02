@@ -166,31 +166,45 @@ Block 103: hash_103b [FETCH & INDEX]
 ## Account Snapshot Handling
 
 Account snapshots are materialized views updated as events are processed.
+Unlike the event tables, `account_snapshots` is keyed only by `nft_address` and
+has **no** foreign key to `blocks`, so the CASCADE that removes reverted events
+does not touch it. `handleReorg` therefore reconciles snapshots explicitly.
 
 ### During Reorg
 
-1. Events deleted (CASCADE)
-2. Snapshots may become stale
-3. Re-indexing updates snapshots correctly
+`handleReorg` runs the following inside a single transaction:
 
-### Snapshot Update Logic
+1. Collect every `nft_address` referenced by the events about to be removed
+   (both sides of transfers/payments, plus state and ownership changes).
+2. Delete the reverted blocks — their events cascade away.
+3. Recompute each affected snapshot from the **surviving** canonical events.
+4. Clear any snapshot whose NFT has no surviving events.
+
+This guarantees the snapshot never serves reverted (non-canonical) state, even
+if no new event ever arrives for that NFT.
+
+### Snapshot Rebuild Logic
 
 ```typescript
-// When event is deleted (CASCADE), snapshot stays
-// When new event is indexed, snapshot is updated
+// In handleReorg, after blocks (and their events) are deleted:
+for (const nftAddress of affectedNftAddresses) {
+  db.rebuildAccountSnapshot(nftAddress); // recompute from surviving events
+}
 
-db.insertInternalTransfer(event);
-// This triggers:
-db.updateAccountSnapshot(event.fromNft, event.blockNumber);
-db.updateAccountSnapshot(event.toNft, event.blockNumber);
+// rebuildAccountSnapshot recomputes each field independently:
+//   current_owner            <- latest surviving nft_ownership_changes
+//   current_state            <- latest surviving account_state_changes
+//   last_state_change_block  <- block of that latest state change
+//   last_transfer_block      <- MAX(block) across surviving transfers/payments
+// A snapshot with no surviving events is deleted.
 ```
 
-### Stale Snapshots
+### Consistency Guarantee
 
-Snapshots are eventually consistent:
-- May reference deleted events during reorg
-- Corrected when new events are indexed
-- Critical data should query events directly
+Snapshots are reconciled synchronously during rollback:
+- Reverted events never linger in the snapshot
+- Fields are recomputed from canonical history, not patched forward
+- Snapshots with no surviving events are cleared, not left stale
 
 ## API Responses During Reorg
 
