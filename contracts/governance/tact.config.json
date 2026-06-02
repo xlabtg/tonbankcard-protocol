@@ -1,0 +1,22 @@
+{
+  "projects": [
+    {
+      "name": "ProposalRegistry",
+      "path": "./ProposalRegistry.tact",
+      "output": "./dist",
+      "options": {
+        "debug": true,
+        "external": true
+      }
+    },
+    {
+      "name": "TestHarness",
+      "path": "./test/TestOwnershipResolver.tact",
+      "output": "./dist",
+      "options": {
+        "debug": true,
+        "external": true
+      }
+    }
+  ]
+}
