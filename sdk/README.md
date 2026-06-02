@@ -176,16 +176,29 @@ const status = await sdk.getInvoiceStatus(invoiceId);
 ### Verify Settlement
 
 ```typescript
-const verification = await sdk.verifySettlement(txHash);
+// Pass the expected invoice so the SDK can compare it against the on-chain payment
+const verification = await sdk.verifySettlement(txHash, invoice);
 ```
 
-**Returns:** `TransactionVerification` with:
-- `isValid: boolean` - Transaction is valid
-- `confirmations: number` - Block confirmations
-- `matchesInvoice: boolean` - Matches invoice parameters
-- `error?: string` - Error message if failed
+**Parameters:**
+- `txHash: string` - Transaction hash, formatted as `"<lt>:<hash>"`
+- `expected?: SettlementMatchCriteria` - Target invoice (an `Invoice` works
+  directly) or its canonical fields (`merchantNft`, `amountTbc`, optional
+  `payloadHash`) to match the on-chain payment against.
 
-**Security:** This is the AUTHORITATIVE verification method. Only on-chain data is trusted.
+**Returns:** `TransactionVerification` with:
+- `isValid: boolean` - Transaction is valid (succeeded, not aborted)
+- `confirmations: number` - Block confirmations
+- `matchesInvoice: boolean` - `true` **only** when the on-chain `MerchantPayment`
+  event's merchant NFT, amount (and payload hash, when supplied) all match the
+  expected invoice
+- `error?: string` - Error message / note (e.g. mismatch, or that no invoice
+  was supplied to match against)
+
+**Security:** This is the AUTHORITATIVE verification method. Only on-chain data
+is trusted. ⚠️ Always pass the expected invoice — calling
+`verifySettlement(txHash)` without it cannot confirm the payment matches your
+invoice and returns `matchesInvoice: false`.
 
 ### Get Account Info
 
@@ -231,14 +244,14 @@ const status = await sdk.getInvoiceStatus(invoice.id);
 See [examples/payment-verification.ts](./examples/payment-verification.ts)
 
 ```typescript
-// User provides transaction hash
-const txHash = 'abc123...';
+// User provides transaction hash ("<lt>:<hash>")
+const txHash = '12345:abc123...';
 
-// Verify on-chain
-const verification = await sdk.verifySettlement(txHash);
+// Verify on-chain against the invoice you expect it to settle
+const verification = await sdk.verifySettlement(txHash, invoice);
 
-if (verification.isValid && verification.confirmations >= 5) {
-  // Payment confirmed with sufficient confirmations
+if (verification.isValid && verification.matchesInvoice && verification.confirmations >= 5) {
+  // Payment confirmed, matches the invoice, and has enough confirmations
   grantAccess();
 }
 ```

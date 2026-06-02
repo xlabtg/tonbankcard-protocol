@@ -18,6 +18,11 @@ function toErrInfo(error: unknown): { name: string; message: string } {
   return { name: 'Unknown', message: String(error) };
 }
 
+/** Max transaction descriptors requested per `getBlockTransactions` page. */
+const BLOCK_TX_PAGE_SIZE = 256;
+/** Safety cap on `getBlockTransactions` pages per shard block (anti-runaway). */
+const MAX_BLOCK_TX_PAGES = 1000;
+
 /**
  * Extract the latest masterchain seqno from a `getMasterchainInfo()` response.
  *
@@ -351,8 +356,10 @@ export class IndexerService {
       const parentHash = this.getParentHash(block);
       const timestamp = this.getBlockTimestamp(block);
 
-      // Fetch transactions for tracked contract addresses
-      const transactions = await this.fetchContractTransactions(blockNumber);
+      // Fetch transactions that this block confirmed for tracked contracts.
+      // Each transaction is scoped to `blockNumber` (see fetchBlockTransactions),
+      // so attributing it to the current block below is correct (INDEXER-H2).
+      const transactions = await this.fetchBlockTransactions(blockNumber);
 
       // Parse all events up-front (no DB writes) so the write phase below is a
       // purely synchronous, all-or-nothing transaction. Parsing must happen
@@ -489,20 +496,28 @@ export class IndexerService {
   }
 
   /**
-   * Fetch transactions for tracked contracts via TON HTTP API
+   * Fetch every transaction confirmed by a masterchain block that touches a
+   * tracked contract, attributed to that exact block.
    *
-   * Uses getTransactions endpoint to fetch recent transactions for each
-   * contract address that the indexer is tracking.
+   * TON has no monolithic "block N contains these transactions" view: account
+   * transactions live in basechain shard blocks that a masterchain block
+   * references. The previous implementation ignored the block number and always
+   * pulled the last 50 transactions per address, so the same window was
+   * re-attributed to every block and anything older was dropped during fast
+   * sync (INDEXER-H2). To bound transactions to `blockNumber` we instead:
+   *   1. resolve the basechain shard blocks the masterchain seqno confirms
+   *      (`/shards`),
+   *   2. enumerate every transaction descriptor `(account, lt, hash)` in those
+   *      shard blocks via `/getBlockTransactions`, paginating past the
+   *      per-request window so no transaction is dropped,
+   *   3. keep only descriptors whose account is a tracked contract, and
+   *   4. resolve each matching transaction's full body by its `(lt, hash)`
+   *      cursor so the event parser has the in/out messages it needs.
+   *
+   * Because the descriptors come from the block itself, every returned
+   * transaction provably belongs to `blockNumber`.
    */
-  private async fetchContractTransactions(
-    _blockNumber: number
-  ): Promise<any[]> {
-    const allTransactions: any[] = [];
-    const baseUrl = this.config.tonApiEndpoint;
-    const apiKeyParam = this.config.tonApiKey
-      ? `&api_key=${this.config.tonApiKey}`
-      : '';
-
+  private async fetchBlockTransactions(blockNumber: number): Promise<any[]> {
     const trackedAddresses = [
       this.config.contracts.paymentHub,
       this.config.contracts.merchantPaymentHub,
@@ -510,46 +525,220 @@ export class IndexerService {
       ...this.config.contracts.nftCollections,
     ].filter((addr) => addr !== '');
 
-    for (const address of trackedAddresses) {
-      try {
-        const url =
-          `${baseUrl}/getTransactions?address=${address}&limit=50${apiKeyParam}`;
+    // No tracked contracts → nothing to fetch. Also keeps reorg-only polls
+    // (which re-validate stored hashes but index no events) free of I/O.
+    if (trackedAddresses.length === 0) {
+      return [];
+    }
 
-        const data = (await this.fetchWithRetry(url)) as {
-          ok?: boolean;
-          result?: any[];
-        };
+    // Map normalized (raw) address → configured address so block descriptors
+    // can be matched regardless of friendly/raw formatting and re-tagged with
+    // the exact string `processTransaction` expects.
+    const trackedByRaw = new Map<string, string>();
+    for (const addr of trackedAddresses) {
+      const raw = this.toRawAddress(addr);
+      if (raw) trackedByRaw.set(raw, addr);
+    }
 
-        if (data.ok && data.result) {
-          for (const tx of data.result) {
-            // Pass through the real toncenter transaction structure. We
-            // deliberately do NOT synthesize `tx.destination = address`
-            // (INDEXER-H4): doing so made routing circular — the parser would
-            // later "verify" the destination against the very address we just
-            // wrote, which proves nothing. Routing now keys off the real
-            // on-chain `in_msg.destination`. We only normalise the transaction
-            // hash, which the HTTP API nests under `transaction_id.hash`, and
-            // record `queriedAddress` for diagnostics (not for routing).
-            allTransactions.push({
-              ...tx,
-              hash: tx.transaction_id?.hash || tx.hash || '',
-              queriedAddress: address,
-            });
-          }
+    const shardBlocks = await this.getBlockShards(blockNumber);
+
+    const allTransactions: any[] = [];
+    for (const shard of shardBlocks) {
+      const descriptors = await this.fetchBlockTransactionDescriptors(shard);
+      for (const descriptor of descriptors) {
+        const raw = this.toRawAddress(descriptor.account);
+        const configAddress = raw ? trackedByRaw.get(raw) : undefined;
+        if (!configAddress) {
+          continue; // Not a tracked contract.
         }
-      } catch (error) {
-        this.logger.warn(
-          {
-            errorCode: IndexerErrorCode.TX_FETCH_FAILED,
-            contractAddress: address,
-            err: toErrInfo(error),
-          },
-          'Error fetching transactions for address'
+
+        const tx = await this.fetchTransactionByCursor(
+          configAddress,
+          descriptor.lt,
+          descriptor.hash
         );
+        if (tx) {
+          allTransactions.push({
+            ...tx,
+            destination: configAddress,
+            hash: tx.transaction_id?.hash || descriptor.hash,
+          });
+        }
       }
     }
 
     return allTransactions;
+  }
+
+  /**
+   * Resolve the basechain shard blocks confirmed by a masterchain seqno.
+   *
+   * Tracked protocol contracts live in the basechain (workchain 0), so we only
+   * enumerate the shard blocks the masterchain block references; the
+   * masterchain block's own transactions never touch tracked contracts.
+   */
+  private async getBlockShards(
+    blockNumber: number
+  ): Promise<Array<{ workchain: number; shard: string; seqno: number }>> {
+    const baseUrl = this.config.tonApiEndpoint;
+    const apiKeyParam = this.config.tonApiKey
+      ? `&api_key=${this.config.tonApiKey}`
+      : '';
+
+    const url = `${baseUrl}/shards?seqno=${blockNumber}${apiKeyParam}`;
+
+    try {
+      const data = (await this.fetchWithRetry(url)) as {
+        ok?: boolean;
+        result?: {
+          shards?: Array<{ workchain: number; shard: string; seqno: number }>;
+        };
+      };
+      if (data.ok && data.result?.shards) {
+        return data.result.shards.map((s) => ({
+          workchain: s.workchain,
+          shard: s.shard,
+          seqno: s.seqno,
+        }));
+      }
+    } catch (error) {
+      this.logger.warn(
+        {
+          errorCode: IndexerErrorCode.TX_FETCH_FAILED,
+          eventId: makeEventId(blockNumber),
+          blockNumber,
+          err: toErrInfo(error),
+        },
+        'Error fetching shard blocks'
+      );
+    }
+    return [];
+  }
+
+  /**
+   * Enumerate every transaction descriptor `(account, lt, hash)` in a shard
+   * block, following `incomplete`/`after_lt` pagination so transactions beyond
+   * the per-request window are not dropped (the INDEXER-H2 fast-sync gap).
+   */
+  private async fetchBlockTransactionDescriptors(shard: {
+    workchain: number;
+    shard: string;
+    seqno: number;
+  }): Promise<Array<{ account: string; lt: string; hash: string }>> {
+    const baseUrl = this.config.tonApiEndpoint;
+    const apiKeyParam = this.config.tonApiKey
+      ? `&api_key=${this.config.tonApiKey}`
+      : '';
+
+    const descriptors: Array<{ account: string; lt: string; hash: string }> = [];
+    let afterLt: string | undefined;
+    let afterHash: string | undefined;
+
+    for (let page = 0; page < MAX_BLOCK_TX_PAGES; page++) {
+      let url =
+        `${baseUrl}/getBlockTransactions?workchain=${shard.workchain}` +
+        `&shard=${encodeURIComponent(shard.shard)}&seqno=${shard.seqno}` +
+        `&count=${BLOCK_TX_PAGE_SIZE}${apiKeyParam}`;
+      if (afterLt && afterHash) {
+        url +=
+          `&after_lt=${afterLt}&after_hash=${encodeURIComponent(afterHash)}`;
+      }
+
+      let data: {
+        ok?: boolean;
+        result?: {
+          incomplete?: boolean;
+          transactions?: Array<{ account: string; lt: string; hash: string }>;
+        };
+      };
+      try {
+        data = await this.fetchWithRetry(url);
+      } catch (error) {
+        this.logger.warn(
+          {
+            errorCode: IndexerErrorCode.TX_FETCH_FAILED,
+            shard: shard.shard,
+            seqno: shard.seqno,
+            err: toErrInfo(error),
+          },
+          'Error fetching block transactions'
+        );
+        break;
+      }
+
+      const txs =
+        data.ok && data.result?.transactions ? data.result.transactions : [];
+      for (const tx of txs) {
+        descriptors.push({ account: tx.account, lt: tx.lt, hash: tx.hash });
+      }
+
+      // Stop once the API reports the block is fully enumerated (or a page came
+      // back empty, which guards against a stuck cursor).
+      const incomplete = data.ok ? data.result?.incomplete === true : false;
+      if (!incomplete || txs.length === 0) {
+        break;
+      }
+
+      const last = txs[txs.length - 1];
+      afterLt = last.lt;
+      afterHash = last.hash;
+    }
+
+    return descriptors;
+  }
+
+  /**
+   * Resolve a single transaction's full body by its `(lt, hash)` cursor.
+   *
+   * `getBlockTransactions` only returns lightweight descriptors; the event
+   * parser needs the full transaction (in/out messages), so each one is
+   * resolved with a `getTransactions` lookup anchored at its logical time.
+   */
+  private async fetchTransactionByCursor(
+    address: string,
+    lt: string,
+    hash: string
+  ): Promise<any | null> {
+    const baseUrl = this.config.tonApiEndpoint;
+    const apiKeyParam = this.config.tonApiKey
+      ? `&api_key=${this.config.tonApiKey}`
+      : '';
+
+    const url =
+      `${baseUrl}/getTransactions?address=${encodeURIComponent(address)}` +
+      `&lt=${lt}&hash=${encodeURIComponent(hash)}&limit=1${apiKeyParam}`;
+
+    try {
+      const data = (await this.fetchWithRetry(url)) as {
+        ok?: boolean;
+        result?: any[];
+      };
+      if (data.ok && data.result && data.result.length > 0) {
+        return data.result[0];
+      }
+    } catch (error) {
+      this.logger.warn(
+        {
+          errorCode: IndexerErrorCode.TX_FETCH_FAILED,
+          contractAddress: address,
+          err: toErrInfo(error),
+        },
+        'Error fetching transaction by cursor'
+      );
+    }
+    return null;
+  }
+
+  /**
+   * Normalize a TON address (friendly or raw) to its canonical raw
+   * `workchain:hex` form for equality comparison, or null when unparseable.
+   */
+  private toRawAddress(addr: string): string | null {
+    try {
+      return Address.parse(addr).toRawString();
+    } catch (_) {
+      return null;
+    }
   }
 
   /**
@@ -868,10 +1057,6 @@ export class IndexerService {
 
   private getBlockTimestamp(block: any): number {
     return block.now || 0;
-  }
-
-  private getBlockTransactions(block: any): any[] {
-    return block.transactions || [];
   }
 
   private getTransactionHash(transaction: any): string {

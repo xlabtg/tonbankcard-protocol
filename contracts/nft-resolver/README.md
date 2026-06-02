@@ -6,8 +6,12 @@ This directory contains the NFT Account Resolver smart contract, which provides 
 
 ## Files
 
-- **`nft_account_resolver.fc`** - FunC implementation (production-ready)
-- **`nft_account_resolver.tact`** - Tact implementation (alternative, for reference)
+- **`nft_account_resolver.tact`** - Tact implementation (production, deployable set)
+- **`nft_account_resolver.fc`** - FunC **non-production reference stub** (audit finding
+  [CONTRACTS-H3](../../audit/findings/CONTRACTS-H3-nonfunctional-fc-stubs-shipped.md), #260).
+  On-chain TEP-62 owner resolution is an asynchronous cross-contract flow on TON and cannot be
+  performed from a synchronous get method, so this file is **excluded from every deployable
+  manifest** (`scripts/deploy/deployable-contracts.ts`) and kept only as audit reference.
 - **`README.md`** - This file
 
 ## Purpose

@@ -148,35 +148,51 @@ describe('IndexerService — INDEXER-H4 transaction routing', () => {
   const amountTbc = toNano('7');
   const payloadHash = 0xabcdef1234567890n;
 
-  describe('fetchContractTransactions', () => {
-    it('passes through the real transaction without synthesizing destination', async () => {
+  describe('routing ignores any synthesized top-level destination', () => {
+    // INDEXER-H2's fetchBlockTransactions re-tags every transaction with a
+    // synthesized `destination: <configAddress>` field. Routing must NOT trust
+    // that field — it has to key off the genuine on-chain `in_msg.destination`
+    // (INDEXER-H4). These two cases pin that contract from both directions so a
+    // future revert to the old circular routing fails loudly.
+    it('skips a tx whose synthesized destination is tracked but real account is not', () => {
       const service = makeService();
       const body = buildInternalTransferBody(amountTbc, payloadHash, 12345);
-      const tx = makeToncenterTx(
-        PAYMENT_HUB.toString(),
-        'aGFzaDE=',
-        TX_UTIME,
-        body
+      // Real account (in_msg.destination) is UNTRACKED, but the synthesized
+      // top-level destination falsely claims the tracked PAYMENT_HUB.
+      const tx = {
+        ...makeToncenterTx(UNTRACKED.toString(), 'txhash-synth', TX_UTIME, body),
+        destination: PAYMENT_HUB.toString(),
+      };
+
+      const pending = service.collectBlockEvents(
+        [tx],
+        BLOCK_NUMBER,
+        BLOCK_TIMESTAMP
       );
 
-      service.fetchWithRetry = async () => ({ ok: true, result: [tx] });
+      // Routing follows the real in_msg.destination → untracked → dropped.
+      expect(pending).toHaveLength(0);
+    });
 
-      const result = await service.fetchContractTransactions(BLOCK_NUMBER);
+    it('processes a tracked tx even when the synthesized destination points elsewhere', () => {
+      const service = makeService();
+      const body = buildInternalTransferBody(amountTbc, payloadHash, 12345);
+      // Real account (in_msg.destination) is the tracked PAYMENT_HUB, but the
+      // synthesized top-level destination wrongly points at an untracked account.
+      const tx = {
+        ...makeToncenterTx(PAYMENT_HUB.toString(), 'txhash-synth2', TX_UTIME, body),
+        destination: UNTRACKED.toString(),
+      };
 
-      expect(result).toHaveLength(1);
-      const fetched = result[0];
-      // The real on-chain account is preserved, not overwritten.
-      expect(fetched.in_msg.destination).toBe(PAYMENT_HUB.toString());
-      // No synthesized top-level `destination` shadowing the real value.
-      expect(fetched.destination).toBeUndefined();
-      // Hash is lifted from the nested transaction_id.
-      expect(fetched.hash).toBe('aGFzaDE=');
-      // Queried address retained for diagnostics only.
-      expect(fetched.queriedAddress).toBe(PAYMENT_HUB.toString());
-      // Routing key resolves to the genuine account.
-      expect(service.getTransactionDestination(fetched)).toBe(
-        PAYMENT_HUB.toString()
+      const pending = service.collectBlockEvents(
+        [tx],
+        BLOCK_NUMBER,
+        BLOCK_TIMESTAMP
       );
+
+      expect(pending).toHaveLength(1);
+      // The routing key resolves to the genuine on-chain account.
+      expect(service.getTransactionDestination(tx)).toBe(PAYMENT_HUB.toString());
     });
   });
 

@@ -9,6 +9,7 @@ import {
   formatTimestamp,
   formatRelativeTime,
   isValidTonAddress,
+  assertAmount,
 } from '../src/utils';
 
 describe('Utils', () => {
@@ -150,6 +151,36 @@ describe('Utils', () => {
 
     it('should reject Ethereum-style addresses', () => {
       expect(isValidTonAddress('0x1234567890abcdef')).toBe(false);
+    });
+  });
+
+  describe('assertAmount', () => {
+    it('should accept a non-negative integer string', () => {
+      expect(assertAmount('1000000000')).toBe('1000000000');
+    });
+
+    it('should accept zero', () => {
+      expect(assertAmount('0')).toBe('0');
+    });
+
+    it('should reject negative values', () => {
+      expect(() => assertAmount('-1')).toThrow(/Invalid amount/);
+    });
+
+    it('should reject decimal values', () => {
+      expect(() => assertAmount('1.5')).toThrow(/Invalid amount/);
+    });
+
+    it('should reject non-numeric values', () => {
+      expect(() => assertAmount('NaN')).toThrow(/Invalid amount/);
+    });
+
+    it('should reject empty strings', () => {
+      expect(() => assertAmount('')).toThrow(/Invalid amount/);
+    });
+
+    it('should reject values containing injection characters', () => {
+      expect(() => assertAmount('10&bin=evil')).toThrow(/Invalid amount/);
     });
   });
 });

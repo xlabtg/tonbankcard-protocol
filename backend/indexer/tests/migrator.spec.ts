@@ -171,32 +171,50 @@ describe('Migrator (SQLite)', () => {
 
     it('rolls back the failing migration entirely (transaction safety)', async () => {
       const dir = path.join(workDir, 'migrations');
-      // 001 applies cleanly and is committed; 002 then tries to re-create the
-      // same table and SQLite raises "table keep already exists". Each
-      // statement is the *only* statement in its migration: this deliberately
-      // avoids a multi-statement `exec()` because better-sqlite3 does not
-      // reliably surface the error of a *later* statement in a single
-      // `exec()` call on every platform (observed flaking only under CI's
-      // constrained, parallel runner — see git history of this test). A
-      // single-statement failure propagates deterministically everywhere.
-      writeMigration(dir, '001', 'keep', 'CREATE TABLE keep (id INTEGER);', 'DROP TABLE keep;');
-      writeMigration(dir, '002', 'broken', 'CREATE TABLE keep (id INTEGER);', 'DROP TABLE IF EXISTS keep;');
+      // The second statement re-declares the table created by the first —
+      // SQLite raises "table good already exists" mid-migration, so the
+      // entire transaction must roll back without leaving the first table
+      // behind.
+      writeMigration(
+        dir,
+        '001',
+        'broken',
+        'CREATE TABLE good (id INTEGER); CREATE TABLE good (id INTEGER);',
+        'DROP TABLE IF EXISTS good;'
+      );
 
       const migrator = new Migrator({ driver, migrationsDir: dir });
-      // up() commits 001, then 002 fails — its transaction must roll back
-      // without recording 002, while 001 stays intact.
-      await expect(migrator.up()).rejects.toThrow();
+      // Capture the rejection explicitly and assert on it by duck typing
+      // rather than via `rejects.toThrow()` / `instanceof Error`.
+      //
+      // better-sqlite3 raises a `SqliteError`. When jest runs every suite in
+      // a single worker (the default on a 2-core CI runner, where
+      // maxWorkers = cpus - 1 = 1) the native module is evaluated in more than
+      // one module realm, so the `Error` that `SqliteError` extends is not the
+      // same `Error` constructor visible here. `SqliteError instanceof Error`
+      // then returns false, which makes jest's `toThrow()` report "did not
+      // throw" and a plain `toBeInstanceOf(Error)` fail with
+      // "Received constructor: SqliteError" — a flake that only appears once a
+      // DB-heavy suite has run earlier in the same worker. Checking that a
+      // value was thrown and matching its message is realm independent.
+      let error: unknown;
+      try {
+        await migrator.up();
+      } catch (err) {
+        error = err;
+      }
+      expect(error).toBeDefined();
+      expect(String((error as { message?: unknown }).message)).toMatch(
+        /table good already exists/
+      );
 
       const tables = (await driver.query<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type='table'"
       )).map((row) => row.name);
-      // 001 committed, so its table survives the later failure.
-      expect(tables).toContain('keep');
-      // Only the successful migration is recorded; the failed one left no trace.
-      const recorded = (await driver.query<{ version: string }>(
-        'SELECT version FROM schema_migrations ORDER BY version'
-      )).map((row) => row.version);
-      expect(recorded).toEqual(['001']);
+      expect(tables).not.toContain('good');
+      // Nothing must be recorded in schema_migrations either.
+      const recorded = await driver.query('SELECT version FROM schema_migrations');
+      expect(recorded).toEqual([]);
     });
 
     it('detects checksum drift between recorded and current SQL', async () => {

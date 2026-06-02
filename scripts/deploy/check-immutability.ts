@@ -24,6 +24,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { DEPLOYABLE_CONTRACTS } from './deployable-contracts';
 
 interface LayerResult {
   layer: string;
@@ -31,28 +32,10 @@ interface LayerResult {
   details: string[];
 }
 
-// In-scope B2 contracts (mirrors DEPLOYMENT_PLAN.md §3).
-const IN_SCOPE_CONTRACTS: Record<string, string[]> = {
-  AccountLocks: ['contracts/payments/account-locks.fc'],
-  NFTAccountResolver: [
-    'contracts/nft-resolver/nft_account_resolver.fc',
-    'contracts/nft-resolver/nft_account_resolver.tact',
-  ],
-  AccountStateMachine: ['contracts/payment-hub/account-state.tact'],
-  PaymentHub: [
-    'contracts/payments/PaymentHub.tact',
-    'contracts/payments/payment-hub.fc',
-  ],
-  MerchantPaymentHub: ['contracts/MerchantPaymentHub.tact'],
-  CollateralSignal: ['contracts/CollateralSignal.tact'],
-  PublicCollateralLookup: [
-    'contracts/collateral-lookup/PublicCollateralLookup.tact',
-    'contracts/collateral-lookup/public-collateral-lookup.fc',
-  ],
-  ProposalRegistry: ['contracts/governance/ProposalRegistry.tact'],
-  SnapshotVerifier: ['contracts/governance/SnapshotVerifier.tact'],
-  TransparencyRegistry: ['contracts/governance/TransparencyRegistry.tact'],
-};
+// In-scope B2 contracts (mirrors DEPLOYMENT_PLAN.md §3). Sourced from the single
+// deployable-contract manifest so non-production FunC stubs (CONTRACTS-H3, #260)
+// can never re-enter the scan set.
+const IN_SCOPE_CONTRACTS: Record<string, string[]> = DEPLOYABLE_CONTRACTS;
 
 // Layer 1: forbidden source-level patterns.
 const FORBIDDEN_PATTERNS: Array<{ pattern: RegExp; label: string }> = [

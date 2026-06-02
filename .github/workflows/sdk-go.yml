@@ -12,6 +12,10 @@ on:
       - 'sdk-go/**'
       - '.github/workflows/sdk-go.yml'
 
+# Least-privilege default: this workflow only reads the repo to test/build.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test (go${{ matrix.go-version }})

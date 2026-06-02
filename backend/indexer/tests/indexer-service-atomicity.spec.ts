@@ -85,10 +85,12 @@ function makeService(db: IndexerDatabase, events: IndexedEvent[]) {
     transactions: [],
   });
 
+  // INDEXER-H2 renamed the (now block-scoped) fetch to fetchBlockTransactions.
   // Routing keys off the real on-chain account (in_msg.destination), not a
   // synthesized field (INDEXER-H4), so the stubbed transaction mirrors the real
-  // toncenter shape.
-  service.fetchContractTransactions = async () => [
+  // toncenter shape. These atomicity tests only need a single tracked
+  // transaction injected.
+  service.fetchBlockTransactions = async () => [
     { in_msg: { destination: PAYMENT_HUB }, hash: 'tx-hash' },
   ];
 
