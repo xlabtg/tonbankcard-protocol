@@ -1,6 +1,7 @@
 // Database layer for the Payment Status Indexer
 // Read-only perspective - all data is derived from blockchain
 
+import { Address } from '@ton/core';
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
@@ -34,6 +35,26 @@ interface AccountHistoryCache {
 
 const CACHE_TTL_MS = 5000; // 5 seconds
 export const ACCOUNT_HISTORY_CACHE_MAX_ENTRIES = 1024;
+
+function normalizeTonAddress(address: string): string {
+  if (!address) {
+    return address;
+  }
+
+  try {
+    return Address.parse(address).toString({
+      bounceable: true,
+      testOnly: false,
+      urlSafe: true,
+    });
+  } catch {
+    return address;
+  }
+}
+
+function normalizeNullableTonAddress(address: string | null): string | null {
+  return address === null ? null : normalizeTonAddress(address);
+}
 
 export class IndexerDatabase {
   private db: Database.Database;
@@ -333,6 +354,9 @@ export class IndexerDatabase {
     amountTbc: string;
     payloadHash: string;
   }): void {
+    const fromNft = normalizeTonAddress(event.fromNft);
+    const toNft = normalizeTonAddress(event.toNft);
+
     this.db
       .prepare(
         `INSERT OR IGNORE INTO internal_transfers
@@ -344,19 +368,19 @@ export class IndexerDatabase {
         event.transactionHash,
         event.logIndex,
         event.timestamp,
-        event.fromNft,
-        event.toNft,
+        fromNft,
+        toNft,
         event.amountTbc,
         event.payloadHash
       );
 
     // Update account snapshots
-    this.updateAccountSnapshot(event.fromNft, event.blockNumber);
-    this.updateAccountSnapshot(event.toNft, event.blockNumber);
+    this.updateAccountSnapshot(fromNft, event.blockNumber);
+    this.updateAccountSnapshot(toNft, event.blockNumber);
 
     // Invalidate history cache for affected accounts
-    this.invalidateHistoryCache(event.fromNft);
-    this.invalidateHistoryCache(event.toNft);
+    this.invalidateHistoryCache(fromNft);
+    this.invalidateHistoryCache(toNft);
   }
 
   /**
@@ -372,6 +396,9 @@ export class IndexerDatabase {
     amountTbc: string;
     payloadHash: string;
   }): void {
+    const payerNft = normalizeTonAddress(event.payerNft);
+    const merchantNft = normalizeTonAddress(event.merchantNft);
+
     this.db
       .prepare(
         `INSERT OR IGNORE INTO merchant_payments
@@ -383,19 +410,19 @@ export class IndexerDatabase {
         event.transactionHash,
         event.logIndex,
         event.timestamp,
-        event.payerNft,
-        event.merchantNft,
+        payerNft,
+        merchantNft,
         event.amountTbc,
         event.payloadHash
       );
 
     // Update account snapshots
-    this.updateAccountSnapshot(event.payerNft, event.blockNumber);
-    this.updateAccountSnapshot(event.merchantNft, event.blockNumber);
+    this.updateAccountSnapshot(payerNft, event.blockNumber);
+    this.updateAccountSnapshot(merchantNft, event.blockNumber);
 
     // Invalidate history cache for affected accounts
-    this.invalidateHistoryCache(event.payerNft);
-    this.invalidateHistoryCache(event.merchantNft);
+    this.invalidateHistoryCache(payerNft);
+    this.invalidateHistoryCache(merchantNft);
   }
 
   /**
@@ -410,6 +437,8 @@ export class IndexerDatabase {
     oldState: number;
     newState: number;
   }): void {
+    const nftAddress = normalizeTonAddress(event.nftAddress);
+
     this.db
       .prepare(
         `INSERT OR IGNORE INTO account_state_changes
@@ -421,7 +450,7 @@ export class IndexerDatabase {
         event.transactionHash,
         event.logIndex,
         event.timestamp,
-        event.nftAddress,
+        nftAddress,
         event.oldState,
         event.newState
       );
@@ -433,10 +462,10 @@ export class IndexerDatabase {
         `INSERT OR REPLACE INTO account_snapshots (nft_address, current_state, last_state_change_block, last_updated)
          VALUES (?, ?, ?, ?)`
       )
-      .run(event.nftAddress, event.newState, event.blockNumber, now);
+      .run(nftAddress, event.newState, event.blockNumber, now);
 
     // Invalidate history cache for affected account
-    this.invalidateHistoryCache(event.nftAddress);
+    this.invalidateHistoryCache(nftAddress);
   }
 
   /**
@@ -452,6 +481,11 @@ export class IndexerDatabase {
     oldOwner: string | null;
     newOwner: string;
   }): void {
+    const nftAddress = normalizeTonAddress(event.nftAddress);
+    const collectionAddress = normalizeTonAddress(event.collectionAddress);
+    const oldOwner = normalizeNullableTonAddress(event.oldOwner);
+    const newOwner = normalizeTonAddress(event.newOwner);
+
     this.db
       .prepare(
         `INSERT OR IGNORE INTO nft_ownership_changes
@@ -463,10 +497,10 @@ export class IndexerDatabase {
         event.transactionHash,
         event.logIndex,
         event.timestamp,
-        event.nftAddress,
-        event.collectionAddress,
-        event.oldOwner,
-        event.newOwner
+        nftAddress,
+        collectionAddress,
+        oldOwner,
+        newOwner
       );
 
     // Update account snapshot with new owner
@@ -477,23 +511,24 @@ export class IndexerDatabase {
          VALUES (?, ?, ?)
          ON CONFLICT(nft_address) DO UPDATE SET current_owner = ?, last_updated = ?`
       )
-      .run(event.nftAddress, event.newOwner, now, event.newOwner, now);
+      .run(nftAddress, newOwner, now, newOwner, now);
 
     // Invalidate history cache for affected account
-    this.invalidateHistoryCache(event.nftAddress);
+    this.invalidateHistoryCache(nftAddress);
   }
 
   /**
    * Update account snapshot (internal helper)
    */
   private updateAccountSnapshot(nftAddress: string, blockNumber: number): void {
+    const normalizedNftAddress = normalizeTonAddress(nftAddress);
     const now = Math.floor(Date.now() / 1000);
     this.db
       .prepare(
         `INSERT OR IGNORE INTO account_snapshots (nft_address, last_transfer_block, last_updated)
          VALUES (?, ?, ?)`
       )
-      .run(nftAddress, blockNumber, now);
+      .run(normalizedNftAddress, blockNumber, now);
 
     this.db
       .prepare(
@@ -501,7 +536,7 @@ export class IndexerDatabase {
          SET last_transfer_block = ?, last_updated = ?
          WHERE nft_address = ?`
       )
-      .run(blockNumber, now, nftAddress);
+      .run(blockNumber, now, normalizedNftAddress);
   }
 
   /**
@@ -517,7 +552,8 @@ export class IndexerDatabase {
     offset: number = 0,
     before?: AccountHistoryCursorInput
   ): AccountHistoryResult {
-    const cacheKey = `${nftAddress}:${limit}:${offset}:${JSON.stringify(before ?? '')}`;
+    const normalizedNftAddress = normalizeTonAddress(nftAddress);
+    const cacheKey = this.accountHistoryCacheKey(normalizedNftAddress, limit, offset, before);
     const now = Date.now();
     const cached = this.historyCache.get(cacheKey);
     if (cached) {
@@ -566,29 +602,44 @@ export class IndexerDatabase {
     const countSql = `SELECT COUNT(*) AS cnt FROM (${countUnionSql})`;
     const pageSql = `${pageUnionSql} ORDER BY timestamp DESC, transaction_hash ASC, log_index ASC LIMIT ? OFFSET ?`;
 
-    const countArgs: Array<string | number> = [nftAddress, nftAddress, nftAddress, nftAddress, nftAddress];
+    const countArgs: Array<string | number> = [
+      normalizedNftAddress,
+      normalizedNftAddress,
+      normalizedNftAddress,
+      normalizedNftAddress,
+      normalizedNftAddress,
+    ];
     let pageArgs: Array<string | number>;
     if (typeof before === 'number') {
-      pageArgs = [nftAddress, nftAddress, before, nftAddress, nftAddress, before, nftAddress, before];
+      pageArgs = [
+        normalizedNftAddress,
+        normalizedNftAddress,
+        before,
+        normalizedNftAddress,
+        normalizedNftAddress,
+        before,
+        normalizedNftAddress,
+        before,
+      ];
     } else if (before) {
       pageArgs = [
-        nftAddress,
-        nftAddress,
+        normalizedNftAddress,
+        normalizedNftAddress,
         before.timestamp,
         before.timestamp,
         before.transactionHash,
         before.timestamp,
         before.transactionHash,
         before.logIndex,
-        nftAddress,
-        nftAddress,
+        normalizedNftAddress,
+        normalizedNftAddress,
         before.timestamp,
         before.timestamp,
         before.transactionHash,
         before.timestamp,
         before.transactionHash,
         before.logIndex,
-        nftAddress,
+        normalizedNftAddress,
         before.timestamp,
         before.timestamp,
         before.transactionHash,
@@ -648,8 +699,17 @@ export class IndexerDatabase {
     });
 
     const result: AccountHistoryResult = { events, totalCount };
-    this.setHistoryCacheEntry(cacheKey, { nftAddress, result, cachedAt: now });
+    this.setHistoryCacheEntry(cacheKey, { nftAddress: normalizedNftAddress, result, cachedAt: now });
     return result;
+  }
+
+  private accountHistoryCacheKey(
+    nftAddress: string,
+    limit: number,
+    offset: number,
+    before?: AccountHistoryCursorInput
+  ): string {
+    return JSON.stringify([nftAddress, limit, offset, before ?? null]);
   }
 
   private setHistoryCacheEntry(cacheKey: string, entry: AccountHistoryCache): void {
@@ -670,8 +730,10 @@ export class IndexerDatabase {
    * Called internally when new events are inserted for that account.
    */
   private invalidateHistoryCache(nftAddress: string): void {
+    const normalizedNftAddress = normalizeTonAddress(nftAddress);
+
     for (const [key, entry] of this.historyCache.entries()) {
-      if (entry.nftAddress === nftAddress) {
+      if (entry.nftAddress === normalizedNftAddress) {
         this.historyCache.delete(key);
       }
     }
@@ -702,9 +764,11 @@ export class IndexerDatabase {
     last_transfer_block: number | null;
     last_state_change_block: number | null;
   } | null {
+    const normalizedNftAddress = normalizeTonAddress(nftAddress);
+
     return this.db
       .prepare('SELECT * FROM account_snapshots WHERE nft_address = ?')
-      .get(nftAddress) as any;
+      .get(normalizedNftAddress) as any;
   }
 
   /**

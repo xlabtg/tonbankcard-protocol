@@ -1,6 +1,7 @@
 // Database tests for Payment Status Indexer
 
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { Address } from '@ton/core';
 import fs from 'fs';
 import path from 'path';
 import { ACCOUNT_HISTORY_CACHE_MAX_ENTRIES, IndexerDatabase } from '../src/db/database';
@@ -469,6 +470,67 @@ describe('IndexerDatabase', () => {
       const after = db.getAccountHistory('EQA...', 10, 0);
       expect(after).not.toBe(before); // different object - cache was invalidated
       expect(after.totalCount).toBeGreaterThan(before.totalCount);
+    });
+
+    it('should canonicalize account history cache entries across TON address representations', () => {
+      const target = new Address(0, Buffer.alloc(32, 0x11));
+      const other = new Address(0, Buffer.alloc(32, 0x12));
+      const sink = new Address(0, Buffer.alloc(32, 0x13));
+
+      const targetBounceable = target.toString({ bounceable: true, urlSafe: true });
+      const targetNonBounceable = target.toString({ bounceable: false, urlSafe: true });
+      const targetRaw = target.toRawString();
+      const otherBounceable = other.toString({ bounceable: true, urlSafe: true });
+      const sinkBounceable = sink.toString({ bounceable: true, urlSafe: true });
+
+      db.insertInternalTransfer({
+        blockNumber: 1,
+        transactionHash: 'tx_target_initial',
+        logIndex: 10,
+        timestamp: 1100,
+        fromNft: targetBounceable,
+        toNft: sinkBounceable,
+        amountTbc: '100',
+        payloadHash: '0xtarget1',
+      });
+      db.insertInternalTransfer({
+        blockNumber: 2,
+        transactionHash: 'tx_other_initial',
+        logIndex: 11,
+        timestamp: 2100,
+        fromNft: otherBounceable,
+        toNft: sinkBounceable,
+        amountTbc: '100',
+        payloadHash: '0xother1',
+      });
+
+      const beforeTarget = db.getAccountHistory(targetBounceable, 10, 0);
+      const beforeTargetRaw = db.getAccountHistory(targetRaw, 10, 0);
+      const beforeOther = db.getAccountHistory(otherBounceable, 10, 0);
+
+      expect(beforeTarget.totalCount).toBe(1);
+      expect(beforeTargetRaw).toBe(beforeTarget);
+      expect(beforeOther.totalCount).toBe(1);
+      expect(historyCacheSize(db)).toBe(2);
+
+      db.insertBlock(3, 'hash3', 'hash2', 3000, 1);
+      db.insertInternalTransfer({
+        blockNumber: 3,
+        transactionHash: 'tx_target_update',
+        logIndex: 12,
+        timestamp: 3100,
+        fromNft: targetNonBounceable,
+        toNft: sinkBounceable,
+        amountTbc: '200',
+        payloadHash: '0xtarget2',
+      });
+
+      const afterTarget = db.getAccountHistory(targetRaw, 10, 0);
+      const afterOther = db.getAccountHistory(otherBounceable, 10, 0);
+
+      expect(afterTarget).not.toBe(beforeTarget);
+      expect(afterTarget.totalCount).toBe(2);
+      expect(afterOther).toBe(beforeOther);
     });
 
     it('should invalidate cache after NFT ownership change insertion', () => {
