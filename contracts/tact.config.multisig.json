@@ -1,0 +1,13 @@
+{
+  "projects": [
+    {
+      "name": "MultiSigCard",
+      "path": "./MultiSigCard.tact",
+      "output": "./multisig/dist",
+      "options": {
+        "debug": true,
+        "external": true
+      }
+    }
+  ]
+}
