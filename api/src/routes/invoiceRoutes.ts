@@ -201,7 +201,16 @@ export function authenticateApiKey(req: Request, res: Response, next: NextFuncti
  * Set the ALLOWED_ORIGINS environment variable to a comma-separated list of
  * permitted origins.
  *
+ * Disallowed origins resolve with `callback(null, false)` rather than passing
+ * an `Error`. The `cors` package only emits CORS response headers when the
+ * origin is allowed, so a rejected origin simply receives a response without
+ * `Access-Control-Allow-Origin` and the browser blocks it client-side. Passing
+ * an `Error` instead would propagate to the global error handler and surface a
+ * generic 500 `INTERNAL_ERROR`, making CORS policy rejections indistinguishable
+ * from genuine server faults (audit API-M4).
+ *
  * @see https://github.com/xlabtg/tonbankcard-protocol/issues/92
+ * @see https://github.com/xlabtg/tonbankcard-protocol/issues/272
  */
 const _allowedOrigins: string[] = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
@@ -216,7 +225,9 @@ export const corsOptions = {
     if (_allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // Reject without throwing: omit CORS headers (the browser enforces the
+      // block) instead of producing a 500. See audit API-M4 / issue #272.
+      callback(null, false);
     }
   },
   methods: ['GET', 'POST', 'DELETE'],
