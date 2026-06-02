@@ -35,6 +35,30 @@ if (storedBlock.hash !== chainBlock.hash) {
 }
 ```
 
+### 1a. Trailing Re-validation of the Indexed Range
+
+The forward sync cursor only ever moves forward, so the check above only sees
+blocks the indexer is about to index for the *first* time. A reorg that rewrites
+a block **already stored** would never be revisited and would silently persist
+(audit finding INDEXER-C2).
+
+To close this gap, every poll re-validates the trailing window of already-indexed
+blocks against the chain *before* advancing the cursor:
+
+```typescript
+// In syncBlocks(), before computing startBlock:
+const reorgFrom = await revalidateIndexedRange(latestIndexed);
+// revalidateIndexedRange walks the last `confirmationBlocks` stored heights
+// from oldest to newest, comparing each stored hash against the chain. On the
+// first mismatch it calls handleReorg(height) and returns that height.
+```
+
+- The window size is `INDEXER_CONFIRMATION_BLOCKS` (the depth beyond which
+  reorgs are considered extremely rare), satisfying `K >= confirmationBlocks`.
+- On the first divergent height, `handleReorg` rolls back from there and the
+  forward sync re-indexes the canonical replacement blocks in the same poll.
+- The cursor is only advanced after the trailing window is confirmed consistent.
+
 ### 2. Hash Continuity
 
 We maintain hash continuity across blocks:

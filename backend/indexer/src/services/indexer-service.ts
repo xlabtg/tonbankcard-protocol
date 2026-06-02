@@ -115,9 +115,27 @@ export class IndexerService {
         'Sync status'
       );
 
+      // Re-validate the trailing window of already-indexed blocks against the
+      // chain before advancing the cursor. Because the cursor only moves
+      // forward, a reorg that rewrites a block we already stored would never be
+      // revisited by the forward sync below and would silently persist
+      // (INDEXER-C2). On the first mismatch `handleReorg` rolls back from the
+      // divergent height; the forward sync then re-indexes the canonical
+      // replacement blocks in the same poll.
+      const reorgFrom = await this.revalidateIndexedRange(latestIndexed);
+      if (reorgFrom !== null) {
+        this.logger.warn(
+          { reorgFrom },
+          'Reorg detected within indexed range; rolled back and resyncing'
+        );
+      }
+
+      // Re-read the cursor: a rollback above moves `latest_block_indexed` back.
+      const cursor = this.db.getLatestBlockIndexed();
+
       // Determine start block
       const startBlock = Math.max(
-        latestIndexed + 1,
+        cursor + 1,
         this.config.indexer.startBlock
       );
 
@@ -178,6 +196,43 @@ export class IndexerService {
       // Fetch and process block
       await this.processBlock(blockNum);
     }
+  }
+
+  /**
+   * Re-validate the trailing window of already-indexed blocks against the chain.
+   *
+   * The forward sync loop only examines blocks it is about to index for the
+   * first time, so a reorg that rewrites a block already stored is never
+   * detected by it (INDEXER-C2). On each poll we therefore re-check the last
+   * `confirmationBlocks` stored block hashes against the chain, walking from the
+   * oldest height in the window forward. `detectAndHandleReorg` triggers
+   * `handleReorg` on the first divergent height; we return that height so the
+   * caller can log it and resync.
+   *
+   * @param latestIndexed - the current `latest_block_indexed` cursor
+   * @returns the first divergent height when a reorg was rolled back, else null
+   */
+  private async revalidateIndexedRange(
+    latestIndexed: number
+  ): Promise<number | null> {
+    if (latestIndexed <= 0) {
+      return null; // Nothing indexed yet — no stored blocks to re-validate.
+    }
+
+    // Re-validate at least `confirmationBlocks` trailing blocks (>= K per spec).
+    const window = Math.max(1, this.config.indexer.confirmationBlocks);
+    const from = Math.max(1, latestIndexed - window + 1);
+
+    for (let blockNum = from; blockNum <= latestIndexed; blockNum++) {
+      const reorgDetected = await this.detectAndHandleReorg(blockNum);
+      if (reorgDetected) {
+        // handleReorg already rolled back from this divergent height. Stop here:
+        // everything above it was deleted, so there is nothing left to check.
+        return blockNum;
+      }
+    }
+
+    return null;
   }
 
   /**
