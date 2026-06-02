@@ -85,7 +85,9 @@ function makeService(db: IndexerDatabase, events: IndexedEvent[]) {
     transactions: [],
   });
 
-  service.fetchContractTransactions = async () => [
+  // INDEXER-H2 renamed the (now block-scoped) fetch to fetchBlockTransactions.
+  // These atomicity tests only need a single tracked transaction injected.
+  service.fetchBlockTransactions = async () => [
     { destination: PAYMENT_HUB, hash: 'tx-hash' },
   ];
 

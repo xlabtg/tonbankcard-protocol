@@ -12,6 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { DEPLOYABLE_CONTRACTS } from './deployable-contracts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -75,29 +76,9 @@ function verifyInvariants(contractName: string): { passed: boolean; details: str
 
   // Mainnet B2 scope (docs/deployments/B2-mainnet/IMMUTABILITY_VERIFICATION.md §3).
   // Each contract resolves to one OR MORE source files; every file is scanned.
-  const contractFiles: Record<string, string[]> = {
-    AccountLocks: ['contracts/payments/account-locks.fc'],
-    NFTAccountResolver: [
-      'contracts/nft-resolver/nft_account_resolver.fc',
-      'contracts/nft-resolver/nft_account_resolver.tact',
-    ],
-    AccountStateMachine: ['contracts/payment-hub/account-state.tact'],
-    PaymentHub: [
-      'contracts/payments/PaymentHub.tact',
-      'contracts/payments/payment-hub.fc',
-    ],
-    MerchantPaymentHub: ['contracts/MerchantPaymentHub.tact'],
-    CollateralSignal: ['contracts/CollateralSignal.tact'],
-    PublicCollateralLookup: [
-      'contracts/collateral-lookup/PublicCollateralLookup.tact',
-      'contracts/collateral-lookup/public-collateral-lookup.fc',
-    ],
-    ProposalRegistry: ['contracts/governance/ProposalRegistry.tact'],
-    SnapshotVerifier: ['contracts/governance/SnapshotVerifier.tact'],
-    TransparencyRegistry: ['contracts/governance/TransparencyRegistry.tact'],
-  };
-
-  const files = contractFiles[contractName];
+  // Sourced from the single deployable-contract manifest so non-production FunC
+  // stubs (CONTRACTS-H3, #260) can never re-enter the verification set.
+  const files = DEPLOYABLE_CONTRACTS[contractName];
   if (!files || files.length === 0) {
     details.push(`Source file mapping not found for ${contractName}`);
     return { passed: false, details };

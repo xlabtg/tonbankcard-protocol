@@ -141,6 +141,16 @@ CREATE TABLE internal_transfers (
 
 When a block is deleted, all events in that block are automatically deleted.
 
+> **Block-scoped attribution is a prerequisite (INDEXER-H2).** The CASCADE deletes
+> events *by `block_number`*, so a reorg rollback is only correct when each event
+> carries the block that actually confirmed it. Transactions are therefore fetched
+> per block via `/shards` → `/getBlockTransactions` → `/getTransactions`
+> (`fetchBlockTransactions`), with `incomplete`/`after_lt` pagination so none are
+> dropped during fast sync. The earlier implementation pulled a fixed "last 50
+> transactions per address" window and re-attributed it to whatever block the loop
+> was on, which made `block_number` meaningless and caused the rollback to delete
+> the wrong events.
+
 ## Example Scenario
 
 ### Initial State
