@@ -201,10 +201,10 @@ contract MultiSigCard {
     // Storage: NFT address => MultiSigConfig
     multisig_configs: map<Address, MultiSigConfig>;
 
-    // Storage: composite key (hash of nft_address + proposal_id) => PaymentProposal
+    // Storage: composite key (hash of serialized nft_address and proposal_id) => PaymentProposal
     proposals: map<Int, PaymentProposal>;
 
-    // Storage: composite key (hash of nft_address + proposal_id + signer) => has approved
+    // Storage: composite key (hash of serialized nft_address, proposal_id and signer) => has approved
     approvals: map<Int, Bool>;
 
     // Storage: NFT address => owner address (for ownership verification)
@@ -659,31 +659,35 @@ contract MultiSigCard {
     }
 
     fun proposalKey(nft_address: Address, proposal_id: Int): Int {
-        // Composite key = representation hash of a cell packing the NFT address
-        // and proposal ID.
+        // Collision-resistant composite key = representation hash of a cell packing
+        // the NFT address and proposal ID, each pinned to a fixed position
+        // (audit CONTRACTS-H1).
         //
         // NOTE: the previous implementation used `sha256(nft_address.asSlice())`
         // and added hashes together. That was doubly broken on-chain:
         //   1. sha256() over an Address slice (267 bits, not byte-aligned) throws
         //      a cell-underflow (exit 9), so every proposal handler reverted; and
         //   2. summing two 256-bit hashes overflows TVM's 257-bit signed integer
-        //      range (exit 4) and is collision-prone.
+        //      range (exit 4) and is collision-prone — integer addition is not
+        //      injective, so distinct (address, id) pairs could collide.
         // Hashing a single packed cell avoids both: Cell.hash() always returns a
         // 256-bit value that fits the integer range and uniquely binds all fields.
+        // proposal_id is stored as a full 257-bit signed Int so the key construction
+        // is consistent with mandateKey/intentKey across the protocol.
         return beginCell()
             .storeAddress(nft_address)
-            .storeUint(proposal_id, 64)
+            .storeInt(proposal_id, 257)
             .endCell()
             .hash();
     }
 
     fun approvalKey(nft_address: Address, proposal_id: Int, signer: Address): Int {
-        // Composite key binding NFT address, proposal ID and signer. See
-        // proposalKey() for why a packed-cell hash is used instead of summing
-        // sha256() values.
+        // Collision-resistant composite key binding NFT address, proposal ID and
+        // signer. See proposalKey() for why a packed-cell hash is used instead of
+        // summing sha256() values (audit CONTRACTS-H1).
         return beginCell()
             .storeAddress(nft_address)
-            .storeUint(proposal_id, 64)
+            .storeInt(proposal_id, 257)
             .storeAddress(signer)
             .endCell()
             .hash();

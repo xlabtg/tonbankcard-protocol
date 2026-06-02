@@ -453,6 +453,20 @@ jobs:
         working-directory: contracts/multisig
         run: npm test
 
+      - name: Install key-collision regression dependencies
+        working-directory: contracts/key-collision
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build key-collision regression harness
+        working-directory: contracts/key-collision
+        run: npm run build
+
+      - name: Test key-collision regression specs (CONTRACTS-H1)
+        working-directory: contracts/key-collision
+        run: npm test
+
   test-invariants:
     name: Test (Protocol Invariants)
     runs-on: ubuntu-latest
