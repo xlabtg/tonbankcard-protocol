@@ -75,6 +75,36 @@ export class IndexerDatabase {
   }
 
   /**
+   * Latest observed masterchain head seqno.
+   *
+   * Persisted every sync so confirmation depth can be derived from a single
+   * canonical value (`latest_chain_seqno - block_number`) by both the indexer
+   * and the API (INDEXER-H1). Returns 0 before the first successful sync.
+   */
+  getLatestChainSeqno(): number {
+    const row = this.db
+      .prepare('SELECT latest_chain_seqno FROM indexer_state WHERE id = 1')
+      .get() as { latest_chain_seqno: number } | undefined;
+    return row?.latest_chain_seqno || 0;
+  }
+
+  /**
+   * Record the latest observed masterchain head seqno.
+   *
+   * The masterchain seqno is monotonic, so we never let a stale read from a
+   * load-balanced API node move the head backwards.
+   */
+  setLatestChainSeqno(seqno: number): void {
+    this.db
+      .prepare(
+        `UPDATE indexer_state
+         SET latest_chain_seqno = ?
+         WHERE id = 1 AND ? > latest_chain_seqno`
+      )
+      .run(seqno, seqno);
+  }
+
+  /**
    * Update latest indexed block
    */
   updateLatestBlock(blockNumber: number, timestamp: number): void {
@@ -108,7 +138,12 @@ export class IndexerDatabase {
   }
 
   /**
-   * Mark blocks as confirmed after N confirmations
+   * Mark every block up to (and including) `upToBlock` as confirmed.
+   *
+   * The caller passes the confirmation cutoff `chainHead - confirmationBlocks`
+   * (see `IndexerService.syncBlocks`), so a row is flagged confirmed exactly
+   * when `chainHead - block_number >= confirmationBlocks` — the same canonical
+   * definition (`isBlockConfirmed`) the API uses (INDEXER-H1).
    */
   markBlocksConfirmed(upToBlock: number): void {
     this.db

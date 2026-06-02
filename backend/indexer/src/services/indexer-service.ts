@@ -133,6 +133,11 @@ export class IndexerService {
         return;
       }
 
+      // Persist the chain head so confirmation depth is derived from one
+      // canonical value everywhere (INDEXER-H1). The API reads the same seqno
+      // when reporting payment status.
+      this.db.setLatestChainSeqno(latestBlock.seqno);
+
       this.logger.debug(
         { latestIndexed, latestChain: latestBlock.seqno },
         'Sync status'
@@ -182,8 +187,14 @@ export class IndexerService {
         await this.syncBlockRange(currentBlock, batchEnd);
       }
 
-      // Mark older blocks as confirmed
-      const confirmUpTo = endBlock - confirmationBlocks;
+      // Mark confirmed blocks. `endBlock` is already `chainHead -
+      // confirmationBlocks`, i.e. the highest block at the required
+      // confirmation depth, so it IS the confirmation cutoff. Subtracting the
+      // depth again here (the previous behaviour) left a band of width
+      // `confirmationBlocks` of genuinely confirmed blocks flagged unconfirmed
+      // (INDEXER-H1). The cutoff matches `isBlockConfirmed(chainHead, b, K)`
+      // used by the API: b <= chainHead - K  <=>  chainHead - b >= K.
+      const confirmUpTo = endBlock;
       if (confirmUpTo > 0) {
         this.db.markBlocksConfirmed(confirmUpTo);
       }

@@ -19,6 +19,7 @@ import {
   TransparencyParameterChangeRow,
 } from '../types/api';
 import { accountStateToString } from '../types/events';
+import { confirmationDepth, isBlockConfirmed } from '../services/confirmations';
 import { IndexerErrorCode } from '../types/errors';
 import pino from 'pino';
 
@@ -39,8 +40,10 @@ export function createRouter(
       const syncStatus = indexer.getSyncStatus();
       const eventCount = db.getEventCount();
 
-      // In production, also fetch latest block from chain
-      const chainLatestBlock = syncStatus.latestBlockIndexed; // Placeholder
+      // Latest masterchain head the indexer has observed (persisted each sync).
+      // Falls back to the indexed cursor before the first sync records a head.
+      const chainLatestBlock =
+        db.getLatestChainSeqno() || syncStatus.latestBlockIndexed;
 
       const response: HealthCheckResponse = {
         status: syncStatus.isRunning ? 'healthy' : 'degraded',
@@ -111,11 +114,22 @@ export function createRouter(
           return res.json(response);
         }
 
-        // Check confirmation count
-        const latestBlock = db.getLatestBlockIndexed();
-        const confirmationBlocks = latestBlock - payment.block_number;
-        const isConfirmed =
-          confirmationBlocks >= config.indexer.confirmationBlocks;
+        // Check confirmation count using the canonical definition shared with
+        // the indexer (INDEXER-H1): confirmations = chainHead - block_number,
+        // confirmed once that depth reaches the configured threshold. Reading
+        // the persisted chain head (not the indexed cursor, which lags it by
+        // `confirmationBlocks`) keeps this in lock-step with the
+        // `blocks.confirmed` flag the indexer sets.
+        const chainHeadSeqno = db.getLatestChainSeqno();
+        const confirmationBlocks = confirmationDepth(
+          chainHeadSeqno,
+          payment.block_number
+        );
+        const isConfirmed = isBlockConfirmed(
+          chainHeadSeqno,
+          payment.block_number,
+          config.indexer.confirmationBlocks
+        );
 
         const response: PaymentStatusResponse = {
           invoiceId: invoice_id,
