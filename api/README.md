@@ -202,6 +202,13 @@ WALLET_URL=https://wallet.tonbankcard.io
 # Security
 ALLOWED_ORIGINS=https://merchant1.com,https://merchant2.com
 
+# Number of reverse proxies / load balancers in front of the API. Express uses
+# this to resolve the real client IP (req.ip) from X-Forwarded-For, which the
+# per-IP rate limiter keys on. Match your topology exactly (e.g. 1 for a single
+# nginx/ALB hop). Avoid the blanket value "true": it lets clients spoof
+# X-Forwarded-For to bypass rate limiting. Defaults to false (no proxy).
+TRUST_PROXY=1
+
 # Blockchain
 TON_API_ENDPOINT=https://toncenter.com/api/v2/jsonRPC
 TON_API_KEY=your_ton_api_key
@@ -361,6 +368,7 @@ describe('InvoiceService', () => {
 ### Production Deployment Checklist
 
 - [ ] Environment variables configured
+- [ ] `TRUST_PROXY` set to the exact number of proxy hops (or trusted CIDRs) in front of the API so `req.ip` and per-IP rate limiting see the real client — never blanket `true`
 - [ ] HTTPS enabled (TLS 1.2+)
 - [ ] Database connection established
 - [ ] Blockchain indexer running
