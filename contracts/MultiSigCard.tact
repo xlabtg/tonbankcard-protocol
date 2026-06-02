@@ -186,10 +186,10 @@ contract MultiSigCard {
     // Storage: NFT address => MultiSigConfig
     multisig_configs: map<Address, MultiSigConfig>;
 
-    // Storage: composite key (hash of nft_address + proposal_id) => PaymentProposal
+    // Storage: composite key (hash of serialized nft_address and proposal_id) => PaymentProposal
     proposals: map<Int, PaymentProposal>;
 
-    // Storage: composite key (hash of nft_address + proposal_id + signer) => has approved
+    // Storage: composite key (hash of serialized nft_address, proposal_id and signer) => has approved
     approvals: map<Int, Bool>;
 
     // Storage: NFT address => owner address (for ownership verification)
@@ -534,13 +534,26 @@ contract MultiSigCard {
     }
 
     fun proposalKey(nft_address: Address, proposal_id: Int): Int {
-        // Create composite key from NFT address hash and proposal ID
-        return sha256(nft_address.asSlice()) + proposal_id;
+        // Collision-resistant composite key: hash of the serialized (nft_address, proposal_id)
+        // tuple. Integer addition is not injective, so distinct (address, id) pairs could
+        // collide to the same sum; hashing the serialized cell keeps the pairs distinct
+        // (audit CONTRACTS-H1).
+        return beginCell()
+            .storeAddress(nft_address)
+            .storeInt(proposal_id, 257)
+            .endCell()
+            .hash();
     }
 
     fun approvalKey(nft_address: Address, proposal_id: Int, signer: Address): Int {
-        // Create composite key from NFT address, proposal ID, and signer
-        return sha256(nft_address.asSlice()) + proposal_id * 1000 + sha256(signer.asSlice());
+        // Collision-resistant composite key from NFT address, proposal ID, and signer
+        // (audit CONTRACTS-H1).
+        return beginCell()
+            .storeAddress(nft_address)
+            .storeInt(proposal_id, 257)
+            .storeAddress(signer)
+            .endCell()
+            .hash();
     }
 
     fun sendResponse(to: Address, success: Bool, error_code: Int, nft_address: Address, proposal_id: Int) {
