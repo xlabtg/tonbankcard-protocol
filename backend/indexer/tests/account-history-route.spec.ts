@@ -24,6 +24,7 @@ interface AccountHistoryTestBody {
     limit: number;
     offset: number;
     hasMore: boolean;
+    nextCursor: string | null;
   };
   error?: {
     code: string;
@@ -124,6 +125,22 @@ function seedAccountHistory(db: IndexerDatabase, count: number): void {
   }
 }
 
+function seedSameTimestampAccountHistory(db: IndexerDatabase, count: number): void {
+  for (let i = 1; i <= count; i++) {
+    db.insertBlock(i, `hash_same_${i}`, `hash_same_${i - 1}`, 1000, 1);
+    db.insertInternalTransfer({
+      blockNumber: i,
+      transactionHash: `tx_route_same_${i}`,
+      logIndex: 0,
+      timestamp: 1000,
+      fromNft: NFT_ADDRESS,
+      toNft: 'EQB-history',
+      amountTbc: '100',
+      payloadHash: `0xroutesame${i}`
+    });
+  }
+}
+
 describe('GET /api/v1/accounts/:nft_id/history', () => {
   let db: IndexerDatabase;
   let server: http.Server;
@@ -194,5 +211,45 @@ describe('GET /api/v1/accounts/:nft_id/history', () => {
       code: 'API_INVALID_PARAMETER',
       message: 'Invalid pagination parameters'
     });
+  });
+
+  it('uses a stable keyset cursor for rows sharing a timestamp', async () => {
+    seedSameTimestampAccountHistory(db, 4);
+
+    const firstPage = await request(server, `/api/v1/accounts/${NFT_ADDRESS}/history?limit=2`);
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body?.events).toHaveLength(2);
+    expect(firstPage.body?.totalCount).toBe(4);
+    expect(firstPage.body?.pagination?.hasMore).toBe(true);
+    expect(firstPage.body?.pagination?.nextCursor).toEqual(expect.any(String));
+
+    const cursor = firstPage.body?.pagination?.nextCursor;
+    const secondPage = await request(
+      server,
+      `/api/v1/accounts/${NFT_ADDRESS}/history?limit=2&cursor=${encodeURIComponent(cursor!)}`
+    );
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body?.events).toHaveLength(2);
+    expect(secondPage.body?.totalCount).toBe(4);
+    expect(secondPage.body?.pagination).toMatchObject({
+      limit: 2,
+      offset: 0,
+      hasMore: false,
+      nextCursor: null
+    });
+
+    const hashes = [...(firstPage.body?.events ?? []), ...(secondPage.body?.events ?? [])].map(
+      (event) => (event as { transactionHash: string }).transactionHash
+    );
+
+    expect(hashes).toEqual([
+      'tx_route_same_1',
+      'tx_route_same_2',
+      'tx_route_same_3',
+      'tx_route_same_4'
+    ]);
+    expect(new Set(hashes).size).toBe(4);
   });
 });

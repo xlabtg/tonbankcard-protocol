@@ -361,6 +361,47 @@ describe('IndexerDatabase', () => {
       }
     });
 
+    it('should support composite keyset pagination across events with the same timestamp', () => {
+      for (let i = 3; i <= 6; i++) {
+        db.insertBlock(i, `hash${i}`, `hash${i - 1}`, 5000, 1);
+        db.insertInternalTransfer({
+          blockNumber: i,
+          transactionHash: `tx_same_${i}`,
+          logIndex: 0,
+          timestamp: 5000,
+          fromNft: 'EQA...',
+          toNft: 'EQZ...',
+          amountTbc: '100',
+          payloadHash: `0xsame${i}`,
+        });
+      }
+
+      const firstPage = db.getAccountHistory('EQA...', 2, 0);
+      expect(firstPage.events.map((event) => event.transactionHash)).toEqual([
+        'tx_same_3',
+        'tx_same_4',
+      ]);
+
+      const nextPage = db.getAccountHistory('EQA...', 10, 0, {
+        timestamp: 5000,
+        transactionHash: 'tx_same_4',
+        logIndex: 0,
+      });
+
+      expect(nextPage.totalCount).toBe(firstPage.totalCount);
+      expect(nextPage.events.map((event) => event.transactionHash)).toEqual([
+        'tx_same_5',
+        'tx_same_6',
+        'tx2',
+        'tx1',
+      ]);
+
+      const pagedHashes = [...firstPage.events, ...nextPage.events].map(
+        (event) => event.transactionHash
+      );
+      expect(new Set(pagedHashes).size).toBe(pagedHashes.length);
+    });
+
     it('should return correct totalCount', () => {
       const history = db.getAccountHistory('EQA...', 1, 0);
       // totalCount should reflect all matching events, not just the page
