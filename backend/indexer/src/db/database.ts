@@ -139,20 +139,127 @@ export class IndexerDatabase {
   }
 
   /**
-   * Handle reorg by deleting blocks from divergence point onwards
+   * Handle reorg by deleting blocks from divergence point onwards.
+   *
+   * `account_snapshots` is a materialised view with no FK to `blocks`, so the
+   * CASCADE that removes reverted `events` rows leaves snapshots derived from
+   * those now-deleted events. To keep indexed state mirroring on-chain truth we:
+   *   1. collect every `nft_address` referenced by the events about to be removed,
+   *   2. delete the reverted blocks (events cascade away),
+   *   3. recompute each affected snapshot from the surviving canonical events.
+   * The whole sequence runs in a single transaction so a failure cannot leave a
+   * half-rolled-back database. See INDEXER-C1 / docs/REORG_HANDLING.md.
    */
   handleReorg(fromBlock: number): void {
-    const deleteBlocks = this.db.prepare('DELETE FROM blocks WHERE block_number >= ?');
-    deleteBlocks.run(fromBlock);
+    const runReorg = this.db.transaction((from: number) => {
+      // 1. Identify NFTs whose snapshots may depend on the events being removed.
+      //    UNION dedupes across all four event tables (both sides of transfers).
+      const affectedRows = this.db
+        .prepare(
+          `SELECT addr FROM (
+             SELECT from_nft AS addr FROM internal_transfers WHERE block_number >= ?
+             UNION SELECT to_nft FROM internal_transfers WHERE block_number >= ?
+             UNION SELECT payer_nft FROM merchant_payments WHERE block_number >= ?
+             UNION SELECT merchant_nft FROM merchant_payments WHERE block_number >= ?
+             UNION SELECT nft_address FROM account_state_changes WHERE block_number >= ?
+             UNION SELECT nft_address FROM nft_ownership_changes WHERE block_number >= ?
+           )`
+        )
+        .all(from, from, from, from, from, from) as Array<{ addr: string | null }>;
+      const affected = affectedRows
+        .map((r) => r.addr)
+        .filter((addr): addr is string => addr !== null);
 
-    // Update indexer state
-    const newLatest = fromBlock - 1;
-    const block = this.getBlock(newLatest);
-    if (block) {
-      this.updateLatestBlock(newLatest, block.timestamp);
-    } else {
-      this.updateLatestBlock(0, 0);
+      // 2. Delete reverted blocks; events are CASCADE-deleted via FK.
+      this.db.prepare('DELETE FROM blocks WHERE block_number >= ?').run(from);
+
+      // 3. Rebuild each affected snapshot from the surviving canonical events.
+      for (const nftAddress of affected) {
+        this.rebuildAccountSnapshot(nftAddress);
+        this.invalidateHistoryCache(nftAddress);
+      }
+
+      // Update indexer state to the last surviving block.
+      const newLatest = from - 1;
+      const block = this.getBlock(newLatest);
+      if (block) {
+        this.updateLatestBlock(newLatest, block.timestamp);
+      } else {
+        this.updateLatestBlock(0, 0);
+      }
+    });
+
+    runReorg(fromBlock);
+  }
+
+  /**
+   * Recompute a single account snapshot from the surviving (canonical) events.
+   *
+   * Used during reorg rollback to reconcile a snapshot after the events it was
+   * derived from may have been deleted. The snapshot fields are independently
+   * recomputed from the event tables, and a snapshot with no surviving events is
+   * removed so stale, reverted state can never be served.
+   */
+  private rebuildAccountSnapshot(nftAddress: string): void {
+    const now = Math.floor(Date.now() / 1000);
+
+    // Latest surviving ownership change (chain order = block then log index).
+    const owner = this.db
+      .prepare(
+        `SELECT new_owner FROM nft_ownership_changes
+         WHERE nft_address = ?
+         ORDER BY block_number DESC, log_index DESC
+         LIMIT 1`
+      )
+      .get(nftAddress) as { new_owner: string } | undefined;
+
+    // Latest surviving state change.
+    const state = this.db
+      .prepare(
+        `SELECT new_state, block_number FROM account_state_changes
+         WHERE nft_address = ?
+         ORDER BY block_number DESC, log_index DESC
+         LIMIT 1`
+      )
+      .get(nftAddress) as { new_state: number; block_number: number } | undefined;
+
+    // Highest block in which this NFT was party to a transfer or payment.
+    const transfer = this.db
+      .prepare(
+        `SELECT MAX(block_number) AS last_block FROM (
+           SELECT block_number FROM internal_transfers WHERE from_nft = ? OR to_nft = ?
+           UNION ALL
+           SELECT block_number FROM merchant_payments WHERE payer_nft = ? OR merchant_nft = ?
+         )`
+      )
+      .get(nftAddress, nftAddress, nftAddress, nftAddress) as { last_block: number | null };
+
+    // No surviving events for this NFT — clear the snapshot entirely.
+    if (!owner && !state && transfer.last_block === null) {
+      this.db.prepare('DELETE FROM account_snapshots WHERE nft_address = ?').run(nftAddress);
+      return;
     }
+
+    this.db
+      .prepare(
+        `INSERT INTO account_snapshots
+           (nft_address, current_owner, current_state, last_transfer_block, last_state_change_block, last_updated)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(nft_address) DO UPDATE SET
+           current_owner = excluded.current_owner,
+           current_state = excluded.current_state,
+           last_transfer_block = excluded.last_transfer_block,
+           last_state_change_block = excluded.last_state_change_block,
+           last_updated = excluded.last_updated`
+      )
+      .run(
+        nftAddress,
+        owner?.new_owner ?? null,
+        state?.new_state ?? 0,
+        transfer.last_block,
+        state?.block_number ?? null,
+        now
+      );
   }
 
   /**
