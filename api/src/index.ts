@@ -13,9 +13,20 @@ import { setupInvoiceRoutes, corsOptions } from './routes/invoiceRoutes';
 import { setupApiKeyRoutes } from './routes/apiKeyRoutes';
 import { installSandboxMode, isSandboxMode } from './middleware/sandbox';
 import { configureTrustProxy } from './config/trustProxy';
+import { assertApiKeySecretConfigured } from './config/secrets';
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+
+// Fail fast before binding any port if the API-key HMAC secret is missing or
+// insecurely configured. Without this guard a misconfigured deployment would
+// silently hash every API key with a publicly known constant (audit API-H1).
+try {
+  assertApiKeySecretConfigured();
+} catch (err) {
+  console.error(`[FATAL] ${(err as Error).message}`);
+  process.exit(1);
+}
 
 const app = express();
 
