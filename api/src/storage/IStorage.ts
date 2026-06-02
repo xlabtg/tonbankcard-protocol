@@ -121,4 +121,20 @@ export interface IIdempotencyStorage {
    * @param key - Idempotency key
    */
   delete(key: string): Promise<void>;
+
+  /**
+   * Iterate over all idempotency records (key → record).
+   *
+   * OPTIONAL. The order of iteration is unspecified. Used by the
+   * `InvoiceService.cleanupExpiredInvoices` maintenance task to evict records
+   * that point to invoices which no longer exist — without relying on the
+   * idempotency-key derivation formula (which is scoped to the API key and the
+   * requested expiry and therefore cannot be reconstructed from a stored
+   * invoice alone).
+   *
+   * Backends with native TTL (e.g. Redis) expire records automatically and may
+   * omit this method; the cleanup task simply skips the idempotency sweep when
+   * it is absent.
+   */
+  entries?(): Promise<Iterable<[string, IdempotencyRecord]>>;
 }

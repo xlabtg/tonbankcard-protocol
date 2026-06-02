@@ -27,18 +27,34 @@ export function generateInvoiceId(): string {
 /**
  * Generate idempotency key from invoice request
  *
- * Same input parameters should produce same key within expiry window.
- * This enables idempotent invoice creation.
+ * Same input parameters should produce the same key within the expiry window,
+ * enabling idempotent invoice creation. Crucially, the key:
+ *
+ *  - includes `expires_at` so two otherwise-identical creates that request
+ *    different expiries do NOT collide. Previously `expires_at` was omitted,
+ *    so the second create silently returned the first invoice with the stale
+ *    expiry (audit finding API-M2).
+ *  - is scoped to the authenticated merchant identity via `keyId`, so two
+ *    different API keys (even ones bound to the same merchant NFT) never share
+ *    an idempotency namespace.
  *
  * @param request - Create invoice request
+ * @param keyId   - Public identifier of the authenticated API key (scope). When
+ *                  omitted (e.g. internal callers), the key is computed without
+ *                  a key scope.
  * @returns Idempotency key (hex string)
  */
-export function generateIdempotencyKey(request: CreateInvoiceRequest): string {
+export function generateIdempotencyKey(
+  request: CreateInvoiceRequest,
+  keyId?: string
+): string {
   const data = {
+    key_id: keyId ?? null,
     merchant_nft: request.merchant_nft,
     amount_tbc: request.amount_tbc,
     currency: request.currency,
     metadata: request.metadata || {},
+    expires_at: request.expires_at ?? null,
   };
 
   const jsonString = JSON.stringify(data, Object.keys(data).sort());

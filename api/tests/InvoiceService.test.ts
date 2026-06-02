@@ -74,6 +74,45 @@ describe('InvoiceService', () => {
       expect(invoice1.invoice_id).toBe(invoice2.invoice_id);
     });
 
+    it('should NOT reuse an invoice when only expires_at differs (API-M2)', async () => {
+      // Two otherwise-identical creates differing only in expires_at must
+      // produce distinct invoices, each carrying its own requested expiry.
+      // Previously the idempotency key omitted expires_at, so the second
+      // create silently returned the first invoice with the stale expiry.
+      const expiry1 = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // +1h
+      const expiry2 = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // +2h
+
+      const invoice1 = await service.createInvoice(
+        { ...validRequest, expires_at: expiry1 },
+        TEST_API_KEY
+      );
+      const invoice2 = await service.createInvoice(
+        { ...validRequest, expires_at: expiry2 },
+        TEST_API_KEY
+      );
+
+      expect(invoice1.invoice_id).not.toBe(invoice2.invoice_id);
+      expect(invoice1.expires_at).toBe(expiry1);
+      expect(invoice2.expires_at).toBe(expiry2);
+    });
+
+    it('should scope idempotency to the authenticated API key (API-M2)', async () => {
+      // Two distinct API keys bound to the SAME merchant NFT must not share an
+      // idempotency namespace: an identical payload from a different key yields
+      // a distinct invoice rather than reusing the first key's invoice.
+      const SECOND_API_KEY = 'tbck_test_second_4d3c2b1a0f9e8d7c6b5a4938271605af';
+      keyService.registerKey(SECOND_API_KEY, TEST_MERCHANT_NFT);
+
+      const invoice1 = await service.createInvoice(validRequest, TEST_API_KEY);
+      const invoice2 = await service.createInvoice(validRequest, SECOND_API_KEY);
+
+      expect(invoice1.invoice_id).not.toBe(invoice2.invoice_id);
+
+      // The same key with the same payload remains idempotent.
+      const invoice1Again = await service.createInvoice(validRequest, TEST_API_KEY);
+      expect(invoice1Again.invoice_id).toBe(invoice1.invoice_id);
+    });
+
     it('should set default expiration if not provided', async () => {
       const invoice = await service.createInvoice(validRequest, TEST_API_KEY);
 

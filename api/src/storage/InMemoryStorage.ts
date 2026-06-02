@@ -92,4 +92,8 @@ export class InMemoryIdempotencyStorage implements IIdempotencyStorage {
   async delete(key: string): Promise<void> {
     this.store.delete(key);
   }
+
+  async entries(): Promise<Iterable<[string, IdempotencyRecord]>> {
+    return this.store.entries();
+  }
 }

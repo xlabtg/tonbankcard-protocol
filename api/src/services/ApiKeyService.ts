@@ -195,6 +195,21 @@ export class ApiKeyService {
   }
 
   /**
+   * Resolve the public `key_id` for a plaintext API key.
+   *
+   * Used to scope idempotency keys to the authenticated identity without
+   * exposing the plaintext value or its hash. Returns `undefined` when no key
+   * matches (the caller is expected to have already authorized the key).
+   *
+   * @param plaintextKey - Plaintext API key presented by the caller
+   * @returns The public `key_id`, or `undefined` if the key is unknown
+   */
+  getKeyId(plaintextKey: string): string | undefined {
+    const apiKey = apiKeyRegistry.get(hashApiKey(plaintextKey));
+    return apiKey?.key_id;
+  }
+
+  /**
    * Update the last_used_at timestamp for a key.
    *
    * @param keyHash - The key_hash of the key to update

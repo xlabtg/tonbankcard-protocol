@@ -205,8 +205,18 @@ export class InvoiceService {
       );
     }
 
-    // Check idempotency (with TTL support)
-    const idempotencyKey = generateIdempotencyKey(request);
+    // Check idempotency (with TTL support).
+    //
+    // The key is scoped to the authenticated API key (`key_id`) and includes
+    // the requested `expires_at`, so that:
+    //   - two different keys never share an idempotency namespace, and
+    //   - two otherwise-identical creates with different expiries do NOT
+    //     collide (which previously returned the first invoice with a stale
+    //     expiry — audit finding API-M2).
+    // `getKeyId` resolves the public identifier without exposing the plaintext
+    // key; it is defined here because authorization above already succeeded.
+    const keyId = this.apiKeyService.getKeyId(merchantApiKey);
+    const idempotencyKey = generateIdempotencyKey(request, keyId);
     const existingEntry = await this.idempotencyStorage.get(idempotencyKey);
 
     if (existingEntry) {
@@ -661,21 +671,25 @@ export class InvoiceService {
 
         if (daysSinceExpiry > 7) {
           await this.invoiceStorage.delete(invoiceId);
-
-          // Clean up idempotency store (belt-and-suspenders; Redis TTL handles this automatically)
-          const idempotencyKey = generateIdempotencyKey({
-            merchant_nft: invoice.merchant_nft,
-            amount_tbc: invoice.amount_tbc,
-            currency: invoice.currency,
-            metadata: invoice.metadata,
-          });
-          const existing = await this.idempotencyStorage.get(idempotencyKey);
-          if (existing) {
-            await this.idempotencyStorage.delete(idempotencyKey);
-            idempotencyKeysCleaned++;
-          }
-
           invoicesCleaned++;
+        }
+      }
+    }
+
+    // Clean up idempotency records that point to invoices which no longer
+    // exist (belt-and-suspenders; Redis TTL handles this automatically).
+    //
+    // We sweep by stored invoiceId rather than reconstructing the key from the
+    // invoice: the idempotency key is now scoped to the API key (`key_id`) and
+    // the requested `expires_at`, neither of which can be derived from a stored
+    // invoice alone. Backends without enumeration support (e.g. Redis, which
+    // expires keys natively) simply skip this pass.
+    if (this.idempotencyStorage.entries) {
+      for (const [key, record] of await this.idempotencyStorage.entries()) {
+        const invoice = await this.invoiceStorage.get(record.invoiceId);
+        if (!invoice) {
+          await this.idempotencyStorage.delete(key);
+          idempotencyKeysCleaned++;
         }
       }
     }
