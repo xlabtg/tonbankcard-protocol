@@ -17,6 +17,7 @@ import {
   CreateInvoiceRequest,
   GetInvoiceResponse,
   GetInvoiceStatusResponse,
+  PublicInvoiceView,
   InvoiceStatus,
   Settlement,
   ErrorCode,
@@ -265,14 +266,18 @@ export class InvoiceService {
   }
 
   /**
-   * Get invoice by ID
+   * Get the full invoice by ID (internal / authenticated use).
    *
-   * This method is public and does not require authentication,
-   * allowing wallets to resolve payment intents.
+   * Returns the complete `Invoice`, including `merchant_nft`, `metadata`,
+   * and `settlement`. Because this exposes merchant identity and any
+   * customer PII embedded in metadata, callers MUST NOT hand the result to
+   * unauthenticated clients — use {@link getPublicInvoice} for the
+   * payer-facing endpoint and {@link getInvoiceDetail} for the
+   * authenticated merchant view.
    *
    * @param invoiceId - Invoice ID
-   * @returns Invoice details
-   * @throws ValidationError if invoice not found or expired
+   * @returns Full invoice details
+   * @throws ValidationError if invoice not found or invalid
    */
   async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
     validateInvoiceId(invoiceId);
@@ -294,6 +299,75 @@ export class InvoiceService {
     }
 
     return invoice;
+  }
+
+  /**
+   * Get the public, payer-facing view of an invoice.
+   *
+   * This is the method backing the unauthenticated
+   * `GET /v1/invoice/:invoice_id` endpoint. It returns only the fields a
+   * payer needs to settle the invoice and strips merchant identity
+   * (`merchant_nft`), arbitrary `metadata` (which may contain customer PII
+   * such as `customer_email` / `order_id`), and `settlement` details.
+   *
+   * @param invoiceId - Invoice ID
+   * @returns Payer-facing invoice view (no merchant data or PII)
+   * @throws ValidationError if invoice not found or invalid
+   * @see https://github.com/xlabtg/tonbankcard-protocol/issues/253
+   */
+  async getPublicInvoice(invoiceId: string): Promise<PublicInvoiceView> {
+    const invoice = await this.getInvoice(invoiceId);
+    return InvoiceService.toPublicView(invoice);
+  }
+
+  /**
+   * Get the full invoice detail for an authenticated merchant.
+   *
+   * Unlike {@link getPublicInvoice}, this returns the complete invoice
+   * (merchant identity, metadata, settlement). The presented API key must
+   * be valid, active, and bound to the invoice's `merchant_nft`; otherwise
+   * an `UNAUTHORIZED_MERCHANT` error is thrown so one merchant cannot read
+   * another merchant's invoices.
+   *
+   * @param invoiceId      - Invoice ID
+   * @param merchantApiKey - Plaintext merchant API key (for authorization)
+   * @returns Full invoice details
+   * @throws ValidationError if invoice not found or the key is not
+   *   authorized for the invoice's merchant
+   */
+  async getInvoiceDetail(
+    invoiceId: string,
+    merchantApiKey: string
+  ): Promise<GetInvoiceResponse> {
+    const invoice = await this.getInvoice(invoiceId);
+
+    if (!this.apiKeyService.isAuthorizedMerchant(merchantApiKey, invoice.merchant_nft)) {
+      throw new ValidationError(
+        ErrorCode.UNAUTHORIZED_MERCHANT,
+        'API key not authorized for this invoice'
+      );
+    }
+
+    return invoice;
+  }
+
+  /**
+   * Map a full `Invoice` to its public, payer-facing projection.
+   *
+   * Centralised here so the field allowlist lives in one place: adding a
+   * sensitive field to `Invoice` will not accidentally leak through the
+   * public endpoint because it must be explicitly added here too.
+   */
+  private static toPublicView(invoice: Invoice): PublicInvoiceView {
+    return {
+      invoice_id: invoice.invoice_id,
+      amount_tbc: invoice.amount_tbc,
+      currency: invoice.currency,
+      status: invoice.status,
+      created_at: invoice.created_at,
+      expires_at: invoice.expires_at,
+      payment_url: invoice.payment_url,
+    };
   }
 
   /**

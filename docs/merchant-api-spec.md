@@ -213,7 +213,7 @@ authentication middleware before any DB lookup.
 - All log lines redact the plaintext after the first 12 visible characters
   (`tbc_live_abc***...`) — wide enough to disambiguate but narrow enough to be unusable.
 
-**Endpoints for issuing and revoking keys** are documented in §5.4 and §5.5.
+**Endpoints for issuing and revoking keys** are documented in §5.5 and §5.6.
 
 ---
 
@@ -308,19 +308,16 @@ Authorization: Bearer <MERCHANT_API_KEY>
 
 ---
 
-### 5.2 Get Invoice
+### 5.2 Get Invoice (Public)
 
-**Purpose**: Retrieve invoice details for payment resolution.
+**Purpose**: Retrieve the payer-facing view of an invoice for payment resolution.
 
 **Endpoint**:
 ```http
 GET /invoice/{invoice_id}
 ```
 
-**Request Headers**:
-```http
-Authorization: Bearer <MERCHANT_API_KEY>  [Optional for wallets]
-```
+**Request Headers**: _None required (public endpoint)._
 
 **Path Parameters**:
 
@@ -332,22 +329,70 @@ Authorization: Bearer <MERCHANT_API_KEY>  [Optional for wallets]
 ```json
 {
   "invoice_id": "inv_9f3a7b2c1d4e5f6a",
-  "merchant_nft": "EQAbc123...",
   "amount_tbc": "1000000000",
   "currency": "TBC",
-  "metadata": {
-    "order_id": "ORDER-12345",
-    "description": "Product purchase"
-  },
   "status": "pending",
   "created_at": "2025-12-27T10:00:00Z",
   "expires_at": "2025-12-31T23:59:59Z",
-  "payment_url": "https://wallet.tonbankcard.io/pay/inv_9f3a7b2c1d4e5f6a",
-  "settlement": null
+  "payment_url": "https://wallet.tonbankcard.io/pay/inv_9f3a7b2c1d4e5f6a"
 }
 ```
 
-**Response** (Invoice Settled):
+> **Privacy**: This public response is intentionally limited to the fields a
+> payer needs. Merchant identity (`merchant_nft`), arbitrary `metadata` (which
+> may contain customer PII such as `customer_email` / `order_id`), and
+> `settlement` details are **not** returned here. Use the authenticated
+> [§5.3 Get Invoice Detail](#53-get-invoice-detail-authenticated) endpoint for
+> the full invoice.
+
+**Response** (Error):
+```json
+{
+  "error": {
+    "code": "INVOICE_NOT_FOUND",
+    "message": "Invoice not found or expired",
+    "details": {
+      "invoice_id": "inv_9f3a7b2c1d4e5f6a"
+    }
+  }
+}
+```
+
+**HTTP Status Codes**:
+- `200 OK` - Invoice found
+- `404 Not Found` - Invoice not found or expired
+- `410 Gone` - Invoice expired
+- `500 Internal Server Error` - Server error
+
+**Security**:
+- Public endpoint (no auth required for wallet access)
+- Rate limited per IP
+- No merchant identity, metadata, or PII exposed (audit finding API-H4, issue #253)
+
+---
+
+### 5.3 Get Invoice Detail (Authenticated)
+
+**Purpose**: Retrieve the full invoice — including merchant identity, metadata,
+and settlement — for the owning merchant.
+
+**Endpoint**:
+```http
+GET /invoice/{invoice_id}/detail
+```
+
+**Request Headers**:
+```http
+Authorization: Bearer <MERCHANT_API_KEY>
+```
+
+**Path Parameters**:
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `invoice_id` | `string` | Yes | Unique invoice identifier |
+
+**Response** (Success):
 ```json
 {
   "invoice_id": "inv_9f3a7b2c1d4e5f6a",
@@ -372,33 +417,21 @@ Authorization: Bearer <MERCHANT_API_KEY>  [Optional for wallets]
 }
 ```
 
-**Response** (Error):
-```json
-{
-  "error": {
-    "code": "INVOICE_NOT_FOUND",
-    "message": "Invoice not found or expired",
-    "details": {
-      "invoice_id": "inv_9f3a7b2c1d4e5f6a"
-    }
-  }
-}
-```
-
 **HTTP Status Codes**:
 - `200 OK` - Invoice found
-- `404 Not Found` - Invoice not found or expired
-- `410 Gone` - Invoice expired
+- `401 Unauthorized` - Missing or invalid API key
+- `403 Forbidden` - API key not authorized for this invoice's merchant
+- `404 Not Found` - Invoice not found
 - `500 Internal Server Error` - Server error
 
 **Security**:
-- Public endpoint (no auth required for wallet access)
-- Rate limited per IP
-- No sensitive merchant data exposed
+- Requires a valid API key scoped to the invoice's merchant NFT
+- Requires the `invoice:read` permission
+- Rate limited per API key
 
 ---
 
-### 5.3 Get Invoice Status
+### 5.4 Get Invoice Status
 
 **Purpose**: Check settlement status and on-chain verification.
 
@@ -474,7 +507,7 @@ Authorization: Bearer <MERCHANT_API_KEY>
 
 ---
 
-### 5.4 Issue API Key
+### 5.5 Issue API Key
 
 **Purpose**: Mint a new API key for a merchant NFT.
 
@@ -547,7 +580,7 @@ permissions, and a redacted preview of the plaintext (first 12 chars only).
 
 ---
 
-### 5.5 Revoke API Key
+### 5.6 Revoke API Key
 
 **Purpose**: Deactivate an existing key so all subsequent requests presenting
 it return `401 INVALID_API_KEY`.
@@ -718,7 +751,7 @@ unauthenticated route keys on `req.ip`.
 |----------|-------------------|-----|---------|
 | `POST /v1/invoice/create` | 60 | API key | `RATE_LIMIT_INVOICE_CREATE_PER_MIN` |
 | `GET /v1/invoice/{id}/status` | 300 | API key | `RATE_LIMIT_INVOICE_STATUS_PER_MIN` |
-| `GET /v1/invoice/{id}` (authenticated read) | 1000 | API key | `RATE_LIMIT_INVOICE_READ_PER_MIN` |
+| `GET /v1/invoice/{id}/detail` (authenticated read) | 1000 | API key | `RATE_LIMIT_INVOICE_READ_PER_MIN` |
 | `GET /v1/invoice/{id}` (unauthenticated wallet read) | 10 | IP | `RATE_LIMIT_PUBLIC_PER_MIN` |
 | `POST /v1/keys`, `DELETE /v1/keys/{key_id}` | 10 | IP | `RATE_LIMIT_PUBLIC_PER_MIN` |
 
@@ -1062,13 +1095,16 @@ curl -X POST https://api.tonbankcard.io/v1/invoice/create \
 }
 ```
 
-### 10.2 Get Invoice (JavaScript)
+### 10.2 Get Invoice Detail (JavaScript)
 
 ```javascript
 const invoiceId = "inv_9f3a7b2c1d4e5f6a";
 
+// The /detail endpoint requires authentication and returns the full invoice
+// (merchant_nft, metadata, settlement). The public GET /v1/invoice/{id}
+// endpoint returns only payer-facing fields and never these.
 const response = await fetch(
-  `https://api.tonbankcard.io/v1/invoice/${invoiceId}`,
+  `https://api.tonbankcard.io/v1/invoice/${invoiceId}/detail`,
   {
     headers: {
       "Authorization": `Bearer ${MERCHANT_API_KEY}`

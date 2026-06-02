@@ -131,6 +131,8 @@ function rateLimitHandler(req: Request, res: Response, _next: unknown, options: 
  * Notes:
  *  - Express must be configured with `app.set('trust proxy', ...)` when
  *    running behind a load balancer so `req.ip` reflects the true client.
+ *    The production app does this via the `TRUST_PROXY` env var — see
+ *    `config/trustProxy.ts`.
  *  - `standardHeaders: 'draft-7'` emits RateLimit-Policy/RateLimit
  *    in addition to legacy X-RateLimit-* for client compatibility.
  */

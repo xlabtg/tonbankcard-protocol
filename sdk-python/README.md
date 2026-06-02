@@ -80,6 +80,17 @@ def fastapi_handler(request, secret: str):
     return fulfil_order(payload.invoice_id, payload.settlement)
 ```
 
+The server signs deliveries with a structured, timestamped header
+(`X-Tonbankcard-Signature: t=<unix-timestamp>,v1=<hex>`). `verify_webhook`
+recomputes `HMAC-SHA256(secret, f"{t}.{raw_body}")`, compares the `v1` digest in
+constant time, and rejects deliveries whose timestamp falls outside a
+configurable freshness window (`tolerance`, default 300 seconds) — providing
+replay protection. Pass `now=` to override the clock in tests.
+
+```python
+payload = verify_webhook(secret=secret, payload=raw, signature=sig, tolerance=120)
+```
+
 ## Error handling
 
 All API failures raise subclasses of `MerchantApiError`:
