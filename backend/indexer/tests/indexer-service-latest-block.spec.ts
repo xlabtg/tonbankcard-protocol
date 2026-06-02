@@ -48,6 +48,7 @@ const silentLogger = pino({ level: 'silent' });
 /** Stub DB that tracks the cursor so we can observe whether sync advanced. */
 function makeStubDb() {
   let cursor = 0;
+  let chainSeqno = 0;
   const inserted: number[] = [];
   return {
     inserted,
@@ -61,6 +62,11 @@ function makeStubDb() {
     },
     markBlocksConfirmed: () => {},
     handleReorg: () => {},
+    getLatestChainSeqno: () => chainSeqno,
+    setLatestChainSeqno: (n: number) => {
+      // Mirror the monotonic guard in the real DB (INDEXER-H1).
+      if (n > chainSeqno) chainSeqno = n;
+    },
   };
 }
 
