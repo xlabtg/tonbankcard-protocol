@@ -46,6 +46,7 @@ export {
   formatTimestamp,
   formatRelativeTime,
   isValidTonAddress,
+  assertAmount,
 } from './utils';
 
 /**
