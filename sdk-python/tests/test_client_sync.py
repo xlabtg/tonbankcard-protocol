@@ -234,5 +234,5 @@ def test_client_context_manager_closes(api_key: str, base_url: str) -> None:
 
 
 def test_static_helpers_are_exposed_on_client() -> None:
-    sig = MerchantClient.compute_signature("s", b"payload")
+    sig = MerchantClient.compute_signature("s", 1700000000, b"payload")
     assert isinstance(sig, str) and len(sig) == 64

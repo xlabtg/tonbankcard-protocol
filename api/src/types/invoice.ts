@@ -142,8 +142,48 @@ export interface CreateInvoiceResponse extends Invoice {}
 
 /**
  * Get invoice response
+ *
+ * Returned by the *authenticated* merchant detail endpoint and therefore
+ * carries the full invoice (merchant identity, metadata, settlement).
  */
 export interface GetInvoiceResponse extends Invoice {}
+
+/**
+ * Public (payer-facing) invoice view.
+ *
+ * Returned by the unauthenticated `GET /v1/invoice/:invoice_id` endpoint.
+ * It deliberately exposes ONLY the fields a payer needs to settle an
+ * invoice and omits everything that could leak merchant identity or
+ * customer PII:
+ *
+ *  - `merchant_nft` is dropped (merchant identity disclosure).
+ *  - `metadata` is dropped (may hold `customer_email`, `order_id`, …).
+ *  - `settlement` is dropped (on-chain merchant/payer identities).
+ *
+ * @see https://github.com/xlabtg/tonbankcard-protocol/issues/253
+ */
+export interface PublicInvoiceView {
+  /** Unique identifier (UUID v4) */
+  invoice_id: string;
+
+  /** Amount in TBC nanocoins (1 TBC = 10^9 nanocoins) */
+  amount_tbc: string;
+
+  /** Currency (always "TBC") */
+  currency: 'TBC';
+
+  /** Invoice status */
+  status: InvoiceStatus;
+
+  /** Creation timestamp (ISO 8601) */
+  created_at: string;
+
+  /** Expiration timestamp (ISO 8601) */
+  expires_at: string;
+
+  /** Deep link for wallet */
+  payment_url: string;
+}
 
 /**
  * Get invoice status response
