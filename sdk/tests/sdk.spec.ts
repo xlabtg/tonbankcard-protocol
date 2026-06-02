@@ -2,7 +2,14 @@
  * Unit tests for TonbankcardSDK
  */
 
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  jest,
+} from '@jest/globals';
 import { Address, beginCell, Cell } from '@ton/core';
 import { TonbankcardSDK } from '../src/sdk';
 import { parseTBC } from '../src/utils';
@@ -42,6 +49,7 @@ function buildTransactionStub(eventBodies: Cell[], options?: {
   aborted?: boolean;
   descriptionType?: string;
   lt?: bigint;
+  now?: number;
 }): any {
   const messages = eventBodies.map((body) => ({
     info: { type: 'external-out' },
@@ -49,6 +57,9 @@ function buildTransactionStub(eventBodies: Cell[], options?: {
   }));
   return {
     lt: options?.lt ?? 100n,
+    // Gen time used by verifySettlement to resolve the inclusion block seqno
+    // (SDK-H2). A fixed unix timestamp keeps the lookupBlock URL deterministic.
+    now: options?.now ?? 1_700_000_000,
     description: {
       type: options?.descriptionType ?? 'generic',
       aborted: options?.aborted ?? false,
@@ -295,6 +306,140 @@ describe('TonbankcardSDK', () => {
     });
   });
 
+  describe('verifySettlement confirmations (SDK-H2)', () => {
+    const originalFetch = global.fetch;
+
+    // A transaction whose logical time deliberately exceeds 2^53. If `lt` ever
+    // leaked back into the confirmation math, the result would be a huge
+    // (negative) number instead of the expected block-depth — so these tests
+    // double as a regression guard against the original dimensional bug.
+    const makeTx = (overrides: Record<string, unknown> = {}) =>
+      ({
+        lt: BigInt('99999999999999999999'),
+        now: 1_700_000_000,
+        description: { type: 'generic', aborted: false },
+        ...overrides,
+      }) as any;
+
+    const mockHeadAndTx = (head: unknown, txObj: unknown): void => {
+      const client = (sdk as any).client;
+      jest
+        .spyOn(client, 'getMasterchainInfo')
+        .mockResolvedValue({ latestSeqno: head } as any);
+      jest.spyOn(client, 'getTransaction').mockResolvedValue(txObj as any);
+    };
+
+    // Mock the toncenter `lookupBlock` REST call used to resolve the
+    // transaction's inclusion seqno.
+    const mockInclusionSeqno = (seqno: number): void => {
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        json: async () => ({ ok: true, result: { seqno } }),
+      })) as any;
+    };
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+      global.fetch = originalFetch;
+    });
+
+    it('reports confirmations as the block-seqno difference (N deep => N)', async () => {
+      const head = 1_000_000;
+      const depth = 7;
+      mockHeadAndTx(head, makeTx());
+      mockInclusionSeqno(head - depth);
+
+      const result = await sdk.verifySettlement('1000:abc123');
+
+      expect(result.confirmations).toBe(depth);
+      expect(result.isValid).toBe(true);
+      // lt (10^19) must not appear in the result — the difference is tiny.
+      expect(result.confirmations).toBeLessThan(1000);
+    });
+
+    it('never returns a negative count when inclusion seqno is at/above head', async () => {
+      const head = 1_000_000;
+      mockHeadAndTx(head, makeTx());
+      mockInclusionSeqno(head + 5);
+
+      const result = await sdk.verifySettlement('1000:abc123');
+
+      expect(result.confirmations).toBe(0);
+    });
+
+    it('does not derive confirmations from the transaction lt (no precision loss)', async () => {
+      const head = 70_000_000;
+      const depth = 3;
+      mockHeadAndTx(head, makeTx({ lt: BigInt('123456789012345678901234') }));
+      mockInclusionSeqno(head - depth);
+
+      const result = await sdk.verifySettlement(
+        '123456789012345678901234:abc123'
+      );
+
+      expect(result.confirmations).toBe(depth);
+      expect(Number.isInteger(result.confirmations)).toBe(true);
+      expect(result.confirmations).toBeGreaterThanOrEqual(0);
+    });
+
+    it('accepts the nested `last.seqno` masterchain info shape', async () => {
+      mockHeadAndTx(undefined, makeTx());
+      const client = (sdk as any).client;
+      jest
+        .spyOn(client, 'getMasterchainInfo')
+        .mockResolvedValue({ last: { seqno: 500 } } as any);
+      mockInclusionSeqno(496);
+
+      const result = await sdk.verifySettlement('1000:abc123');
+
+      expect(result.confirmations).toBe(4);
+    });
+
+    it('reports 0 confirmations when the inclusion block cannot be resolved', async () => {
+      mockHeadAndTx(1_000_000, makeTx());
+      global.fetch = jest.fn(async () => ({ ok: false })) as any;
+
+      const result = await sdk.verifySettlement('1000:abc123');
+
+      expect(result.confirmations).toBe(0);
+      // A successful transaction is still valid even if depth is unknown.
+      expect(result.isValid).toBe(true);
+    });
+
+    it('marks aborted transactions invalid while still reporting depth', async () => {
+      const head = 1_000_000;
+      mockHeadAndTx(
+        head,
+        makeTx({ description: { type: 'generic', aborted: true } })
+      );
+      mockInclusionSeqno(head - 2);
+
+      const result = await sdk.verifySettlement('1000:abc123');
+
+      expect(result.isValid).toBe(false);
+      expect(result.confirmations).toBe(2);
+    });
+
+    it('rejects a malformed txHash without touching the chain', async () => {
+      const result = await sdk.verifySettlement('no-separator');
+
+      expect(result.isValid).toBe(false);
+      expect(result.confirmations).toBe(0);
+      expect(result.error).toMatch(/Invalid txHash format/);
+    });
+
+    it('returns not-found (0 confirmations) for a missing transaction', async () => {
+      const client = (sdk as any).client;
+      jest.spyOn(client, 'getTransaction').mockResolvedValue(null as any);
+
+      const result = await sdk.verifySettlement('1000:abc123');
+
+      expect(result.isValid).toBe(false);
+      expect(result.confirmations).toBe(0);
+      expect(result.error).toBe('Transaction not found');
+    });
+  });
+
   describe('Configuration', () => {
     it('should accept mainnet config', () => {
       const mainnetSdk = new TonbankcardSDK({
@@ -346,6 +491,21 @@ describe('TonbankcardSDK', () => {
       'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7'
     );
     const txHash = '100:abcdef';
+
+    // verifySettlement resolves the transaction's inclusion block seqno via the
+    // toncenter `lookupBlock` REST call (SDK-H2). Stub it so confirmations are a
+    // small positive block depth (head 1000 − inclusion 995 = 5) instead of
+    // hitting the network. Restored after each test.
+    const originalFetch = global.fetch;
+    beforeEach(() => {
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        json: async () => ({ ok: true, result: { seqno: 995 } }),
+      })) as any;
+    });
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
 
     /** Replace the SDK's TonClient with a stub returning the given transaction. */
     function stubClient(tx: any): void {
