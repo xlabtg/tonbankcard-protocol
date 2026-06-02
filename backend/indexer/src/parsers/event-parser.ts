@@ -79,10 +79,27 @@ export class EventParser {
    *     msg.destination     - "" or null for external-out (emit())
    *     msg.msg_data.body   - base64 BOC of message cell
    *     msg.source          - source contract address
+   *
+   * Block attribution and the event timestamp are supplied by the caller
+   * (the indexer service), which owns the canonical block being processed
+   * (INDEXER-H4). The parser intentionally does NOT read `transaction.block_number`
+   * (which the HTTP API never populates and which previously left every event
+   * with `blockNumber = 0`) or `transaction.utime` (a second, competing
+   * timestamp source). Reconciling to the single block-level value here means
+   * the events returned already carry correct, consistent block/timestamp data
+   * rather than placeholders that the service had to overwrite later.
+   *
+   * @param transaction - raw toncenter transaction
+   * @param contractAddress - the on-chain account the transaction belongs to
+   *   (its `in_msg.destination`), used as a fallback for NFT enrichment
+   * @param blockNumber - canonical block height to attribute events to
+   * @param timestamp - canonical block timestamp to stamp events with
    */
   parseTransaction(
     transaction: any,
-    contractAddress: string
+    contractAddress: string,
+    blockNumber: number,
+    timestamp: number
   ): IndexedEvent[] {
     const events: IndexedEvent[] = [];
 
@@ -90,9 +107,7 @@ export class EventParser {
       return events;
     }
 
-    const blockNumber: number = transaction.block_number ?? 0;
     const txHash: string = transaction.hash ?? '';
-    const timestamp: number = transaction.utime ?? 0;
     const outMsgs: any[] = transaction.out_msgs ?? [];
 
     for (let i = 0; i < outMsgs.length; i++) {
