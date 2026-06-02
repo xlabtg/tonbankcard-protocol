@@ -73,17 +73,25 @@ on-chain" once the change ships.
 
 ### MS-CH-1 — Composite-key hardening (`proposalKey` / `approvalKey`)
 
+**Status: LANDED** (issue #259 / CONTRACTS-H2). The composite-key
+hardening shipped alongside the multi-sig execution path, because the
+old combinator did not merely risk collisions — it reverted on-chain
+and made the entire proposal flow non-functional, so it had to be
+fixed for an approved payment to be executable at all.
+
 **Closes threat:** T-MSC-1 signature replay, T-MSC-6 composite-key
 collision ([`SPECIFICATION.md` §9](./SPECIFICATION.md)), A2
 §X-5 (structurally identical to the bridge CH-2 finding and the
 F4 RP-CH-1 finding).
 
-**Shape of change:**
+**Shape of change (as landed):**
 
 | Element | Change |
 |---------|--------|
-| `proposalKey` ([contract line 536](../../contracts/MultiSigCard.tact)) | Replace `sha256(nft_address.asSlice()) + proposal_id` with a domain-separated keyed hash: `sha256(beginCell().storeSlice("MS_PROPOSAL_KEY_V1".asSlice()).storeAddress(nft_address).storeUint(proposal_id, 64).endCell().asSlice())`. |
-| `approvalKey` ([contract line 541](../../contracts/MultiSigCard.tact)) | Replace `sha256(nft_address.asSlice()) + proposal_id * 1000 + sha256(signer.asSlice())` with a domain-separated keyed hash: `sha256(beginCell().storeSlice("MS_APPROVAL_KEY_V1".asSlice()).storeAddress(nft_address).storeUint(proposal_id, 64).storeAddress(signer).endCell().asSlice())`. |
+| `proposalKey` | Replaced `sha256(nft_address.asSlice()) + proposal_id` with the representation hash of a packed cell: `beginCell().storeAddress(nft_address).storeUint(proposal_id, 64).endCell().hash()`. |
+| `approvalKey` | Replaced `sha256(nft_address.asSlice()) + proposal_id * 1000 + sha256(signer.asSlice())` with `beginCell().storeAddress(nft_address).storeUint(proposal_id, 64).storeAddress(signer).endCell().hash()`. |
+| Implementation note | The originally-proposed `sha256(beginCell()…endCell().asSlice())` form was **not** used: `sha256` over a slice requires byte-aligned input, and a cell containing a 267-bit `Address` is not byte-aligned, so that form would itself revert with cell-underflow (exit 9). `Cell.hash()` (the representation hash) is well-defined for any cell, always returns a 256-bit value, and needs no domain-separation string because the field layout (`Address` + `uint64` [+ `Address`]) is already unambiguous and distinct between the two functions. |
+| Root cause closed | The old form reverted on-chain twice over: (1) `sha256(Address.asSlice())` underflowed on the non-byte-aligned 267-bit slice (exit 9); (2) summing two 256-bit digests in `approvalKey` overflowed TVM's 257-bit signed integer range (exit 4). Both are eliminated. |
 | Storage shape | No change to `proposals` or `approvals` map shapes (still `map<Int, PaymentProposal>` / `map<Int, Bool>`); only the key derivation functions change. |
 | Backwards compatibility | None required — the contract has not gone live, so no pre-existing proposals to migrate. |
 | Error code | No new code required — collision attempts already fall through to `ERROR_MS_PROPOSAL_NOT_FOUND = 4` or `ERROR_MS_NOT_SIGNER = 2`. |
@@ -93,13 +101,13 @@ F4 RP-CH-1 finding).
 [`TESTNET_DEPLOYMENT.md` §4](./TESTNET_DEPLOYMENT.md) is throwaway
 state.
 
-**Tests required at landing:** unit test that constructs two
-addresses whose `sha256` distance equals an attacker-chosen `Δ`,
-issues two proposals with `proposal_id` values differing by `Δ`, and
-asserts they land in distinct keys (would have collided under the
-old combinator). A second test does the same for `approvalKey` by
-varying the `signer` hash and `proposal_id * 1000` offset. Identical
-shape to F3 CH-2 and F4 RP-CH-1.
+**Tests at landing:** the multi-sig execution regression suite
+(`contracts/multisig/MultiSigExecution.spec.ts`) exercises the full
+submit → approve → execute lifecycle end-to-end in a sandbox VM, which
+only succeeds because the hardened keys no longer revert. The
+`CT.proposalKey.hardened` / `CT.approvalKey.hardened` checks in
+`scripts/multisig/check-multisig-readiness.ts` guard against a
+regression back to the broken integer-addition combinator.
 
 **Doc references that update:** [`SPECIFICATION.md`
 §9 T-MSC-1, T-MSC-6](./SPECIFICATION.md) flip to closed on-chain;
