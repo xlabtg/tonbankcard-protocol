@@ -198,6 +198,40 @@ jobs:
       # Contracts use Tact as primary language; TypeScript wrappers are generated
       # by the Tact build step and linted as part of the build verification.
 
+  # Verifies that secret-bearing .env files cannot be committed (audit finding
+  # DEVOPS-H1, issue #261) while *.example templates remain tracked.
+  secrets-hygiene:
+    name: Secrets Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Ensure secret-bearing .env files are gitignored
+        run: |
+          set -euo pipefail
+          status=0
+          for f in .env .env.local .env.sandbox .env.production.local; do
+            if git check-ignore -q "$f"; then
+              echo "ok: $f is ignored"
+            else
+              echo "ERROR: $f is NOT ignored by .gitignore"
+              status=1
+            fi
+          done
+          for f in .env.example .env.sandbox.example; do
+            if git check-ignore -q "$f"; then
+              echo "ERROR: template $f must stay tracked but is ignored"
+              status=1
+            else
+              echo "ok: template $f is not ignored"
+            fi
+          done
+          if git ls-files --error-unmatch .env.sandbox >/dev/null 2>&1; then
+            echo "ERROR: .env.sandbox is tracked in git"
+            status=1
+          fi
+          exit $status
+
   test:
     name: Test
     runs-on: ubuntu-latest
