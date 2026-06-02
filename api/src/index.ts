@@ -12,11 +12,19 @@ import cors from 'cors';
 import { setupInvoiceRoutes, corsOptions } from './routes/invoiceRoutes';
 import { setupApiKeyRoutes } from './routes/apiKeyRoutes';
 import { installSandboxMode, isSandboxMode } from './middleware/sandbox';
+import { configureTrustProxy } from './config/trustProxy';
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 const app = express();
+
+// Configure how many reverse proxies / load balancers sit in front of the
+// API so `req.ip` (and therefore the per-IP rate limiter) resolves to the real
+// client rather than the proxy. Controlled by the TRUST_PROXY env var; defaults
+// to `false` (no proxy) so a misconfiguration fails closed. See
+// `config/trustProxy.ts` for the accepted values.
+configureTrustProxy(app);
 
 // Security middleware
 app.use(cors(corsOptions));
