@@ -61,17 +61,49 @@ The main governance contract that manages proposals and voting.
 **Purpose**: Public proposal registry for recording governance intent and voting outcomes.
 
 **Features:**
-- Submit proposals (requires TBC Diamond NFT ownership)
-- Cast votes (1 NFT = 1 vote)
+- Submit proposals (requires verified TBC Diamond NFT ownership)
+- Cast votes (1 NFT = 1 vote, ownership verified on-chain)
 - Finalize proposals after voting window
 - Query proposal status and vote counts
+
+#### On-chain NFT ownership verification (audit finding CONTRACTS-C1 / issue #248)
+
+The registry **never trusts a caller-supplied NFT ID**. Before a vote or
+proposal is recorded, it asks a trusted on-chain resolver "who owns Diamond
+NFT N?" and only materialises the action once the resolver confirms that the
+original sender is the NFT owner. This closes the vulnerability where any single
+wallet could fabricate all 222 votes by simply supplying NFT IDs it did not own.
+
+Because owner resolution is a cross-contract lookup, this is an **asynchronous
+request/response flow**:
+
+```
+1. User           -> ProposalRegistry : CastVote / SubmitProposal
+                                          (stashes a PENDING request keyed by
+                                           query_id, bound to sender())
+2. ProposalRegistry -> Resolver        : ResolveOwnership{nft_id, claimant}
+3. Resolver       -> ProposalRegistry  : OwnershipResolved{nft_id, owner}
+4. ProposalRegistry                    : record vote/proposal IFF owner == claimant
+```
+
+Security properties:
+
+- A vote/proposal is materialised **only** inside the `OwnershipResolved`
+  callback, which requires `sender() == owner_resolver` (spoofed callbacks are
+  rejected) **and** `resolved_owner == claimant`.
+- A caller-supplied `voter_nft_id` / `author_nft_id` alone can never record
+  anything — defeating the "iterate NFT IDs 1..222 from one wallet" attack.
+- The resolver is configured once by the deployer via `SetOwnerResolver`. Until
+  it is set, all voting and proposal submission is rejected.
 
 **Public Functions:**
 
 | Function | Description |
 |----------|-------------|
-| `SubmitProposal` | Register a new governance proposal |
-| `CastVote` | Cast a vote on an active proposal |
+| `SetOwnerResolver` | One-time, deployer-only configuration of the NFT ownership resolver |
+| `SubmitProposal` | Request to register a new proposal (recorded only after ownership is confirmed) |
+| `CastVote` | Request to vote on an active proposal (recorded only after ownership is confirmed) |
+| `OwnershipResolved` | Resolver callback that confirms NFT ownership and finalizes the pending action |
 | `FinalizeProposal` | Finalize a proposal after voting ends |
 
 **Get Methods:**
@@ -84,6 +116,8 @@ The main governance contract that manages proposals and voting.
 | `getProposalStatus(id)` | Get proposal status |
 | `getVoteCounts(id)` | Get FOR/AGAINST/ABSTAIN counts |
 | `isVotingOpen(id)` | Check if voting is open |
+| `getOwnerResolver()` | Configured NFT ownership resolver (`null` until set) |
+| `getDeployer()` | Deployer address (resolver-configuration authority) |
 
 ### SnapshotVerifier.tact
 
@@ -419,6 +453,25 @@ console.log(`Accepted: ${stats.proposals_accepted}`);
 
 ## Integration
 
+> **Note:** `SubmitProposal` and `CastVote` are *requests*. The registry first
+> verifies NFT ownership with the configured resolver and only records the
+> proposal/vote once ownership is confirmed (see "On-chain NFT ownership
+> verification" above). The deployer must call `SetOwnerResolver` once before any
+> proposals or votes can be recorded.
+
+### Configuring the ownership resolver (deployer, one-time)
+
+```typescript
+await registry.send(
+  deployerSender,
+  { value: toNano("0.05") },
+  {
+    $$type: "SetOwnerResolver",
+    resolver: ownerResolverAddress // on-chain NFT owner resolver (TEP-62)
+  }
+);
+```
+
 ### Submitting a Proposal
 
 ```typescript
@@ -475,17 +528,29 @@ await registry.send(
 
 ## Testing
 
-Tests are located in `tests/governance/`:
+The `ProposalRegistry` ships with a self-contained Tact build + Jest test
+project in this directory (mirroring `contracts/payment-hub`). It is wired into
+the CI `Test (Contracts)` job.
 
-- `TransparencyRegistry.spec.ts` - Transparency layer tests (Issue #40)
-- `ProposalRegistry.spec.ts` - Proposal submission and management
-- `SnapshotVerifier.spec.ts` - Snapshot verification
-- `DiamondGovernance.spec.ts` - Diamond resolver tests
+- `ProposalRegistry.spec.ts` — regression tests for on-chain NFT ownership
+  verification (audit finding CONTRACTS-C1 / issue #248): legitimate owners can
+  submit/vote, non-owners are rejected, a single wallet cannot accumulate votes
+  for NFTs it does not own, spoofed resolver callbacks are rejected, and actions
+  are blocked until the resolver is configured.
+- `test/TestOwnershipResolver.tact` — a test-only mock resolver that answers
+  `ResolveOwnership` from a seeded `nft_id -> owner` map. It is **not** a
+  production artifact; a real deployment uses an on-chain TEP-62 owner lookup.
 
-Run tests:
+Run the build and tests:
 ```bash
-npx blueprint test tests/governance/
+cd contracts/governance
+npm install
+npm run build   # compiles ProposalRegistry + the test harness, generating ./dist wrappers
+npm test
 ```
+
+> Additional aspirational specs under `tests/governance/` describe a broader
+> governance suite and are not part of the contracts CI job.
 
 ## Documentation
 

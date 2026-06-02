@@ -358,6 +358,20 @@ jobs:
         working-directory: contracts/payment-hub
         run: npm test
 
+      - name: Install governance dependencies
+        working-directory: contracts/governance
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build governance contracts
+        working-directory: contracts/governance
+        run: npm run build
+
+      - name: Test governance contract specs
+        working-directory: contracts/governance
+        run: npm test
+
   test-invariants:
     name: Test (Protocol Invariants)
     runs-on: ubuntu-latest
