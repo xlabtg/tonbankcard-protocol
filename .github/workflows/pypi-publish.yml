@@ -42,7 +42,7 @@ jobs:
         working-directory: sdk-python
         run: twine check dist/*
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: sdk-python/dist/
