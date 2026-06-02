@@ -7,6 +7,18 @@ on:
     branches: [main]
 
 jobs:
+  infra-verify:
+    name: Infra (cloud-init port binding)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # DEVOPS-H2: Docker publishes container ports below UFW's iptables
+      # chains, so a 0.0.0.0-published port bypasses `ufw default deny`.
+      # This asserts the cloud-init template keeps the api/indexer on loopback.
+      - name: Verify published ports bind to loopback
+        run: infra/terraform/compose-vm/scripts/verify-port-binding.sh
+
   build-runtime:
     name: Build (Runtime)
     runs-on: ubuntu-latest
