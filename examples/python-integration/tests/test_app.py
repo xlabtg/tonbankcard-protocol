@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import httpx
 import pytest
@@ -106,7 +107,8 @@ def test_webhook_accepts_valid_signature(client: TestClient) -> None:
             "timestamp": "2026-05-17T10:05:00Z",
         }
     ).encode()
-    sig = compute_signature(WEBHOOK_SECRET, body)
+    ts = int(time.time())
+    sig = f"t={ts},v1={compute_signature(WEBHOOK_SECRET, ts, body)}"
     response = client.post(
         "/webhooks/tonbankcard",
         content=body,

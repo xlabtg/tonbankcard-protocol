@@ -61,13 +61,24 @@ if err != nil {
 log.Printf("settled invoice %s", payload.InvoiceID)
 ```
 
-`VerifyWebhook` uses `hmac.Equal` for constant-time comparison and rejects:
+`VerifyWebhook` parses the structured `t=<unix-timestamp>,v1=<hex>` header
+emitted by the server, recomputes `HMAC-SHA256(secret, "${t}.${rawBody}")` and
+compares the `v1` digest with `hmac.Equal` (constant-time). It rejects:
 
 - empty secret or signature
-- non-hex signatures
-- signature mismatch (after the optional `sha256=` prefix is stripped)
+- malformed headers (missing `t=`/`v1=`, non-numeric timestamp, non-hex digest)
+- deliveries outside the freshness window (default 5 minutes) — replay protection
+- signature mismatch
 - payloads that are not JSON objects
 - payloads missing required webhook fields (`event`, `invoice_id`, `status`)
+
+The freshness window is configurable via `tonbankcard.WithTolerance(d)`, and the
+clock can be overridden in tests with `tonbankcard.WithNow(fn)`:
+
+```go
+payload, err := tonbankcard.VerifyWebhook(secret, body, sig,
+    tonbankcard.WithTolerance(2*time.Minute))
+```
 
 ## Error handling
 
