@@ -738,7 +738,12 @@ API Key  →  Merchant NFT  →  Invoice Ownership
 **Idempotency**:
 - Same input → same invoice_id (within expiry window)
 - Prevents duplicate invoice creation
-- Based on hash of (merchant_nft + amount_tbc + metadata)
+- Based on hash of (key_id + merchant_nft + amount_tbc + currency + metadata + expires_at)
+- Scoped to the authenticated API key (`key_id`) so distinct keys never share an
+  idempotency namespace, even when bound to the same merchant NFT
+- Includes the requested `expires_at`, so two otherwise-identical creates with
+  different expiries return distinct invoices each carrying its own expiry
+  (rather than silently reusing the first invoice's stale expiry)
 
 ### 7.3 Rate Limiting
 
