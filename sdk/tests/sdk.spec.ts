@@ -59,6 +59,40 @@ describe('TonbankcardSDK', () => {
       ).toThrow('Invoice amount must be positive');
     });
 
+    it('should throw on a malformed merchant NFT address', () => {
+      // A non-Address value forced through `as any` (e.g. an integrator
+      // passing an unvalidated object) must be rejected.
+      const malformed = { toString: () => 'not-a-ton-address' } as never;
+      expect(() =>
+        sdk.createInvoice({
+          merchantNft: malformed,
+          amountTbc: parseTBC('1.0'),
+        })
+      ).toThrow('Invalid merchant NFT address');
+    });
+
+    it('should throw on a checksum-corrupted merchant NFT address', () => {
+      // Friendly address with the final character flipped → CRC16 mismatch.
+      const corrupted = {
+        toString: () => 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Lf',
+      } as never;
+      expect(() =>
+        sdk.createInvoice({
+          merchantNft: corrupted,
+          amountTbc: parseTBC('1.0'),
+        })
+      ).toThrow('Invalid merchant NFT address');
+    });
+
+    it('should accept a valid raw-form merchant NFT address', () => {
+      const rawAddress = Address.parseRaw(testMerchantNft.toRawString());
+      const invoice = sdk.createInvoice({
+        merchantNft: rawAddress,
+        amountTbc: parseTBC('1.0'),
+      });
+      expect(invoice.merchantNft.equals(testMerchantNft)).toBe(true);
+    });
+
     it('should set expiration when specified', () => {
       const invoice = sdk.createInvoice({
         merchantNft: testMerchantNft,
