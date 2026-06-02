@@ -20,7 +20,9 @@
 // - Protocol enforces signature threshold
 // - No single co-signer can block fund access permanently
 
-import "./interfaces/INFTResolver.tact";
+// Note: ownership is tracked locally via the `nft_owners` map (populated by the
+// test-only RegisterNFTOwnerMultiSig handler), so no external NFT resolver
+// trait is imported here.
 
 // ============================================
 // MESSAGE DEFINITIONS
@@ -51,6 +53,17 @@ message ApprovePaymentProposal {
 
 // Reject a payment proposal (only registered co-signer or owner)
 message RejectPaymentProposal {
+    nft_address: Address;
+    proposal_id: Int as uint64;
+}
+
+// Execute an APPROVED payment proposal (only NFT owner).
+//
+// INVARIANT I1 (Non-Custodial): fund movement is ALWAYS owner-initiated. The
+// owner attaches the payment value to this message and the contract forwards
+// exactly `amount` to the recipient in the same transaction — the contract
+// never custodies funds, it only gates the transfer behind multi-sig approval.
+message ExecutePaymentProposal {
     nft_address: Address;
     proposal_id: Int as uint64;
 }
@@ -132,6 +145,8 @@ const ERROR_MS_PROPOSAL_NOT_PENDING: Int = 6;
 const ERROR_MS_NFT_NOT_REGISTERED: Int = 7;
 const ERROR_MS_NO_CONFIG: Int = 8;
 const ERROR_MS_INVALID_AMOUNT: Int = 9;
+const ERROR_MS_PROPOSAL_NOT_APPROVED: Int = 10;
+const ERROR_MS_INSUFFICIENT_VALUE: Int = 11;
 
 const MAX_SIGNERS: Int = 3;
 
@@ -450,6 +465,116 @@ contract MultiSigCard {
     }
 
     // ============================================
+    // EXECUTE PAYMENT PROPOSAL (NFT Owner Only)
+    // ============================================
+    //
+    // Closes the multi-sig lifecycle: an APPROVED proposal is carried out by
+    // forwarding the approved `amount` to the recipient, emitting
+    // PaymentProposalExecuted, and moving the proposal to the terminal
+    // PROPOSAL_EXECUTED state.
+    //
+    // INVARIANT I1 (Non-Custodial): only the NFT owner can execute, and the
+    // funds are supplied by the owner with this very message — the contract
+    // forwards them atomically and never holds user funds.
+    // INVARIANT I4 (Atomic): the state transition happens before the outgoing
+    // transfer, and an insufficient-value execution is rejected up-front, so a
+    // proposal is either fully executed (once) or not at all.
+
+    receive(msg: ExecutePaymentProposal) {
+        let sender: Address = sender();
+
+        // Only the NFT owner may move funds (I1).
+        let error_code: Int = self.validateOwnership(sender, msg.nft_address);
+        if (error_code != ERROR_MS_NONE) {
+            self.sendResponse(sender, false, error_code, msg.nft_address, msg.proposal_id);
+            return;
+        }
+
+        // Get proposal
+        let proposal_key: Int = self.proposalKey(msg.nft_address, msg.proposal_id);
+        let proposal: PaymentProposal? = self.proposals.get(proposal_key);
+        if (proposal == null) {
+            self.sendResponse(sender, false, ERROR_MS_PROPOSAL_NOT_FOUND, msg.nft_address, msg.proposal_id);
+            return;
+        }
+
+        let p: PaymentProposal = proposal!!;
+
+        // Only APPROVED proposals can be executed. This single check also makes
+        // double execution impossible: after the first execution the status is
+        // PROPOSAL_EXECUTED, so a second attempt is rejected here.
+        if (p.status != PROPOSAL_APPROVED) {
+            self.sendResponse(sender, false, ERROR_MS_PROPOSAL_NOT_APPROVED, msg.nft_address, msg.proposal_id);
+            return;
+        }
+
+        // The owner must fund the payment with this message (non-custodial:
+        // the contract owns no user balance to draw from).
+        if (context().value < p.amount) {
+            self.sendResponse(sender, false, ERROR_MS_INSUFFICIENT_VALUE, msg.nft_address, msg.proposal_id);
+            return;
+        }
+
+        let current_time: Int = now();
+
+        // Transition to the terminal EXECUTED state BEFORE forwarding funds so
+        // the proposal can never be replayed (I4).
+        let executed_proposal: PaymentProposal = PaymentProposal{
+            status: PROPOSAL_EXECUTED,
+            recipient: p.recipient,
+            amount: p.amount,
+            approval_count: p.approval_count,
+            created_at: p.created_at
+        };
+        self.proposals.set(proposal_key, executed_proposal);
+
+        // Forward an out-message carrying exactly `amount` to the recipient.
+        // SendPayGasSeparately pays the forward fee on top of (not out of) the
+        // message value, so the full `amount` is delivered; bounce: false
+        // because the payment is final and must not be reversed on the card.
+        send(SendParameters{
+            to: p.recipient,
+            value: p.amount,
+            mode: SendPayGasSeparately,
+            bounce: false,
+            body: PaymentProposalExecuted{
+                nft_address: msg.nft_address,
+                proposal_id: msg.proposal_id,
+                recipient: p.recipient,
+                amount: p.amount,
+                timestamp: current_time
+            }.toCell()
+        });
+
+        // Emit execution event for off-chain indexers.
+        emit(PaymentProposalExecuted{
+            nft_address: msg.nft_address,
+            proposal_id: msg.proposal_id,
+            recipient: p.recipient,
+            amount: p.amount,
+            timestamp: current_time
+        }.toCell());
+
+        // Refund the unused gas to the owner and acknowledge success. The
+        // recipient payment above already committed exactly `amount`; this
+        // best-effort notification carries whatever incoming value is left.
+        // SendIgnoreErrors guarantees that, should the leftover be too small to
+        // cover its own forward fee, the action is simply skipped instead of
+        // aborting the whole action phase and reverting the payment.
+        send(SendParameters{
+            to: sender,
+            value: 0,
+            mode: SendRemainingValue | SendIgnoreErrors,
+            body: MultiSigResponse{
+                success: true,
+                error_code: ERROR_MS_NONE,
+                nft_address: msg.nft_address,
+                proposal_id: msg.proposal_id
+            }.toCell()
+        });
+    }
+
+    // ============================================
     // REMOVE MULTI-SIG (NFT Owner Only)
     // ============================================
 
@@ -534,13 +659,34 @@ contract MultiSigCard {
     }
 
     fun proposalKey(nft_address: Address, proposal_id: Int): Int {
-        // Create composite key from NFT address hash and proposal ID
-        return sha256(nft_address.asSlice()) + proposal_id;
+        // Composite key = representation hash of a cell packing the NFT address
+        // and proposal ID.
+        //
+        // NOTE: the previous implementation used `sha256(nft_address.asSlice())`
+        // and added hashes together. That was doubly broken on-chain:
+        //   1. sha256() over an Address slice (267 bits, not byte-aligned) throws
+        //      a cell-underflow (exit 9), so every proposal handler reverted; and
+        //   2. summing two 256-bit hashes overflows TVM's 257-bit signed integer
+        //      range (exit 4) and is collision-prone.
+        // Hashing a single packed cell avoids both: Cell.hash() always returns a
+        // 256-bit value that fits the integer range and uniquely binds all fields.
+        return beginCell()
+            .storeAddress(nft_address)
+            .storeUint(proposal_id, 64)
+            .endCell()
+            .hash();
     }
 
     fun approvalKey(nft_address: Address, proposal_id: Int, signer: Address): Int {
-        // Create composite key from NFT address, proposal ID, and signer
-        return sha256(nft_address.asSlice()) + proposal_id * 1000 + sha256(signer.asSlice());
+        // Composite key binding NFT address, proposal ID and signer. See
+        // proposalKey() for why a packed-cell hash is used instead of summing
+        // sha256() values.
+        return beginCell()
+            .storeAddress(nft_address)
+            .storeUint(proposal_id, 64)
+            .storeAddress(signer)
+            .endCell()
+            .hash();
     }
 
     fun sendResponse(to: Address, success: Bool, error_code: Int, nft_address: Address, proposal_id: Int) {

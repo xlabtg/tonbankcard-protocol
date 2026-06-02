@@ -129,35 +129,56 @@ by guarding every state-changing receive with
 
 ### 3.3 Composite-key collision posture
 
-The current `proposalKey` and `approvalKey` combinators use integer
-addition (see `contracts/MultiSigCard.tact` lines 536–544):
+**MS-CH-1 has landed** (§10). The `proposalKey` and `approvalKey`
+combinators now derive each storage key from the representation hash
+of a single cell that packs every component field, instead of the old
+integer-addition of separate `sha256` digests:
 
 ```tact
 fun proposalKey(nft_address: Address, proposal_id: Int): Int {
-    return sha256(nft_address.asSlice()) + proposal_id;
+    return beginCell()
+        .storeAddress(nft_address)
+        .storeUint(proposal_id, 64)
+        .endCell()
+        .hash();
 }
 
 fun approvalKey(nft_address: Address, proposal_id: Int, signer: Address): Int {
-    return sha256(nft_address.asSlice()) + proposal_id * 1000 + sha256(signer.asSlice());
+    return beginCell()
+        .storeAddress(nft_address)
+        .storeUint(proposal_id, 64)
+        .storeAddress(signer)
+        .endCell()
+        .hash();
 }
 ```
 
-This is the same shape as the bridge contract's `intentKey` and the
-recurring-payments contract's `mandateKey`, both of which received
-the same `X-5` finding in the internal pre-audit. **The same
-composite-key collision posture applies here** and is mirrored in the
-hardening backlog as **MS-CH-1** (§10). Until MS-CH-1 lands, two
-proposals can in principle share a storage slot if
-`(nft_address₁, id₁)` and `(nft_address₂, id₂)` hash-collide on the
-addition. The operational mitigation in the current code is:
+This closes the same composite-key collision posture that the bridge
+contract's `intentKey` and the recurring-payments contract's
+`mandateKey` received as the `X-5` finding in the internal pre-audit.
+Packing the fields into one cell and taking `Cell.hash()` binds all
+components into a single 256-bit key, so distinct
+`(nft_address, proposal_id)` (and, for approvals, `signer`) tuples can
+no longer share a storage slot through an additive hash collision.
 
-1. The off-chain wallet generates `proposal_id` as
-   `Date.now()` × 1000 + 16 random bits, drawing collisions beneath
-   cryptographic feasibility for the current user base.
-2. The `RegisterNFTOwnerMultiSig` test-only handler (§7.1) refuses to
-   overwrite an already-registered owner
-   (`require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered")`,
-   line 571).
+The previous combinator was, additionally, **non-functional on-chain**
+and had to be replaced for the multi-sig flow to work at all:
+
+1. `sha256(nft_address.asSlice())` hashes a 267-bit `Address` slice.
+   `sha256` over a slice requires byte-aligned (multiple-of-8-bit)
+   input, so the call reverted with a cell-underflow (exit 9) — every
+   proposal handler (`submit`, `approve`, `execute`) and the
+   `getProposalStatus` getter failed before this fix.
+2. Summing two 256-bit `sha256` digests in `approvalKey` overflowed
+   the TVM 257-bit signed integer range (exit 4).
+
+`Cell.hash()` avoids both: it always returns a 256-bit value that fits
+the integer range and is computed over a well-formed cell regardless of
+bit alignment. The off-chain wallet still generates `proposal_id` as
+`Date.now()` × 1000 + 16 random bits as defence in depth, and the
+`RegisterNFTOwnerMultiSig` test-only handler (§7.1) still refuses to
+overwrite an already-registered owner
+(`require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered")`).
 
 ### 3.4 Settlement boundary (C-MSC-H1)
 
