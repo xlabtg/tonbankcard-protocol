@@ -452,4 +452,196 @@ describe('IndexerDatabase', () => {
       expect(count).toBe(2); // 1 transfer + 1 payment
     });
   });
+
+  // Regression coverage for INDEXER-C1: a reorg rollback must reconcile
+  // account_snapshots, never leave them reflecting reverted (deleted) events.
+  describe('Reorg snapshot reconciliation (INDEXER-C1)', () => {
+    it('should revert state_change snapshot to canonical state after reorg', () => {
+      db.insertBlock(1, 'hash1', 'hash0', 1000, 1);
+      db.insertBlock(2, 'hash2', 'hash1', 2000, 1);
+
+      // Block 1: account becomes FROZEN (canonical).
+      db.insertAccountStateChange({
+        blockNumber: 1,
+        transactionHash: 'tx_freeze',
+        logIndex: 0,
+        timestamp: 1000,
+        nftAddress: 'EQA...',
+        oldState: AccountState.ACTIVE,
+        newState: AccountState.FROZEN,
+      });
+
+      // Block 2: account becomes ACTIVE again (gets reverted by the reorg).
+      db.insertAccountStateChange({
+        blockNumber: 2,
+        transactionHash: 'tx_unfreeze',
+        logIndex: 0,
+        timestamp: 2000,
+        nftAddress: 'EQA...',
+        oldState: AccountState.FROZEN,
+        newState: AccountState.ACTIVE,
+      });
+
+      // Before reorg the snapshot reflects block 2.
+      expect(db.getAccountSnapshot('EQA...')?.current_state).toBe(AccountState.ACTIVE);
+      expect(db.getAccountSnapshot('EQA...')?.last_state_change_block).toBe(2);
+
+      // Reorg drops block 2.
+      db.handleReorg(2);
+
+      // Snapshot must now reflect the surviving canonical state (block 1, FROZEN).
+      const snapshot = db.getAccountSnapshot('EQA...');
+      expect(snapshot?.current_state).toBe(AccountState.FROZEN);
+      expect(snapshot?.last_state_change_block).toBe(1);
+    });
+
+    it('should revert ownership snapshot to canonical owner after reorg', () => {
+      db.insertBlock(1, 'hash1', 'hash0', 1000, 1);
+      db.insertBlock(2, 'hash2', 'hash1', 2000, 1);
+
+      db.insertNFTOwnershipChange({
+        blockNumber: 1,
+        transactionHash: 'tx_own1',
+        logIndex: 0,
+        timestamp: 1000,
+        nftAddress: 'EQA...',
+        collectionAddress: 'EQC...',
+        oldOwner: null,
+        newOwner: 'OWNER_1',
+      });
+
+      db.insertNFTOwnershipChange({
+        blockNumber: 2,
+        transactionHash: 'tx_own2',
+        logIndex: 0,
+        timestamp: 2000,
+        nftAddress: 'EQA...',
+        collectionAddress: 'EQC...',
+        oldOwner: 'OWNER_1',
+        newOwner: 'OWNER_2',
+      });
+
+      expect(db.getAccountSnapshot('EQA...')?.current_owner).toBe('OWNER_2');
+
+      db.handleReorg(2);
+
+      expect(db.getAccountSnapshot('EQA...')?.current_owner).toBe('OWNER_1');
+    });
+
+    it('should roll back last_transfer_block after reorg', () => {
+      db.insertBlock(1, 'hash1', 'hash0', 1000, 1);
+      db.insertBlock(2, 'hash2', 'hash1', 2000, 1);
+
+      db.insertInternalTransfer({
+        blockNumber: 1,
+        transactionHash: 'tx_t1',
+        logIndex: 0,
+        timestamp: 1000,
+        fromNft: 'EQA...',
+        toNft: 'EQB...',
+        amountTbc: '100',
+        payloadHash: '0x1',
+      });
+
+      db.insertInternalTransfer({
+        blockNumber: 2,
+        transactionHash: 'tx_t2',
+        logIndex: 0,
+        timestamp: 2000,
+        fromNft: 'EQA...',
+        toNft: 'EQB...',
+        amountTbc: '200',
+        payloadHash: '0x2',
+      });
+
+      expect(db.getAccountSnapshot('EQA...')?.last_transfer_block).toBe(2);
+
+      db.handleReorg(2);
+
+      expect(db.getAccountSnapshot('EQA...')?.last_transfer_block).toBe(1);
+    });
+
+    it('should clear snapshots for NFTs with no surviving events', () => {
+      db.insertBlock(5, 'hash5', 'hash4', 5000, 1);
+
+      db.insertNFTOwnershipChange({
+        blockNumber: 5,
+        transactionHash: 'tx_only',
+        logIndex: 0,
+        timestamp: 5000,
+        nftAddress: 'EQA...',
+        collectionAddress: 'EQC...',
+        oldOwner: null,
+        newOwner: 'OWNER_1',
+      });
+      db.insertAccountStateChange({
+        blockNumber: 5,
+        transactionHash: 'tx_only_state',
+        logIndex: 1,
+        timestamp: 5000,
+        nftAddress: 'EQA...',
+        oldState: AccountState.ACTIVE,
+        newState: AccountState.FROZEN,
+      });
+
+      expect(db.getAccountSnapshot('EQA...')).toBeDefined();
+
+      // Reorg removes the only block holding this NFT's events.
+      db.handleReorg(5);
+
+      // Snapshot must be cleared, not left reflecting reverted state.
+      expect(db.getAccountSnapshot('EQA...')).toBeUndefined();
+    });
+
+    it('should serve post-reorg canonical state via getAccountHistory and snapshot', () => {
+      db.insertBlock(1, 'hash1', 'hash0', 1000, 1);
+      db.insertBlock(2, 'hash2', 'hash1', 2000, 1);
+      db.insertBlock(3, 'hash3', 'hash2', 3000, 1);
+
+      // Canonical (survives): freeze at block 1.
+      db.insertAccountStateChange({
+        blockNumber: 1,
+        transactionHash: 'tx_a',
+        logIndex: 0,
+        timestamp: 1000,
+        nftAddress: 'EQA...',
+        oldState: AccountState.ACTIVE,
+        newState: AccountState.FROZEN,
+      });
+      // Reverted: unfreeze + transfer in blocks 2-3.
+      db.insertAccountStateChange({
+        blockNumber: 2,
+        transactionHash: 'tx_b',
+        logIndex: 0,
+        timestamp: 2000,
+        nftAddress: 'EQA...',
+        oldState: AccountState.FROZEN,
+        newState: AccountState.ACTIVE,
+      });
+      db.insertInternalTransfer({
+        blockNumber: 3,
+        transactionHash: 'tx_c',
+        logIndex: 0,
+        timestamp: 3000,
+        fromNft: 'EQA...',
+        toNft: 'EQB...',
+        amountTbc: '100',
+        payloadHash: '0x9',
+      });
+
+      db.handleReorg(2);
+
+      // Snapshot reflects canonical state.
+      const snapshot = db.getAccountSnapshot('EQA...');
+      expect(snapshot?.current_state).toBe(AccountState.FROZEN);
+      expect(snapshot?.last_transfer_block).toBeNull();
+      expect(snapshot?.last_state_change_block).toBe(1);
+
+      // History only contains the surviving event.
+      const history = db.getAccountHistory('EQA...', 100, 0);
+      expect(history.totalCount).toBe(1);
+      expect(history.events[0].eventType).toBe('state_change');
+      expect(history.events[0].blockNumber).toBe(1);
+    });
+  });
 });
