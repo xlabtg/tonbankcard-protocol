@@ -17,6 +17,11 @@ on:
       - 'sdk-python-v*'
   workflow_dispatch: {}
 
+# Least-privilege default. The build job only reads the repo; the publish job
+# elevates to `id-token: write` locally for OIDC Trusted Publishing.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build distribution
