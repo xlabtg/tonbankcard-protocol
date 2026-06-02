@@ -77,6 +77,20 @@ INDEXER_CONFIRMATION_BLOCKS=10
 - Critical operations should wait for confirmed blocks
 - Reorgs beyond this depth are extremely rare
 
+**Canonical definition (INDEXER-H1).** A block's confirmation count is
+`chainHead - block_number`, where `chainHead` is the latest masterchain head the
+indexer has observed (persisted in `indexer_state.latest_chain_seqno`). A block
+is confirmed once that depth reaches `INDEXER_CONFIRMATION_BLOCKS`. This single
+formula — `src/services/confirmations.ts` — is used everywhere:
+
+- the indexer's sync cutoff (`endBlock = chainHead - confirmationBlocks`),
+- the `blocks.confirmed` flag (`markBlocksConfirmed(endBlock)`), and
+- the API's payment status / `confirmationBlocks` count.
+
+Because the API reads the same persisted `chainHead` (not the indexed cursor,
+which lags it by `confirmationBlocks`), the `confirmed` flag and the API status
+can never disagree for the same block.
+
 ## Rollback Process
 
 ### Step 1: Identify Divergence Point
