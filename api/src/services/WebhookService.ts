@@ -34,15 +34,22 @@ import {
   SsrfError,
   type SsrfGuardOptions,
 } from '../utils/ssrfGuard';
+import { SecretCipher, createWebhookSecretCipher } from '../utils/secretCipher';
 
-/** Registered webhook endpoint. */
+/** Registered webhook endpoint as persisted in the store. */
 export interface WebhookEndpoint {
   /** Opaque identifier used for revocation and audit logs. */
   endpoint_id: string;
   /** Public destination URL (HTTPS required in production). */
   url: string;
-  /** HMAC signing secret. Never stored in plaintext — see `secret_hash`. */
-  secret: string;
+  /**
+   * HMAC signing secret, encrypted at rest with AES-256-GCM (see
+   * `utils/secretCipher.ts`). The raw secret is never stored: a dump of this
+   * record yields only ciphertext, not a usable signing key. The plaintext is
+   * recovered transiently at delivery time to sign the payload (audit finding
+   * API-M1, issue #269).
+   */
+  secret_encrypted: string;
   /** Merchant NFT this endpoint belongs to. */
   merchant_nft: string;
   /** ISO 8601 creation timestamp. */
@@ -80,10 +87,38 @@ export class WebhookService {
   private readonly endpoints = new Map<string, WebhookEndpoint>();
 
   /**
+   * Cipher used to encrypt/decrypt signing secrets at rest. Resolved lazily on
+   * first use so that merely importing this module never forces the
+   * `WEBHOOK_SECRET_ENCRYPTION_KEY` to be present — the fail-fast check fires
+   * when a webhook is actually registered or delivered, mirroring how
+   * `resolveApiKeySecret` is resolved at call time elsewhere.
+   */
+  private cipherInstance?: SecretCipher;
+
+  /**
+   * @param cipher - Cipher for secret encryption at rest. Defaults to one keyed
+   *                 by `WEBHOOK_SECRET_ENCRYPTION_KEY` (resolved fail-fast from
+   *                 the environment on first use). Inject a fixed-key cipher in
+   *                 tests.
+   */
+  constructor(cipher?: SecretCipher) {
+    this.cipherInstance = cipher;
+  }
+
+  /** Lazily build (and cache) the secret cipher from the environment. */
+  private get cipher(): SecretCipher {
+    if (!this.cipherInstance) {
+      this.cipherInstance = createWebhookSecretCipher();
+    }
+    return this.cipherInstance;
+  }
+
+  /**
    * Register a webhook endpoint for a merchant.
    *
    * Both arguments come from the merchant (URL via dashboard, secret
-   * generated server-side and shown once).
+   * generated server-side and shown once). The secret is encrypted before it
+   * is stored — the registry never holds the raw plaintext.
    *
    * Throws {@link SsrfError} when the URL fails SSRF validation.
    */
@@ -98,7 +133,7 @@ export class WebhookService {
     const endpoint: WebhookEndpoint = {
       endpoint_id: endpointId,
       url,
-      secret,
+      secret_encrypted: this.cipher.encrypt(secret),
       merchant_nft: merchantNft,
       created_at: new Date().toISOString(),
       is_active: true,
@@ -169,7 +204,21 @@ export class WebhookService {
     }
 
     const rawBody = JSON.stringify(payload);
-    const signatureHeader = signWebhook(endpoint.secret, rawBody, options.timestamp);
+    // Recover the plaintext signing secret transiently, only to sign this
+    // delivery. It is never persisted in the clear. A decryption failure
+    // (corrupted record or rotated/wrong key) must not crash delivery.
+    let signatureHeader: string;
+    try {
+      const secret = this.cipher.decrypt(endpoint.secret_encrypted);
+      signatureHeader = signWebhook(secret, rawBody, options.timestamp);
+    } catch (err) {
+      return {
+        ok: false,
+        status: 0,
+        durationMs: 0,
+        error: `Secret decryption failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     const controller = new AbortController();
