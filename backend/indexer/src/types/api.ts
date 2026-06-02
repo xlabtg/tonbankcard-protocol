@@ -54,6 +54,7 @@ export interface AccountHistoryResponse {
     limit: number;
     offset: number;
     hasMore: boolean;
+    nextCursor: string | null;
   };
 }
 
@@ -62,6 +63,7 @@ export interface AccountEventItem {
   timestamp: number;
   blockNumber: number;
   transactionHash: string;
+  logIndex: number;
   details: Record<string, unknown>;
 }
 

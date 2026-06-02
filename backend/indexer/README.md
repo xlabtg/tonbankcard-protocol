@@ -180,6 +180,9 @@ Response:
 curl http://localhost:3000/api/v1/accounts/EQA.../history?limit=10
 ```
 
+When `pagination.nextCursor` is non-null, pass it back as the `cursor`
+query parameter to fetch the next stable keyset page for the same account.
+
 #### Health Check
 
 ```bash

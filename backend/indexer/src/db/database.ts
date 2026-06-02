@@ -6,12 +6,21 @@ import fs from 'fs';
 import path from 'path';
 import { applySqliteMigrationsSync, locateMigrationsDir } from './sync-migrate';
 
+export interface AccountHistoryCursor {
+  timestamp: number;
+  transactionHash: string;
+  logIndex: number;
+}
+
+type AccountHistoryCursorInput = number | AccountHistoryCursor;
+
 interface AccountHistoryResult {
   events: Array<{
     eventType: 'transfer' | 'payment' | 'state_change';
     timestamp: number;
     blockNumber: number;
     transactionHash: string;
+    logIndex: number;
     details: any;
   }>;
   totalCount: number;
@@ -495,15 +504,15 @@ export class IndexerDatabase {
    *
    * Supports two pagination modes:
    * - Offset-based: provide offset (legacy, slower for deep pages)
-   * - Keyset-based: provide beforeTimestamp to page efficiently through large histories
+   * - Keyset-based: provide a composite cursor to page efficiently through large histories
    */
   getAccountHistory(
     nftAddress: string,
     limit: number = 100,
     offset: number = 0,
-    beforeTimestamp?: number
+    before?: AccountHistoryCursorInput
   ): AccountHistoryResult {
-    const cacheKey = `${nftAddress}:${limit}:${offset}:${beforeTimestamp ?? ''}`;
+    const cacheKey = `${nftAddress}:${limit}:${offset}:${JSON.stringify(before ?? '')}`;
     const now = Date.now();
     const cached = this.historyCache.get(cacheKey);
     if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
@@ -513,37 +522,75 @@ export class IndexerDatabase {
     // Build UNION ALL query: each sub-query selects from one table with a common shape.
     // Composite indexes on (nft_address/from_nft/to_nft, timestamp DESC) are used per sub-query.
     // The outer query sorts and paginates the unified result set in a single pass.
-    const tsFilter = beforeTimestamp !== undefined ? 'AND timestamp < ?' : '';
+    const cursorFilter =
+      typeof before === 'number'
+        ? 'AND timestamp < ?'
+        : before
+          ? `AND (
+              timestamp < ?
+              OR (timestamp = ? AND transaction_hash > ?)
+              OR (timestamp = ? AND transaction_hash = ? AND log_index > ?)
+            )`
+          : '';
 
-    const unionSql = `
-      SELECT 'transfer' AS event_type, block_number, transaction_hash, timestamp,
+    const buildUnionSql = (filter: string): string => `
+      SELECT 'transfer' AS event_type, block_number, transaction_hash, log_index, timestamp,
              from_nft, to_nft, amount_tbc, payload_hash, NULL AS old_state, NULL AS new_state
       FROM internal_transfers
-      WHERE (from_nft = ? OR to_nft = ?) ${tsFilter}
+      WHERE (from_nft = ? OR to_nft = ?) ${filter}
       UNION ALL
-      SELECT 'payment' AS event_type, block_number, transaction_hash, timestamp,
+      SELECT 'payment' AS event_type, block_number, transaction_hash, log_index, timestamp,
              payer_nft AS from_nft, merchant_nft AS to_nft, amount_tbc, payload_hash, NULL AS old_state, NULL AS new_state
       FROM merchant_payments
-      WHERE (payer_nft = ? OR merchant_nft = ?) ${tsFilter}
+      WHERE (payer_nft = ? OR merchant_nft = ?) ${filter}
       UNION ALL
-      SELECT 'state_change' AS event_type, block_number, transaction_hash, timestamp,
+      SELECT 'state_change' AS event_type, block_number, transaction_hash, log_index, timestamp,
              NULL AS from_nft, NULL AS to_nft, NULL AS amount_tbc, NULL AS payload_hash, old_state, new_state
       FROM account_state_changes
-      WHERE nft_address = ? ${tsFilter}
+      WHERE nft_address = ? ${filter}
     `;
 
-    const countSql = `SELECT COUNT(*) AS cnt FROM (${unionSql})`;
-    const pageSql = `${unionSql} ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+    const countUnionSql = buildUnionSql('');
+    const pageUnionSql = buildUnionSql(cursorFilter);
+    const countSql = `SELECT COUNT(*) AS cnt FROM (${countUnionSql})`;
+    const pageSql = `${pageUnionSql} ORDER BY timestamp DESC, transaction_hash ASC, log_index ASC LIMIT ? OFFSET ?`;
 
-    let bindArgs: any[];
-    if (beforeTimestamp !== undefined) {
-      bindArgs = [nftAddress, nftAddress, beforeTimestamp, nftAddress, nftAddress, beforeTimestamp, nftAddress, beforeTimestamp];
+    const countArgs: Array<string | number> = [nftAddress, nftAddress, nftAddress, nftAddress, nftAddress];
+    let pageArgs: Array<string | number>;
+    if (typeof before === 'number') {
+      pageArgs = [nftAddress, nftAddress, before, nftAddress, nftAddress, before, nftAddress, before];
+    } else if (before) {
+      pageArgs = [
+        nftAddress,
+        nftAddress,
+        before.timestamp,
+        before.timestamp,
+        before.transactionHash,
+        before.timestamp,
+        before.transactionHash,
+        before.logIndex,
+        nftAddress,
+        nftAddress,
+        before.timestamp,
+        before.timestamp,
+        before.transactionHash,
+        before.timestamp,
+        before.transactionHash,
+        before.logIndex,
+        nftAddress,
+        before.timestamp,
+        before.timestamp,
+        before.transactionHash,
+        before.timestamp,
+        before.transactionHash,
+        before.logIndex,
+      ];
     } else {
-      bindArgs = [nftAddress, nftAddress, nftAddress, nftAddress, nftAddress];
+      pageArgs = countArgs;
     }
 
-    const totalCount = (this.db.prepare(countSql).get(...bindArgs) as any).cnt as number;
-    const rows = this.db.prepare(pageSql).all(...bindArgs, limit, offset) as any[];
+    const totalCount = (this.db.prepare(countSql).get(...countArgs) as any).cnt as number;
+    const rows = this.db.prepare(pageSql).all(...pageArgs, limit, offset) as any[];
 
     const events = rows.map((row: any) => {
       if (row.event_type === 'transfer') {
@@ -552,6 +599,7 @@ export class IndexerDatabase {
           timestamp: row.timestamp,
           blockNumber: row.block_number,
           transactionHash: row.transaction_hash,
+          logIndex: row.log_index,
           details: {
             from: row.from_nft,
             to: row.to_nft,
@@ -565,6 +613,7 @@ export class IndexerDatabase {
           timestamp: row.timestamp,
           blockNumber: row.block_number,
           transactionHash: row.transaction_hash,
+          logIndex: row.log_index,
           details: {
             payer: row.from_nft,
             merchant: row.to_nft,
@@ -578,6 +627,7 @@ export class IndexerDatabase {
           timestamp: row.timestamp,
           blockNumber: row.block_number,
           transactionHash: row.transaction_hash,
+          logIndex: row.log_index,
           details: {
             oldState: row.old_state,
             newState: row.new_state,

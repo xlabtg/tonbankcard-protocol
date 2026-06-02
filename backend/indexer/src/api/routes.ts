@@ -2,13 +2,14 @@
 // All endpoints are read-only and advisory
 
 import express, { Request, Response } from 'express';
-import { IndexerDatabase } from '../db/database';
+import { IndexerDatabase, type AccountHistoryCursor } from '../db/database';
 import { IndexerService } from '../services/indexer-service';
 import { IndexerConfig } from '../types/config';
 import {
   PaymentStatusResponse,
   PaymentEventsResponse,
   AccountHistoryResponse,
+  AccountEventItem,
   PaymentStatus,
   ErrorResponse,
   HealthCheckResponse,
@@ -42,11 +43,86 @@ function parseQueryNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parseQueryString(value: unknown): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = raw.trim();
+  return trimmed || undefined;
+}
+
+function decodeAccountHistoryCursor(
+  encoded: string,
+  nftAddress: string
+): AccountHistoryCursor | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return null;
+  }
+
+  const cursor = parsed as Record<string, unknown>;
+  const timestamp = cursor.timestamp;
+  const logIndex = cursor.logIndex;
+  if (
+    cursor.v !== 1 ||
+    cursor.nftAddress !== nftAddress ||
+    typeof cursor.transactionHash !== 'string' ||
+    typeof timestamp !== 'number' ||
+    typeof logIndex !== 'number' ||
+    !Number.isSafeInteger(timestamp) ||
+    !Number.isSafeInteger(logIndex) ||
+    timestamp < 0 ||
+    logIndex < 0
+  ) {
+    return null;
+  }
+
+  return {
+    timestamp,
+    transactionHash: cursor.transactionHash,
+    logIndex,
+  };
+}
+
+function encodeAccountHistoryCursor(
+  nftAddress: string,
+  event: AccountEventItem
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      v: 1,
+      nftAddress,
+      timestamp: event.timestamp,
+      transactionHash: event.transactionHash,
+      logIndex: event.logIndex,
+    })
+  ).toString('base64url');
+}
+
 function parseAccountHistoryPagination(
-  query: Request['query']
-): { limit: number; offset: number } | null {
+  query: Request['query'],
+  nftAddress: string
+): { limit: number; offset: number; cursor?: AccountHistoryCursor } | null {
   const parsedLimit = parseQueryNumber(query.limit);
   const parsedOffset = parseQueryNumber(query.offset);
+  const encodedCursor = parseQueryString(query.cursor);
+  let cursor: AccountHistoryCursor | undefined;
+
+  if (encodedCursor !== undefined) {
+    const decodedCursor = decodeAccountHistoryCursor(encodedCursor, nftAddress);
+    if (!decodedCursor) {
+      return null;
+    }
+    cursor = decodedCursor;
+  }
 
   if (
     (parsedLimit !== undefined && parsedLimit < 0) ||
@@ -63,7 +139,7 @@ function parseAccountHistoryPagination(
   );
   const offset = rawOffset ?? 0;
 
-  return { limit, offset };
+  return { limit, offset, cursor };
 }
 
 export function createRouter(
@@ -290,7 +366,8 @@ export function createRouter(
     async (req: Request, res: Response) => {
       try {
         const { nft_id } = req.params;
-        const pagination = parseAccountHistoryPagination(req.query);
+        const nftAddress = nft_id; // In production, validate address format
+        const pagination = parseAccountHistoryPagination(req.query, nftAddress);
 
         if (!pagination) {
           logger.warn(
@@ -301,6 +378,7 @@ export function createRouter(
               path: req.originalUrl ?? req.path,
               rawLimit: req.query.limit,
               rawOffset: req.query.offset,
+              rawCursor: req.query.cursor,
             },
             'Invalid account history pagination parameters'
           );
@@ -313,15 +391,15 @@ export function createRouter(
           return res.status(400).json(errorResponse);
         }
 
-        const { limit, offset } = pagination;
-
-        const nftAddress = nft_id; // In production, validate address format
+        const { limit, offset, cursor } = pagination;
 
         // Get account snapshot
         const snapshot = db.getAccountSnapshot(nftAddress);
 
         // Get history
-        const history = db.getAccountHistory(nftAddress, limit, offset);
+        const history = db.getAccountHistory(nftAddress, limit + 1, offset, cursor);
+        const events = history.events.slice(0, limit);
+        const hasMore = history.events.length > limit;
 
         const response: AccountHistoryResponse = {
           nftAddress,
@@ -330,12 +408,16 @@ export function createRouter(
             : 'UNKNOWN',
           currentBalance: '0', // Would need to calculate from events
           owner: snapshot?.current_owner || null,
-          events: history.events,
+          events,
           totalCount: history.totalCount,
           pagination: {
             limit,
             offset,
-            hasMore: offset + limit < history.totalCount,
+            hasMore,
+            nextCursor:
+              hasMore && events.length > 0
+                ? encodeAccountHistoryCursor(nftAddress, events[events.length - 1])
+                : null,
           },
         };
 
