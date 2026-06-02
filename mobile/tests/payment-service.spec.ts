@@ -139,6 +139,97 @@ describe('PaymentService', () => {
     });
   });
 
+  describe('generatePaymentLink security (FRONTEND-H2)', () => {
+    const service = new PaymentService(testConfig);
+
+    it('should reject query-parameter injection through amountTbc', () => {
+      const request: PaymentRequest = {
+        merchantNft: merchantAddress,
+        amountTbc: '10&bin=evil',
+      };
+
+      expect(() => service.generatePaymentLink(request)).toThrow(/Invalid amount/);
+    });
+
+    it('should not produce an injected parameter when amount is malformed', () => {
+      const request: PaymentRequest = {
+        merchantNft: merchantAddress,
+        amountTbc: '10&bin=evil',
+      };
+
+      let link = '';
+      try {
+        link = service.generatePaymentLink(request);
+      } catch {
+        link = '';
+      }
+      expect(link).not.toContain('bin=evil');
+    });
+
+    it('should reject non-numeric amountTbc values', () => {
+      expect(() =>
+        service.generatePaymentLink({
+          merchantNft: merchantAddress,
+          amountTbc: 'NaN',
+        })
+      ).toThrow(/Invalid amount/);
+    });
+
+    it('should reject negative amountTbc values', () => {
+      expect(() =>
+        service.generatePaymentLink({
+          merchantNft: merchantAddress,
+          amountTbc: '-100',
+        })
+      ).toThrow(/Invalid amount/);
+    });
+
+    it('should reject an invalid merchant NFT address', () => {
+      expect(() =>
+        service.generatePaymentLink({
+          merchantNft: 'not-an-address&injected=1',
+          amountTbc: '1000000000',
+        })
+      ).toThrow(/Invalid merchant NFT address/);
+    });
+
+    it('should encode reserved characters in the return URL exactly once', () => {
+      const returnUrl = 'https://shop.example.com/cb?a=1&b=2';
+      const link = service.generatePaymentLink({
+        merchantNft: merchantAddress,
+        amountTbc: '1000000000',
+        returnUrl,
+      });
+
+      expect(link).toContain(`return=${encodeURIComponent(returnUrl)}`);
+      // The raw, unencoded ampersand from the return URL must not appear as a
+      // standalone query separator that could inject parameters.
+      expect(link).not.toContain('&b=2');
+    });
+
+    it('should encode reserved characters injected via orderId exactly once', () => {
+      const link = service.generatePaymentLink({
+        merchantNft: merchantAddress,
+        amountTbc: '1000000000',
+        orderId: '1&amount=999',
+      });
+
+      // The injected "amount=999" must be encoded inside the text field, not a
+      // second standalone amount parameter.
+      expect(link.match(/[?&]amount=/g)?.length).toBe(1);
+      expect(link).toContain(encodeURIComponent('Order: 1&amount=999'));
+    });
+
+    it('should produce exactly one amount parameter for a valid request', () => {
+      const link = service.generatePaymentLink({
+        merchantNft: merchantAddress,
+        amountTbc: '1000000000',
+      });
+
+      expect(link.match(/[?&]amount=/g)?.length).toBe(1);
+    });
+  });
+
   describe('getTransactionHistory', () => {
     it('should return empty array when no API endpoint is configured', async () => {
       const service = new PaymentService(testConfig);

@@ -9,6 +9,7 @@
  */
 
 import { MobileConfig, PaymentRequest, TransactionItem } from '../types';
+import { assertAmount, isValidTonAddress } from '../utils';
 
 /**
  * Payment Service
@@ -38,10 +39,22 @@ export class PaymentService {
    *
    * SECURITY: This does NOT execute the payment. User consent is required.
    *
+   * Every user-controlled field is validated and encoded exactly once so that
+   * a value containing reserved characters (e.g. `&` or `=`) cannot inject
+   * additional query parameters into the generated deep link.
+   *
    * @param request - Payment request parameters
    * @returns ton:// deep link URL
+   * @throws Error if `merchantNft` is not a valid TON address or `amountTbc`
+   *         is not a non-negative numeric string
    */
   generatePaymentLink(request: PaymentRequest): string {
+    if (!isValidTonAddress(request.merchantNft)) {
+      throw new Error(`Invalid merchant NFT address: ${String(request.merchantNft)}`);
+    }
+
+    const amount = assertAmount(request.amountTbc);
+
     const parts = [
       'TONBANKCARD Payment',
       request.orderId ? `Order: ${request.orderId}` : '',
@@ -50,8 +63,9 @@ export class PaymentService {
       .filter(Boolean)
       .join(' | ');
 
+    const merchant = encodeURIComponent(request.merchantNft);
     const text = encodeURIComponent(parts);
-    let link = `ton://transfer/${request.merchantNft}?amount=${request.amountTbc}&text=${text}`;
+    let link = `ton://transfer/${merchant}?amount=${encodeURIComponent(amount)}&text=${text}`;
 
     if (request.returnUrl) {
       link += `&return=${encodeURIComponent(request.returnUrl)}`;
