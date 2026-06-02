@@ -184,7 +184,29 @@ describe('Migrator (SQLite)', () => {
       );
 
       const migrator = new Migrator({ driver, migrationsDir: dir });
-      await expect(migrator.up()).rejects.toThrow();
+      // Capture the rejection explicitly and assert on it by duck typing
+      // rather than via `rejects.toThrow()` / `instanceof Error`.
+      //
+      // better-sqlite3 raises a `SqliteError`. When jest runs every suite in
+      // a single worker (the default on a 2-core CI runner, where
+      // maxWorkers = cpus - 1 = 1) the native module is evaluated in more than
+      // one module realm, so the `Error` that `SqliteError` extends is not the
+      // same `Error` constructor visible here. `SqliteError instanceof Error`
+      // then returns false, which makes jest's `toThrow()` report "did not
+      // throw" and a plain `toBeInstanceOf(Error)` fail with
+      // "Received constructor: SqliteError" — a flake that only appears once a
+      // DB-heavy suite has run earlier in the same worker. Checking that a
+      // value was thrown and matching its message is realm independent.
+      let error: unknown;
+      try {
+        await migrator.up();
+      } catch (err) {
+        error = err;
+      }
+      expect(error).toBeDefined();
+      expect(String((error as { message?: unknown }).message)).toMatch(
+        /table good already exists/
+      );
 
       const tables = (await driver.query<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type='table'"
