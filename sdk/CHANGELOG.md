@@ -9,6 +9,27 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [1.2.1] — 2026-06-02
+
+### Fixed — Confirmation depth is now a block-height difference (Issue #267, SDK-H2)
+
+- `verifySettlement()` previously computed `confirmations` as
+  `masterchain.latestSeqno - Number(tx.lt)`, subtracting a transaction logical
+  time (`lt`, a counter on the order of 10^19) from a masterchain block height.
+  The two quantities are dimensionally incompatible, so the result was a
+  meaningless, typically hugely negative number, and `Number(tx.lt)` also lost
+  precision for `lt` values above 2^53.
+- Confirmations are now derived from a block-seqno difference:
+  `confirmations = max(0, chainHead - inclusionSeqno)` — the standard
+  blockchain meaning (blocks sealed on top of the including block), matching the
+  canonical definition shared by the indexer and API (INDEXER-H1). The
+  transaction's inclusion seqno is resolved from its gen time via the toncenter
+  `lookupBlock` REST method; when it cannot be resolved the SDK reports `0`
+  rather than a fabricated depth. The result is clamped at `0` and computed with
+  BigInt, so it is never negative and never touches `lt`.
+
+---
+
 ## [1.2.0] — 2026-05-17
 
 ### Added — Public Testnet Sandbox (Issue #124)
