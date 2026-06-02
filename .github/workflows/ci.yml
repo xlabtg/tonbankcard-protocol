@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least-privilege default for GITHUB_TOKEN. Jobs that need more (for example
+# the Vercel preview deploy) elevate scopes locally, never globally.
+permissions:
+  contents: read
+
 jobs:
   infra-verify:
     name: Infra (cloud-init port binding)
@@ -508,6 +513,14 @@ jobs:
     name: Deploy to Vercel
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && vars.VERCEL_PREVIEW_ENABLED == 'true'
+    # The Vercel action uses GITHUB_TOKEN to record a GitHub deployment and post
+    # the preview URL back to the pull request, so this job (and only this job)
+    # elevates beyond the read-only default.
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+      statuses: write
     environment:
       name: preview
       url: ${{ steps.deploy.outputs.preview-url }}
