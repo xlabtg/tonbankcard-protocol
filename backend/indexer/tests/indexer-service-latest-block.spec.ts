@@ -60,14 +60,14 @@ function makeStubDb() {
     updateLatestBlock: (n: number) => {
       cursor = n;
     },
-    markBlocksConfirmed: () => {},
-    handleReorg: () => {},
-    // syncBlocks persists the chain head (INDEXER-H1) before computing the
-    // confirmed range, so the stub must accept it or the loop throws.
+    // Persisted by syncBlocks so confirmation depth derives from one canonical
+    // chain head (INDEXER-H1). Tracked here so the stub matches the real DB.
     setLatestChainSeqno: (n: number) => {
       latestChainSeqno = n;
     },
     getLatestChainSeqno: () => latestChainSeqno,
+    markBlocksConfirmed: () => {},
+    handleReorg: () => {},
   };
 }
 
