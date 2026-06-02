@@ -1,0 +1,13 @@
+{
+  "projects": [
+    {
+      "name": "KeyDerivation",
+      "path": "./KeyDerivation.tact",
+      "output": "./dist",
+      "options": {
+        "debug": true,
+        "external": true
+      }
+    }
+  ]
+}
