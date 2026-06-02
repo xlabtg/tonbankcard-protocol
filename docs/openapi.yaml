@@ -86,10 +86,46 @@ paths:
     get:
       operationId: getInvoice
       tags: [Invoice]
-      summary: Retrieve invoice details
+      summary: Retrieve public invoice details
       description: |
-        Returns invoice details for payment resolution. Public endpoint — wallets
-        may call it without authentication. Rate limited per IP.
+        Returns the payer-facing view of an invoice for payment resolution.
+        Public endpoint — wallets may call it without authentication. Rate
+        limited per IP.
+
+        For privacy, this response is intentionally limited to the fields a
+        payer needs (amount, currency, status, expiry, payment URL). Merchant
+        identity (`merchant_nft`), arbitrary `metadata` (which may contain
+        customer PII such as `customer_email` / `order_id`), and `settlement`
+        details are **not** exposed here. Use the authenticated
+        `GET /invoice/{invoice_id}/detail` endpoint for the full invoice.
+      parameters:
+        - $ref: '#/components/parameters/InvoiceId'
+      responses:
+        '200':
+          description: Invoice found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicInvoiceView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invoice/{invoice_id}/detail:
+    get:
+      operationId: getInvoiceDetail
+      tags: [Invoice]
+      summary: Retrieve full invoice details (authenticated)
+      description: |
+        Returns the complete invoice — including `merchant_nft`, `metadata`,
+        and `settlement` — to the owning merchant. The API key must be valid,
+        active, and bound to the invoice's merchant NFT; otherwise a `403`
+        `UNAUTHORIZED_MERCHANT` error is returned. Rate limited per API key.
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/InvoiceId'
       responses:
@@ -99,10 +135,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-        '410':
-          $ref: '#/components/responses/Gone'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -286,6 +324,46 @@ components:
             - $ref: '#/components/schemas/Settlement'
             - type: 'null'
           description: Present (non-null) once the invoice has been settled on-chain.
+
+    PublicInvoiceView:
+      type: object
+      description: |
+        Payer-facing projection of an invoice returned by the unauthenticated
+        `GET /invoice/{invoice_id}` endpoint. Excludes merchant identity,
+        metadata (potential PII), and settlement details.
+      required:
+        - invoice_id
+        - amount_tbc
+        - currency
+        - status
+        - created_at
+        - expires_at
+        - payment_url
+      additionalProperties: false
+      properties:
+        invoice_id:
+          type: string
+          example: inv_9f3a7b2c1d4e5f6a
+        amount_tbc:
+          type: string
+          example: '1000000000'
+        currency:
+          type: string
+          enum: [TBC]
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        created_at:
+          type: string
+          format: date-time
+          example: '2025-12-27T10:00:00Z'
+        expires_at:
+          type: string
+          format: date-time
+          example: '2025-12-31T23:59:59Z'
+        payment_url:
+          type: string
+          format: uri
+          example: https://wallet.tonbankcard.io/pay/inv_9f3a7b2c1d4e5f6a
 
     InvoiceMetadata:
       type: object
