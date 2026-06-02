@@ -232,6 +232,39 @@ describe('DELETE /v1/keys/:key_id', () => {
     expect(() => apiKeyService.findAndValidateKey(api_key)).toThrow();
   });
 
+  it('revokes only the targeted key when two live keys are issued (API-C1 regression)', () => {
+    // Issue two live keys for the same merchant. Before the fix both collapsed
+    // to key_id `key_tbc_live`, so revoking one revoked an arbitrary key.
+    const issueFirst = makeMockReq({
+      body: { merchant_nft: MERCHANT_NFT, environment: 'live' },
+    });
+    const issueFirstRes = makeMockRes();
+    createApiKey(issueFirst, issueFirstRes as unknown as Response);
+    const first = issueFirstRes.body;
+
+    const issueSecond = makeMockReq({
+      body: { merchant_nft: MERCHANT_NFT, environment: 'live' },
+    });
+    const issueSecondRes = makeMockRes();
+    createApiKey(issueSecond, issueSecondRes as unknown as Response);
+    const second = issueSecondRes.body;
+
+    // key_id must be unique per key and must not be a shared prefix.
+    expect(first.key_id).not.toBe(second.key_id);
+
+    // Revoke the first key only.
+    const revokeReq = makeMockReq({ params: { key_id: first.key_id } });
+    const revokeRes = makeMockRes();
+    revokeApiKey(revokeReq, revokeRes as unknown as Response);
+    expect(revokeRes.statusCode).toBe(200);
+
+    // The first key is now invalid; the second remains valid and usable.
+    expect(() => apiKeyService.findAndValidateKey(first.api_key)).toThrow();
+    expect(apiKeyService.findAndValidateKey(second.api_key).key_id).toBe(
+      second.key_id,
+    );
+  });
+
   it('returns INVALID_API_KEY when the id is unknown', () => {
     const req = makeMockReq({ params: { key_id: 'key_does_not_exist' } });
     const res = makeMockRes();
