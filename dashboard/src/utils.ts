@@ -6,7 +6,52 @@
  * They do NOT sign transactions, store keys, or custody funds.
  */
 
+import { Address } from '@ton/core';
+
 import { InvoiceGeneratorParams } from './types';
+
+/**
+ * Non-negative amount pattern: an integer or decimal with no sign, exponent,
+ * or other characters. Matches values such as "10", "0", "1000000000",
+ * and "1.5", but rejects "-1", "1e9", "10&bin=evil", or empty strings.
+ */
+const NON_NEGATIVE_AMOUNT = /^\d+(\.\d+)?$/;
+
+/**
+ * Validate that an amount string is a non-negative integer or decimal.
+ *
+ * This guards the invoice link against query-parameter injection: a value
+ * containing `&` or `=` (e.g. "10&bin=evil") would otherwise inject extra
+ * parameters into the generated `ton://transfer` link.
+ *
+ * @param amount - Amount string to validate
+ * @returns The validated amount string
+ * @throws {Error} If the amount is not a non-negative integer/decimal
+ */
+function assertAmount(amount: string): string {
+  if (typeof amount !== 'string' || !NON_NEGATIVE_AMOUNT.test(amount)) {
+    throw new Error(
+      `Invalid amount: expected a non-negative integer or decimal, got ${JSON.stringify(amount)}`
+    );
+  }
+  return amount;
+}
+
+/**
+ * Validate that a string is a parseable TON address.
+ *
+ * @param merchantNft - Merchant NFT account address to validate
+ * @returns The validated address string
+ * @throws {Error} If the address cannot be parsed as a TON address
+ */
+function assertTonAddress(merchantNft: string): string {
+  try {
+    Address.parse(merchantNft);
+  } catch {
+    throw new Error(`Invalid TON address: ${JSON.stringify(merchantNft)}`);
+  }
+  return merchantNft;
+}
 
 /**
  * Format nanocoin amount to human-readable TBC string
@@ -100,13 +145,22 @@ export function generateInvoiceLink(
     .filter(Boolean)
     .join(' | ');
 
-  const text = encodeURIComponent(textParts);
-  let link = `ton://transfer/${merchantNft}?amount=${params.amountTbc}&text=${text}`;
+  // Validate every interpolated field before building the link so no input
+  // can inject additional query parameters (see audit finding FRONTEND-H1).
+  // Each field is encoded exactly once with encodeURIComponent, which escapes
+  // `&`, `=`, and spaces (as %20, the correct escaping for a URI query — unlike
+  // URLSearchParams, which would emit form-style `+` for spaces).
+  const address = assertTonAddress(merchantNft);
+
+  const query: string[] = [
+    `amount=${encodeURIComponent(assertAmount(params.amountTbc))}`,
+    `text=${encodeURIComponent(textParts)}`,
+  ];
 
   if (params.expirationMinutes !== undefined) {
     const expiresAt = Math.floor(Date.now() / 1000) + params.expirationMinutes * 60;
-    link += `&exp=${expiresAt}`;
+    query.push(`exp=${encodeURIComponent(String(expiresAt))}`);
   }
 
-  return link;
+  return `ton://transfer/${encodeURIComponent(address)}?${query.join('&')}`;
 }

@@ -159,6 +159,30 @@ export interface TonbankcardConfig {
 }
 
 /**
+ * Canonical fields that an on-chain settlement must match to be accepted for
+ * an invoice.
+ *
+ * An {@link Invoice} is structurally assignable to this type, so callers can
+ * pass an invoice directly to {@link TonbankcardSDK.verifySettlement}. The
+ * optional {@link SettlementMatchCriteria.payloadHash} is the expected on-chain
+ * payload cell hash (the `payload_hash` field emitted in the `MerchantPayment`
+ * event); when provided it is compared as well.
+ */
+export interface SettlementMatchCriteria {
+  /** Expected merchant (recipient) NFT account address */
+  merchantNft: Address;
+
+  /** Expected payment amount in TBC (nanocoins) */
+  amountTbc: bigint;
+
+  /**
+   * Optional expected on-chain payload hash (int257) as emitted in the
+   * `MerchantPayment` event. When omitted, the payload hash is not compared.
+   */
+  payloadHash?: bigint;
+}
+
+/**
  * Transaction verification result
  */
 export interface TransactionVerification {

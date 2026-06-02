@@ -14,6 +14,10 @@ on:
       - '.spectral.yaml'
       - '.github/workflows/openapi-lint.yml'
 
+# Least-privilege default: this workflow only reads the repo to lint the spec.
+permissions:
+  contents: read
+
 jobs:
   spectral:
     name: Spectral lint
