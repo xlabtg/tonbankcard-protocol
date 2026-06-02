@@ -23,6 +23,49 @@ import { confirmationDepth, isBlockConfirmed } from '../services/confirmations';
 import { IndexerErrorCode } from '../types/errors';
 import pino from 'pino';
 
+const ACCOUNT_HISTORY_DEFAULT_LIMIT = 100;
+const ACCOUNT_HISTORY_MIN_LIMIT = 1;
+const ACCOUNT_HISTORY_MAX_LIMIT = 500;
+
+function parseQueryNumber(value: unknown): number | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseAccountHistoryPagination(
+  query: Request['query']
+): { limit: number; offset: number } | null {
+  const parsedLimit = parseQueryNumber(query.limit);
+  const parsedOffset = parseQueryNumber(query.offset);
+
+  if (
+    (parsedLimit !== undefined && parsedLimit < 0) ||
+    (parsedOffset !== undefined && parsedOffset < 0)
+  ) {
+    return null;
+  }
+
+  const rawLimit = Number.isInteger(parsedLimit) ? parsedLimit : undefined;
+  const rawOffset = Number.isInteger(parsedOffset) ? parsedOffset : undefined;
+  const limit = Math.min(
+    Math.max(rawLimit ?? ACCOUNT_HISTORY_DEFAULT_LIMIT, ACCOUNT_HISTORY_MIN_LIMIT),
+    ACCOUNT_HISTORY_MAX_LIMIT
+  );
+  const offset = rawOffset ?? 0;
+
+  return { limit, offset };
+}
+
 export function createRouter(
   db: IndexerDatabase,
   indexer: IndexerService,
@@ -247,8 +290,30 @@ export function createRouter(
     async (req: Request, res: Response) => {
       try {
         const { nft_id } = req.params;
-        const limit = parseInt(req.query.limit as string) || 100;
-        const offset = parseInt(req.query.offset as string) || 0;
+        const pagination = parseAccountHistoryPagination(req.query);
+
+        if (!pagination) {
+          logger.warn(
+            {
+              requestId: req.requestId,
+              errorCode: IndexerErrorCode.API_INVALID_PARAMETER,
+              nftAddress: nft_id,
+              path: req.originalUrl ?? req.path,
+              rawLimit: req.query.limit,
+              rawOffset: req.query.offset,
+            },
+            'Invalid account history pagination parameters'
+          );
+          const errorResponse: ErrorResponse = {
+            error: {
+              code: IndexerErrorCode.API_INVALID_PARAMETER,
+              message: 'Invalid pagination parameters',
+            },
+          };
+          return res.status(400).json(errorResponse);
+        }
+
+        const { limit, offset } = pagination;
 
         const nftAddress = nft_id; // In production, validate address format
 
