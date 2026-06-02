@@ -57,6 +57,15 @@ export const TEST_API_KEY_SECRET = 'test-only-api-key-secret-do-not-use-in-prod'
 export const TEST_SETTLEMENT_INDEXER_SECRET =
   'test-only-settlement-indexer-secret-do-not-use-in-prod';
 
+/**
+ * Deterministic secret used ONLY when `NODE_ENV === 'test'` for the webhook
+ * signing-secret encryption key (see `utils/secretCipher.ts`). Mirrors
+ * {@link TEST_API_KEY_SECRET}: stable for tests, obviously non-production, and
+ * never used outside the test environment.
+ */
+export const TEST_WEBHOOK_SECRET_ENCRYPTION_KEY =
+  'test-only-webhook-secret-encryption-key-do-not-use-in-prod';
+
 /** Error thrown when `API_KEY_SECRET` is missing or insecurely configured. */
 export class InsecureSecretError extends Error {
   constructor(message: string) {
@@ -157,6 +166,33 @@ export function resolveSettlementIndexerSecret(
     env,
     'SETTLEMENT_INDEXER_SECRET',
     TEST_SETTLEMENT_INDEXER_SECRET
+  );
+}
+
+/**
+ * Resolve and validate the webhook signing-secret encryption key.
+ *
+ * Webhook signing secrets are symmetric HMAC keys: the API must recover the
+ * plaintext at delivery time to sign the payload, so they cannot be one-way
+ * hashed. Instead they are encrypted at rest with AES-256-GCM (see
+ * `utils/secretCipher.ts`), keyed by the value resolved here. A leak of the
+ * endpoint store therefore exposes only ciphertext, not the raw secrets
+ * (audit finding API-M1, issue #269). The same fail-fast policy as
+ * {@link resolveApiKeySecret} applies.
+ *
+ * @param env - Environment to read from (defaults to `process.env`; injectable for tests)
+ * @returns The validated key material
+ * @throws {InsecureSecretError} outside test mode when the key is missing,
+ *         empty, a known weak/default value, or shorter than
+ *         {@link MIN_API_KEY_SECRET_LENGTH}.
+ */
+export function resolveWebhookSecretEncryptionKey(
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return resolveStrongSecret(
+    env,
+    'WEBHOOK_SECRET_ENCRYPTION_KEY',
+    TEST_WEBHOOK_SECRET_ENCRYPTION_KEY
   );
 }
 
