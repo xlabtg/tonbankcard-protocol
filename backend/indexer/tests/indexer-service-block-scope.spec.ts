@@ -87,6 +87,11 @@ function makeTransferTx(
   return {
     transaction_id: { lt, hash },
     utime,
+    // Inbound message that triggered the transaction. A real toncenter
+    // transaction always carries one, and its destination is the executing
+    // account — routing keys off this genuine on-chain value (INDEXER-H4),
+    // not a field synthesized by the fetch layer.
+    in_msg: { source: OTHER, destination: PAY, msg_data: { body: '' } },
     // External-out message carrying the emit() event.
     out_msgs: [{ source: PAY, destination: '', msg_data: { body } }],
   };

@@ -33,6 +33,29 @@ const MAX_BLOCK_TX_PAGES = 1000;
  * loop without an error. We accept both shapes and let the caller validate the
  * result is a finite number.
  */
+/**
+ * Normalise a TON address to its canonical string form for comparison.
+ *
+ * Routing decisions compare the message's real on-chain account (e.g.
+ * `in_msg.destination`) against the configured contract addresses (INDEXER-H4).
+ * Those two sources can be encoded differently — raw `0:<hex>` vs.
+ * user-friendly `EQ…`/`UQ…`, or with different bounceable/test-only flags — so a
+ * naive string compare would spuriously reject a genuine match. We parse both
+ * sides to the canonical representation before comparing. Unparseable input
+ * (empty string, malformed value) is returned verbatim so the caller still gets
+ * a deterministic, non-throwing key.
+ */
+function normalizeAddress(addr: string): string {
+  if (!addr) {
+    return '';
+  }
+  try {
+    return Address.parse(addr).toString();
+  } catch {
+    return addr;
+  }
+}
+
 function extractLatestSeqno(info: unknown): number {
   if (info && typeof info === 'object') {
     const obj = info as { latestSeqno?: unknown; last?: { seqno?: unknown } };
@@ -728,15 +751,21 @@ export class IndexerService {
    */
   private collectBlockEvents(
     transactions: any[],
-    _blockNumber: number,
-    _timestamp: number
+    blockNumber: number,
+    timestamp: number
   ): Array<{ event: IndexedEvent; txHash: string; logIndex: number }> {
-    const relevantContracts = [
-      this.config.contracts.paymentHub,
-      this.config.contracts.merchantPaymentHub,
-      this.config.contracts.transparencyRegistry,
-      ...this.config.contracts.nftCollections,
-    ].filter((addr) => addr !== '');
+    // Canonicalise the tracked contract set once so the per-transaction
+    // relevance check is a robust, format-agnostic comparison (INDEXER-H4).
+    const relevantContracts = new Set(
+      [
+        this.config.contracts.paymentHub,
+        this.config.contracts.merchantPaymentHub,
+        this.config.contracts.transparencyRegistry,
+        ...this.config.contracts.nftCollections,
+      ]
+        .filter((addr) => addr !== '')
+        .map(normalizeAddress)
+    );
 
     const pending: Array<{
       event: IndexedEvent;
@@ -745,13 +774,25 @@ export class IndexerService {
     }> = [];
 
     for (const transaction of transactions) {
+      // Route on the real on-chain account (in_msg.destination), which equals
+      // the source of every outbound message the transaction emits. Skipping
+      // transactions whose actual account is not tracked makes routing a
+      // genuine verification rather than the previous circular self-check.
       const txDestination = this.getTransactionDestination(transaction);
-      if (!relevantContracts.includes(txDestination)) {
+      if (!relevantContracts.has(normalizeAddress(txDestination))) {
         continue; // Not relevant
       }
 
       const txHash = this.getTransactionHash(transaction);
-      const events = this.parser.parseTransaction(transaction, txDestination);
+      // Attribute events to the canonical block being processed and stamp them
+      // with the single reconciled block timestamp — the same values the write
+      // phase persists — so there is one authoritative source, not two.
+      const events = this.parser.parseTransaction(
+        transaction,
+        txDestination,
+        blockNumber,
+        timestamp
+      );
 
       for (let i = 0; i < events.length; i++) {
         pending.push({ event: events[i], txHash, logIndex: i });
@@ -1022,8 +1063,17 @@ export class IndexerService {
     return transaction.hash || '';
   }
 
+  /**
+   * The account a transaction belongs to is the destination of its inbound
+   * message (`in_msg.destination`). In TON a transaction executes on exactly
+   * one account, and every outbound message it produces carries that same
+   * account as its `source`, so this value is the genuine on-chain routing key
+   * (INDEXER-H4). Previously this read a `destination` field the fetch layer
+   * synthesized to the queried contract, making the downstream relevance check
+   * tautological.
+   */
   private getTransactionDestination(transaction: any): string {
-    return transaction.destination || '';
+    return transaction.in_msg?.destination || '';
   }
 
   /**
