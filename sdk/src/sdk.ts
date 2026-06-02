@@ -23,6 +23,58 @@ import {
 } from './types';
 import { generateInvoiceId, isValidTonAddress } from './utils';
 
+/** Masterchain identifiers (workchain -1, full shard) used for block lookups. */
+const MASTERCHAIN_WORKCHAIN = -1;
+const MASTERCHAIN_SHARD = '-9223372036854775808';
+
+/**
+ * Extract the latest masterchain seqno from a `getMasterchainInfo()` response.
+ *
+ * The `@ton/ton` `TonClient` wrapper flattens the tip onto `latestSeqno`, while
+ * the raw toncenter HTTP API (and other client versions) nest it under
+ * `last.seqno`. Accepting both shapes keeps a wrapper/version swap from
+ * silently yielding `undefined` (which would propagate to `NaN`). Mirrors the
+ * indexer's helper (INDEXER-H3). Returns `NaN` when neither shape is present.
+ */
+function extractLatestSeqno(info: unknown): number {
+  if (info && typeof info === 'object') {
+    const obj = info as { latestSeqno?: unknown; last?: { seqno?: unknown } };
+    if (typeof obj.latestSeqno === 'number') {
+      return obj.latestSeqno;
+    }
+    if (obj.last && typeof obj.last.seqno === 'number') {
+      return obj.last.seqno;
+    }
+  }
+  return NaN;
+}
+
+/**
+ * Confirmation depth of a block at `inclusionSeqno` given the observed
+ * masterchain head `headSeqno`: the number of masterchain blocks sealed on top
+ * of it. Clamped at 0 so a not-yet-resolved or future seqno never yields a
+ * negative (or otherwise nonsensical) count. Matches the canonical definition
+ * shared by the indexer and API (INDEXER-H1).
+ *
+ * Both operands are masterchain block seqnos (far below 2^53), but the
+ * subtraction is done with BigInt to make the dimensional intent explicit and
+ * to keep this path free of any precision-losing `Number()` conversion.
+ */
+function computeConfirmations(
+  headSeqno: number,
+  inclusionSeqno: number | null
+): number {
+  if (
+    inclusionSeqno === null ||
+    !Number.isFinite(headSeqno) ||
+    !Number.isFinite(inclusionSeqno)
+  ) {
+    return 0;
+  }
+  const depth = BigInt(headSeqno) - BigInt(inclusionSeqno);
+  return depth > 0n ? Number(depth) : 0;
+}
+
 /**
  * TONBANKCARD Merchant SDK
  *
@@ -46,16 +98,21 @@ export class TonbankcardSDK {
   private config: TonbankcardConfig;
   private client: TonClient;
 
+  /** Resolved JSON-RPC endpoint the TON client talks to. */
+  private endpoint: string;
+
   constructor(config: TonbankcardConfig) {
     this.config = config;
 
     // Initialize TON client for read-only blockchain queries
+    this.endpoint =
+      config.rpcEndpoint ||
+      (config.network === 'mainnet'
+        ? 'https://toncenter.com/api/v2/jsonRPC'
+        : 'https://testnet.toncenter.com/api/v2/jsonRPC');
+
     this.client = new TonClient({
-      endpoint:
-        config.rpcEndpoint ||
-        (config.network === 'mainnet'
-          ? 'https://toncenter.com/api/v2/jsonRPC'
-          : 'https://testnet.toncenter.com/api/v2/jsonRPC'),
+      endpoint: this.endpoint,
     });
   }
 
@@ -264,10 +321,24 @@ export class TonbankcardSDK {
         };
       }
 
-      // Get current block to calculate confirmations
-      // getMasterchainInfo returns { workchain, shard, initSeqno, latestSeqno }
-      const masterchain = await this.client.getMasterchainInfo();
-      const confirmations = masterchain.latestSeqno - Number(tx.lt);
+      // Derive confirmation depth as a block-height difference (SDK-H2).
+      //
+      // Confirmations are "how many blocks were sealed on top of the block that
+      // included this transaction" — the standard blockchain meaning, identical
+      // to the canonical definition shared by the indexer and API (INDEXER-H1,
+      // issue #254): confirmations = chainHead - inclusionSeqno, clamped at 0.
+      //
+      // The previous implementation subtracted the transaction's logical time
+      // (`tx.lt`, a monotonic counter on the order of 10^19) from a masterchain
+      // block height, which is dimensionally meaningless and additionally lost
+      // precision via `Number(tx.lt)` for `lt` values above 2^53. We never feed
+      // `lt` into this arithmetic anymore; both operands are masterchain block
+      // seqnos (well below 2^53) and the difference is computed with BigInt.
+      const headSeqno = extractLatestSeqno(
+        await this.client.getMasterchainInfo()
+      );
+      const inclusionSeqno = await this.resolveTransactionSeqno(tx);
+      const confirmations = computeConfirmations(headSeqno, inclusionSeqno);
 
       // Verify transaction success (not aborted)
       const isValid =
@@ -318,6 +389,53 @@ export class TonbankcardSDK {
         matchesInvoice: false,
         error: error instanceof Error ? error.message : String(error),
       };
+    }
+  }
+
+  /**
+   * Resolve the masterchain block seqno in which a transaction was included.
+   *
+   * toncenter's `getTransactions` response (and the `@ton/ton` `Transaction`)
+   * carries no block reference, so we map the transaction's gen time (`tx.now`,
+   * a unix timestamp) to the masterchain block sealed at that instant via the
+   * `lookupBlock` REST method. The returned seqno is a masterchain block height,
+   * dimensionally comparable to the chain head from `getMasterchainInfo()`.
+   *
+   * Returns `null` when the block cannot be resolved (network/endpoint that does
+   * not speak the toncenter REST API, malformed response, …); callers then
+   * report 0 confirmations rather than a fabricated depth.
+   *
+   * @param tx - Transaction whose inclusion block seqno is requested
+   * @returns Masterchain block seqno, or null if it cannot be resolved
+   */
+  private async resolveTransactionSeqno(tx: {
+    now: number;
+  }): Promise<number | null> {
+    if (!Number.isFinite(tx.now)) {
+      return null;
+    }
+
+    // Derive the toncenter REST base from the JSON-RPC endpoint
+    // (…/api/v2/jsonRPC → …/api/v2/lookupBlock).
+    const base = this.endpoint.replace(/jsonRPC\/?$/i, '');
+    const url =
+      `${base}lookupBlock?workchain=${MASTERCHAIN_WORKCHAIN}` +
+      `&shard=${encodeURIComponent(MASTERCHAIN_SHARD)}` +
+      `&unixtime=${Math.floor(tx.now)}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        return null;
+      }
+      const data = (await response.json()) as {
+        ok?: boolean;
+        result?: { seqno?: unknown };
+      };
+      const seqno = data?.result?.seqno;
+      return typeof seqno === 'number' && Number.isFinite(seqno) ? seqno : null;
+    } catch {
+      return null;
     }
   }
 
