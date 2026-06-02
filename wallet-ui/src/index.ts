@@ -26,14 +26,12 @@
 
 export { TonbankcardWalletUI } from './components/WalletApp';
 
-export {
-  // Types
+export type {
   AccountState,
   WalletView,
   WalletUIConfig,
   WalletAccount,
   TransactionRecord,
-  // Phase 4 Types
   MultiSigCardStatus,
   RecurringMandateDisplay,
   BridgeTransactionDisplay,
