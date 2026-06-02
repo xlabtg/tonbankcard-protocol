@@ -13,6 +13,11 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { WebhookService } from '../src/services/WebhookService';
 import { SsrfError } from '../src/utils/ssrfGuard';
+import { SecretCipher } from '../src/utils/secretCipher';
+import { SIGNATURE_HEADER, verifyWebhookSignature } from '../src/utils/webhookSignature';
+
+/** Fixed-key cipher so manually inserted endpoints carry valid ciphertext. */
+const cipher = new SecretCipher('test-webhook-encryption-key-1234567890');
 
 /** Fake DNS that maps every host to a public IP unless specified otherwise. */
 function publicLookup(overrides: Record<string, string[]> = {}) {
@@ -33,7 +38,7 @@ describe('WebhookService — SSRF guard integration', () => {
   let service: WebhookService;
 
   beforeEach(() => {
-    service = new WebhookService();
+    service = new WebhookService(cipher);
   });
 
   describe('register()', () => {
@@ -93,7 +98,7 @@ describe('WebhookService — SSRF guard integration', () => {
       ep.set('wh_test', {
         endpoint_id: 'wh_test',
         url: 'https://127.0.0.1/hook',
-        secret: TEST_SECRET,
+        secret_encrypted: cipher.encrypt(TEST_SECRET),
         merchant_nft: TEST_MERCHANT,
         created_at: new Date().toISOString(),
         is_active: true,
@@ -111,7 +116,7 @@ describe('WebhookService — SSRF guard integration', () => {
       ep.set('wh_private', {
         endpoint_id: 'wh_private',
         url: 'https://internal.corp/hook',
-        secret: TEST_SECRET,
+        secret_encrypted: cipher.encrypt(TEST_SECRET),
         merchant_nft: TEST_MERCHANT,
         created_at: new Date().toISOString(),
         is_active: true,
@@ -141,5 +146,95 @@ describe('WebhookService — SSRF guard integration', () => {
       expect(result.ok).toBe(false);
       expect(result.error).toMatch(/deactivated/);
     });
+  });
+});
+
+describe('WebhookService — signing secret encryption at rest (API-M1, #269)', () => {
+  let service: WebhookService;
+
+  beforeEach(() => {
+    service = new WebhookService(cipher);
+  });
+
+  it('does not store the raw plaintext secret on a registered endpoint', async () => {
+    const ep = await service.register(TEST_MERCHANT, 'https://example.com/hook', TEST_SECRET, {
+      lookup: publicLookup(),
+    });
+
+    // The public contract is `secret_encrypted` — the legacy plaintext field
+    // must be gone entirely.
+    expect((ep as unknown as Record<string, unknown>).secret).toBeUndefined();
+    expect(ep.secret_encrypted).toBeDefined();
+    expect(ep.secret_encrypted).not.toBe(TEST_SECRET);
+    expect(ep.secret_encrypted).not.toContain(TEST_SECRET);
+
+    // The stored record (not just the returned copy) holds only ciphertext.
+    const stored = service.find(ep.endpoint_id)!;
+    expect(JSON.stringify(stored)).not.toContain(TEST_SECRET);
+
+    // Ciphertext round-trips back to the original secret with the right key.
+    expect(cipher.decrypt(stored.secret_encrypted)).toBe(TEST_SECRET);
+  });
+
+  it('encrypts the same secret to different ciphertexts (fresh IV per register)', async () => {
+    const a = await service.register(TEST_MERCHANT, 'https://a.example.com/hook', TEST_SECRET, {
+      lookup: publicLookup(),
+    });
+    const b = await service.register(TEST_MERCHANT, 'https://b.example.com/hook', TEST_SECRET, {
+      lookup: publicLookup(),
+    });
+    expect(a.secret_encrypted).not.toBe(b.secret_encrypted);
+  });
+
+  it('decrypts the stored secret to sign a delivery with the original secret', async () => {
+    const ep = await service.register(TEST_MERCHANT, 'https://example.com/hook', TEST_SECRET, {
+      lookup: publicLookup(),
+    });
+
+    let capturedBody = '';
+    let capturedSig: string | undefined;
+    const fetchMock = jest.fn(async (_url: unknown, init: any) => {
+      capturedBody = init.body as string;
+      capturedSig = init.headers[SIGNATURE_HEADER];
+      return { ok: true, status: 200 } as Response;
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const result = await service.deliver(
+        ep.endpoint_id,
+        { event: 'payment.settled' },
+        { ssrfGuard: { lookup: publicLookup() }, timestamp: 1_700_000_000 },
+      );
+      expect(result.ok).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    // The signature on the wire verifies against the ORIGINAL plaintext secret,
+    // proving the stored ciphertext was correctly decrypted before signing.
+    const verification = verifyWebhookSignature(TEST_SECRET, capturedBody, capturedSig, {
+      now: 1_700_000_000,
+    });
+    expect(verification.valid).toBe(true);
+  });
+
+  it('returns a delivery error when the stored secret cannot be decrypted', async () => {
+    const ep = service['endpoints'];
+    ep.set('wh_corrupt', {
+      endpoint_id: 'wh_corrupt',
+      url: 'https://example.com/hook',
+      secret_encrypted: 'v1:not:valid:ciphertext',
+      merchant_nft: TEST_MERCHANT,
+      created_at: new Date().toISOString(),
+      is_active: true,
+    });
+
+    const result = await service.deliver('wh_corrupt', { event: 'test' }, {
+      ssrfGuard: { lookup: publicLookup() },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Secret decryption failed/);
   });
 });
