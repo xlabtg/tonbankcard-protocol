@@ -388,6 +388,20 @@ jobs:
         working-directory: contracts/governance
         run: npm test
 
+      - name: Install multisig dependencies
+        working-directory: contracts/multisig
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build multisig contract
+        working-directory: contracts/multisig
+        run: npm run build
+
+      - name: Test multisig contract specs
+        working-directory: contracts/multisig
+        run: npm test
+
   test-invariants:
     name: Test (Protocol Invariants)
     runs-on: ubuntu-latest
