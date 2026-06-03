@@ -453,6 +453,23 @@ jobs:
         working-directory: contracts/multisig
         run: npm test
 
+      # CONTRACTS-M2 (issue #280): compiling the coordinator makes the Tact
+      # compiler enforce message-type correctness, so a handler bound to an
+      # undefined message (e.g. the historical `RegisterNFTOwner`) fails CI.
+      - name: Install lending coordinator dependencies
+        working-directory: contracts/lending
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build lending coordinator contract
+        working-directory: contracts/lending
+        run: npm run build
+
+      - name: Test lending coordinator contract specs
+        working-directory: contracts/lending
+        run: npm test
+
       - name: Install key-collision regression dependencies
         working-directory: contracts/key-collision
         env:

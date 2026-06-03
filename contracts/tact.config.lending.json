@@ -1,0 +1,13 @@
+{
+  "projects": [
+    {
+      "name": "LendingProtocolCoordinator",
+      "path": "./LendingProtocolCoordinator.tact",
+      "output": "./lending/dist",
+      "options": {
+        "debug": true,
+        "external": true
+      }
+    }
+  ]
+}
