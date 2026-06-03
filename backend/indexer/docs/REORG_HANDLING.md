@@ -254,6 +254,46 @@ Snapshots are reconciled synchronously during rollback:
 - Fields are recomputed from canonical history, not patched forward
 - Snapshots with no surviving events are cleared, not left stale
 
+## Transparency Aggregate Handling
+
+The E4 transparency tables (`transparency_protocol_metrics`,
+`transparency_lock_activity`, `transparency_parameter_changes`) each carry a
+`FOREIGN KEY (block_number) REFERENCES blocks(block_number) ON DELETE CASCADE`,
+so a reorg that rolls back a recording block removes its aggregate rows in the
+same `handleReorg` transaction — no separate reconciliation pass is needed.
+
+### Corrected periods overwrite stale values (INDEXER-M5)
+
+The blockchain is the single source of truth, so a corrected on-chain aggregate
+for an **already-indexed** period must replace the stale value rather than be
+dropped. `transparency_protocol_metrics` and `transparency_lock_activity` key
+each period with `UNIQUE(period_start, period_end)`, and the inserts UPSERT on
+that key with a **newest-by-block-wins** guard:
+
+```sql
+INSERT INTO transparency_protocol_metrics (...) VALUES (...)
+ON CONFLICT(period_start, period_end) DO UPDATE SET ...
+WHERE excluded.block_number > transparency_protocol_metrics.block_number
+   OR (excluded.block_number = transparency_protocol_metrics.block_number
+       AND excluded.log_index >= transparency_protocol_metrics.log_index);
+```
+
+- A re-recorded/corrected metric from a later block overwrites the stored row.
+- A late-arriving event from an *older* block can never clobber a newer value.
+- Re-delivering the exact same event is idempotent (the guard updates the row to
+  identical values), preserving the previous `INSERT OR IGNORE` behaviour for
+  duplicates while no longer silently discarding genuine corrections.
+
+`transparency_parameter_changes` is an append-only audit trail (no period key),
+so it keeps plain `INSERT OR IGNORE` idempotency on `(transaction_hash,
+log_index)`.
+
+> **Newest-by-block + CASCADE interaction.** Because each period keeps a single
+> row tagged with the block that last wrote it, if a correction recorded at a
+> later block is itself reverted by a reorg, the period's row CASCADE-deletes
+> with that block. The canonical chain re-emits the aggregate on re-index, which
+> re-populates the period from the surviving truth.
+
 ## API Responses During Reorg
 
 ### Unconfirmed Data

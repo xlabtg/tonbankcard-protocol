@@ -799,12 +799,31 @@ export class IndexerDatabase {
     tbcVolumeTransferred: string;
     transferCount: number;
   }): void {
+    // The blockchain is the single source of truth: if the on-chain registry
+    // re-records a corrected metric for an already-indexed period (or a reorg
+    // replaces it from a later block), the newest on-chain value must win.
+    // UPSERT on (period_start, period_end) — newest-by-block wins (tie-broken by
+    // log_index) — replaces the stale row instead of silently dropping the new
+    // one as INSERT OR IGNORE did (INDEXER-M5). The WHERE guard keeps duplicate
+    // re-deliveries of the same event idempotent and never lets an older block
+    // overwrite a newer correction.
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO transparency_protocol_metrics
+        `INSERT INTO transparency_protocol_metrics
          (block_number, transaction_hash, log_index, timestamp,
           period_start, period_end, active_accounts, tbc_volume_transferred, transfer_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(period_start, period_end) DO UPDATE SET
+           block_number = excluded.block_number,
+           transaction_hash = excluded.transaction_hash,
+           log_index = excluded.log_index,
+           timestamp = excluded.timestamp,
+           active_accounts = excluded.active_accounts,
+           tbc_volume_transferred = excluded.tbc_volume_transferred,
+           transfer_count = excluded.transfer_count
+         WHERE excluded.block_number > transparency_protocol_metrics.block_number
+            OR (excluded.block_number = transparency_protocol_metrics.block_number
+                AND excluded.log_index >= transparency_protocol_metrics.log_index)`
       )
       .run(
         event.blockNumber,
@@ -833,13 +852,30 @@ export class IndexerDatabase {
     appealsOverturned: number;
     appealsUpheld: number;
   }): void {
+    // Same newest-by-block UPSERT as protocol metrics: a corrected on-chain
+    // lock-activity aggregate for an existing period overwrites the stale row
+    // rather than being dropped by INSERT OR IGNORE (INDEXER-M5).
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO transparency_lock_activity
+        `INSERT INTO transparency_lock_activity
          (block_number, transaction_hash, log_index, timestamp,
           period_start, period_end, locks_set, locks_cleared, locks_active,
           appeals_filed, appeals_overturned, appeals_upheld)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(period_start, period_end) DO UPDATE SET
+           block_number = excluded.block_number,
+           transaction_hash = excluded.transaction_hash,
+           log_index = excluded.log_index,
+           timestamp = excluded.timestamp,
+           locks_set = excluded.locks_set,
+           locks_cleared = excluded.locks_cleared,
+           locks_active = excluded.locks_active,
+           appeals_filed = excluded.appeals_filed,
+           appeals_overturned = excluded.appeals_overturned,
+           appeals_upheld = excluded.appeals_upheld
+         WHERE excluded.block_number > transparency_lock_activity.block_number
+            OR (excluded.block_number = transparency_lock_activity.block_number
+                AND excluded.log_index >= transparency_lock_activity.log_index)`
       )
       .run(
         event.blockNumber,
