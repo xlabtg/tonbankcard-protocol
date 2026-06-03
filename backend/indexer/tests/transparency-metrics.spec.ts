@@ -186,6 +186,137 @@ describe('IndexerDatabase – E4 transparency aggregates', () => {
     expect(db.getTransparencyCounts().metric_periods).toBe(1);
   });
 
+  // INDEXER-M5: a corrected/re-recorded metric for an already-indexed period
+  // must overwrite the stale value (newest-by-block wins) instead of being
+  // silently dropped by INSERT OR IGNORE.
+  it('overwrites a stale protocol-metrics period with a newer-block correction', () => {
+    const period = { periodStart: 1_690_000_000, periodEnd: 1_700_000_000 };
+    db.insertTransparencyProtocolMetrics({
+      blockNumber: 100,
+      transactionHash: 'tx-pm-stale',
+      logIndex: 0,
+      timestamp: 1_700_000_000,
+      ...period,
+      activeAccounts: 1000,
+      tbcVolumeTransferred: '1000',
+      transferCount: 10,
+    });
+
+    // Corrected metric for the same period, recorded by a later block.
+    db.insertTransparencyProtocolMetrics({
+      blockNumber: 200,
+      transactionHash: 'tx-pm-corrected',
+      logIndex: 0,
+      timestamp: 1_702_000_000,
+      ...period,
+      activeAccounts: 4242,
+      tbcVolumeTransferred: '9999',
+      transferCount: 42,
+    });
+
+    // Still a single period, now holding the corrected (canonical) value.
+    expect(db.getTransparencyCounts().metric_periods).toBe(1);
+    const latest = db.getLatestTransparencyProtocolMetrics();
+    expect(latest!.active_accounts).toBe(4242);
+    expect(latest!.tbc_volume_transferred).toBe('9999');
+    expect(latest!.transfer_count).toBe(42);
+    expect(latest!.block_number).toBe(200);
+    expect(latest!.transaction_hash).toBe('tx-pm-corrected');
+  });
+
+  it('does not let an older-block re-record overwrite a newer protocol-metrics value', () => {
+    const period = { periodStart: 1_690_000_000, periodEnd: 1_700_000_000 };
+    db.insertTransparencyProtocolMetrics({
+      blockNumber: 200,
+      transactionHash: 'tx-pm-new',
+      logIndex: 0,
+      timestamp: 1_702_000_000,
+      ...period,
+      activeAccounts: 4242,
+      tbcVolumeTransferred: '9999',
+      transferCount: 42,
+    });
+
+    // A late-arriving event from an older block must not clobber the newer value.
+    db.insertTransparencyProtocolMetrics({
+      blockNumber: 100,
+      transactionHash: 'tx-pm-old',
+      logIndex: 0,
+      timestamp: 1_700_000_000,
+      ...period,
+      activeAccounts: 1,
+      tbcVolumeTransferred: '1',
+      transferCount: 1,
+    });
+
+    expect(db.getTransparencyCounts().metric_periods).toBe(1);
+    const latest = db.getLatestTransparencyProtocolMetrics();
+    expect(latest!.active_accounts).toBe(4242);
+    expect(latest!.block_number).toBe(200);
+    expect(latest!.transaction_hash).toBe('tx-pm-new');
+  });
+
+  it('overwrites a stale lock-activity period with a newer-block correction', () => {
+    const period = { periodStart: 1_700_000_000, periodEnd: 1_702_000_000 };
+    db.insertTransparencyLockActivity({
+      blockNumber: 100,
+      transactionHash: 'tx-la-stale',
+      logIndex: 0,
+      timestamp: 1_700_000_000,
+      ...period,
+      locksSet: 1,
+      locksCleared: 1,
+      locksActive: 1,
+      appealsFiled: 1,
+      appealsOverturned: 1,
+      appealsUpheld: 1,
+    });
+    db.insertTransparencyLockActivity({
+      blockNumber: 200,
+      transactionHash: 'tx-la-corrected',
+      logIndex: 0,
+      timestamp: 1_702_000_000,
+      ...period,
+      locksSet: 12,
+      locksCleared: 4,
+      locksActive: 8,
+      appealsFiled: 5,
+      appealsOverturned: 2,
+      appealsUpheld: 3,
+    });
+
+    expect(db.getTransparencyCounts().lock_periods).toBe(1);
+    const latest = db.getLatestTransparencyLockActivity();
+    expect(latest!.locks_set).toBe(12);
+    expect(latest!.locks_active).toBe(8);
+    expect(latest!.appeals_overturned).toBe(2);
+    expect(latest!.block_number).toBe(200);
+    expect(latest!.transaction_hash).toBe('tx-la-corrected');
+  });
+
+  // INDEXER-M5: reorg reconciliation — a period whose recording block is rolled
+  // back must be removed via the blocks ON DELETE CASCADE, never left stale.
+  it('drops transparency periods whose block is reverted by a reorg', () => {
+    db.insertTransparencyProtocolMetrics({
+      blockNumber: 200,
+      transactionHash: 'tx-pm-reorged',
+      logIndex: 0,
+      timestamp: 1_702_000_000,
+      periodStart: 1_700_000_000,
+      periodEnd: 1_702_000_000,
+      activeAccounts: 7,
+      tbcVolumeTransferred: '7',
+      transferCount: 7,
+    });
+    expect(db.getTransparencyCounts().metric_periods).toBe(1);
+
+    // Reorg rolls back from block 200 onwards; the FK CASCADE removes the row.
+    db.handleReorg(200);
+
+    expect(db.getTransparencyCounts().metric_periods).toBe(0);
+    expect(db.getLatestTransparencyProtocolMetrics()).toBeNull();
+  });
+
   it('inserts and reads back a lock-activity row', () => {
     db.insertTransparencyLockActivity({
       blockNumber: 200,
