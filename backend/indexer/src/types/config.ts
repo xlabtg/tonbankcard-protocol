@@ -70,9 +70,30 @@ export function loadConfig(): IndexerConfig {
     return value || defaultValue!;
   };
 
-  const getEnvNumber = (key: string, defaultValue: number): number => {
+  const getEnvNumber = (
+    key: string,
+    defaultValue: number,
+    options?: { min?: number; max?: number },
+  ): number => {
     const value = process.env[key];
-    return value ? parseInt(value, 10) : defaultValue;
+    if (!value) return defaultValue;
+    const parsed = parseInt(value, 10);
+    if (!isFinite(parsed)) {
+      throw new Error(
+        `Invalid value for ${key}: "${value}" is not a finite integer`,
+      );
+    }
+    if (options?.min !== undefined && parsed < options.min) {
+      throw new Error(
+        `Invalid value for ${key}: ${parsed} is below minimum ${options.min}`,
+      );
+    }
+    if (options?.max !== undefined && parsed > options.max) {
+      throw new Error(
+        `Invalid value for ${key}: ${parsed} is above maximum ${options.max}`,
+      );
+    }
+    return parsed;
   };
 
   const getEnvBoolean = (key: string, defaultValue: boolean): boolean => {
@@ -103,10 +124,10 @@ export function loadConfig(): IndexerConfig {
     },
 
     indexer: {
-      startBlock: getEnvNumber('INDEXER_START_BLOCK', 0),
-      pollIntervalMs: getEnvNumber('INDEXER_POLL_INTERVAL_MS', 5000),
-      batchSize: getEnvNumber('INDEXER_BATCH_SIZE', 100),
-      confirmationBlocks: getEnvNumber('INDEXER_CONFIRMATION_BLOCKS', 10),
+      startBlock: getEnvNumber('INDEXER_START_BLOCK', 0, { min: 0 }),
+      pollIntervalMs: getEnvNumber('INDEXER_POLL_INTERVAL_MS', 5000, { min: 1 }),
+      batchSize: getEnvNumber('INDEXER_BATCH_SIZE', 100, { min: 1 }),
+      confirmationBlocks: getEnvNumber('INDEXER_CONFIRMATION_BLOCKS', 10, { min: 0 }),
     },
 
     redis: process.env.REDIS_HOST
