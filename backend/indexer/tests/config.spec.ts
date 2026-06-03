@@ -7,7 +7,7 @@
  * @see https://github.com/xlabtg/tonbankcard-protocol/issues/278
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import { loadConfig } from '../src/types/config';
 
 const REQUIRED_ENV: Record<string, string> = {
