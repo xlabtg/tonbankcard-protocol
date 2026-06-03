@@ -297,7 +297,7 @@ The registry supports exactly 6 fixed categories:
 ### Default Values
 
 - **Voting Duration**: 7 days (604800 seconds)
-- **Quorum Threshold**: 22 votes (10% of 222 NFTs)
+- **Quorum Threshold**: 23 votes (ceil(10% of 222 NFTs))
 - **Total Diamond Supply**: 222 NFTs
 
 ### TBC Diamonds
@@ -493,7 +493,7 @@ await registry.send(
     author_nft_id: 42n, // Author's Diamond NFT ID
     category: 0n, // ROADMAP_SIGNAL
     voting_duration: 0n, // Use default (7 days)
-    quorum_threshold: 0n // Use default (22 votes)
+    quorum_threshold: 0n // Use default (23 votes)
   }
 );
 ```

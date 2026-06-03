@@ -12,6 +12,9 @@
 ;; This is a placeholder - actual address will be stored in contract data
 ;; Collection has 222 NFTs total (index 0-221)
 const int TOTAL_DIAMONDS = 222;
+const int DEFAULT_QUORUM_PERCENTAGE = 10;
+const int QUORUM_PERCENT_DENOMINATOR = 100;
+const int DEFAULT_QUORUM_THRESHOLD = (TOTAL_DIAMONDS * DEFAULT_QUORUM_PERCENTAGE + QUORUM_PERCENT_DENOMINATOR - 1) / QUORUM_PERCENT_DENOMINATOR;
 
 ;; ==================== STORAGE ====================
 
@@ -145,9 +148,13 @@ int is_diamonds_collection(slice collection_addr) method_id {
 int get_quorum_requirement(int quorum_percentage) method_id {
     throw_unless(402, (quorum_percentage > 0) & (quorum_percentage <= 100));
 
-    ;; Calculate quorum: (TOTAL_DIAMONDS * quorum_percentage) / 100
+    if (quorum_percentage == DEFAULT_QUORUM_PERCENTAGE) {
+        return DEFAULT_QUORUM_THRESHOLD;
+    }
+
+    ;; Calculate quorum: ceil(TOTAL_DIAMONDS * quorum_percentage / 100)
     ;; 222 Diamonds * 10% = 22.2 -> round up to 23
-    int quorum = (TOTAL_DIAMONDS * quorum_percentage + 99) / 100;  ;; Round up
+    int quorum = (TOTAL_DIAMONDS * quorum_percentage + QUORUM_PERCENT_DENOMINATOR - 1) / QUORUM_PERCENT_DENOMINATOR;
 
     return quorum;
 }

@@ -225,7 +225,7 @@ The example below mirrors the round-trip executed in [`E1-activation/TESTNET_VAL
 | 5 | Indexer | Builds eligibility map per §4. Computes `eligibility_root`. |
 | 6 | Author | Pushes proposal metadata to IPFS, records the CID. |
 | 7 | Maintainer | Sends `SnapshotVerifier.RegisterSnapshot{proposal_id=1, timestamp=gen_utime, eligible_nfts}`. Awaits `SnapshotRegistered` event. |
-| 8 | Maintainer | Sends `ProposalRegistry.SubmitProposal{metadata_hash=sha256(metadata), author_nft_id, category=0, voting_duration=604800, quorum_threshold=22}`. Awaits `ProposalSubmitted` event. |
+| 8 | Maintainer | Sends `ProposalRegistry.SubmitProposal{metadata_hash=sha256(metadata), author_nft_id, category=0, voting_duration=604800, quorum_threshold=23}`. Awaits `ProposalSubmitted` event. |
 | 9 | Holders | Cast votes during the 7-day window. |
 | 10 | Anyone | After `voting_end`, invokes `ProposalRegistry.FinalizeProposal{proposal_id=1}`. |
 | 11 | Indexer | Mirrors `ProposalFinalized` to `TransparencyRegistry`. |

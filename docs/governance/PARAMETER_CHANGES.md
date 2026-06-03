@@ -83,7 +83,7 @@ The risk assessment **must** be signed by ≥ 2 maintainers (recorded in §10).
 
 ## 5. Quorum justification
 
-_If the recommended quorum in `PARAMETERS.md` §9 is the default 22 votes, state so. If a higher quorum is requested (e.g. 44 votes), justify the supermajority._
+_If the recommended quorum in `PARAMETERS.md` §9 is the default 23 votes, state so. If a higher quorum is requested (e.g. 44 votes), justify the supermajority._
 
 ## 6. Execution plan
 

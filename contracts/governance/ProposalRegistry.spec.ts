@@ -34,8 +34,15 @@ import { TestOwnershipResolver } from './dist/TestHarness_TestOwnershipResolver'
 // Mirror of the Tact constants (bigint to match generated types).
 const VOTE_FOR = 0n;
 const VOTE_AGAINST = 1n;
+const STATUS_NO_QUORUM = 3n;
 const STATUS_ACTIVE = 0n;
 const CATEGORY_ROADMAP_SIGNAL = 0n;
+
+const TOTAL_DIAMONDS = 222n;
+const DEFAULT_QUORUM_PERCENTAGE = 10n;
+const PERCENT_DENOMINATOR = 100n;
+const RESOLVER_STYLE_DEFAULT_QUORUM =
+    (TOTAL_DIAMONDS * DEFAULT_QUORUM_PERCENTAGE + PERCENT_DENOMINATOR - 1n) / PERCENT_DENOMINATOR;
 
 const GAS = toNano('0.2');
 
@@ -70,7 +77,12 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
 
     // Submit a proposal authored by `author`, claiming `nftId`, and return the
     // proposal count afterwards.
-    async function submitProposal(author: SandboxContract<TreasuryContract>, nftId: bigint) {
+    async function submitProposal(
+        author: SandboxContract<TreasuryContract>,
+        nftId: bigint,
+        votingDuration: bigint = 0n,
+        quorumThreshold: bigint = 0n
+    ) {
         await registry.send(
             author.getSender(),
             { value: GAS },
@@ -79,8 +91,8 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
                 metadata_hash: 12345n,
                 author_nft_id: nftId,
                 category: CATEGORY_ROADMAP_SIGNAL,
-                voting_duration: 0n, // use default
-                quorum_threshold: 0n, // use default
+                voting_duration: votingDuration, // 0 uses default
+                quorum_threshold: quorumThreshold, // 0 uses default
             }
         );
     }
@@ -182,6 +194,50 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
         expect(proposal).not.toBeNull();
         expect(proposal!.author_nft_id).toBe(1n);
         expect(proposal!.status).toBe(STATUS_ACTIVE);
+    });
+
+    it('uses the resolver-style rounded-up 10% quorum by default', async () => {
+        expect(RESOLVER_STYLE_DEFAULT_QUORUM).toBe(23n);
+        expect(await registry.getGetDiamondsTotalSupply()).toBe(TOTAL_DIAMONDS);
+        expect(await registry.getGetDefaultQuorumThreshold()).toBe(RESOLVER_STYLE_DEFAULT_QUORUM);
+
+        await submitProposal(ownerOf1, 1n);
+
+        const proposal = await registry.getGetProposal(1n);
+        expect(proposal).not.toBeNull();
+        expect(proposal!.quorum_threshold).toBe(RESOLVER_STYLE_DEFAULT_QUORUM);
+    });
+
+    it('finalizes 22 default-threshold votes as NO_QUORUM, matching the resolver boundary', async () => {
+        const startTime = (blockchain.now ?? Math.floor(Date.now() / 1000)) + 60;
+        blockchain.now = startTime;
+
+        await submitProposal(ownerOf1, 1n, 10n);
+        const proposal = await registry.getGetProposal(1n);
+        expect(proposal).not.toBeNull();
+        expect(proposal!.quorum_threshold).toBe(RESOLVER_STYLE_DEFAULT_QUORUM);
+
+        const boundaryVotes = RESOLVER_STYLE_DEFAULT_QUORUM - 1n;
+        for (let offset = 0n; offset < boundaryVotes; offset++) {
+            const nftId = offset + 2n;
+            const voter = await blockchain.treasury(`boundaryVoter${nftId}`);
+            await registerOwner(nftId, voter);
+            await castVote(voter, 1n, nftId, VOTE_FOR);
+        }
+
+        const counts = await registry.getGetVoteCounts(1n);
+        expect(counts.get(VOTE_FOR)).toBe(boundaryVotes);
+        expect(boundaryVotes >= RESOLVER_STYLE_DEFAULT_QUORUM).toBe(false);
+
+        blockchain.now = Number(proposal!.voting_end + 1n);
+        await registry.send(
+            deployer.getSender(),
+            { value: GAS },
+            { $$type: 'FinalizeProposal', proposal_id: 1n }
+        );
+
+        expect(await registry.getGetProposalStatus(1n)).toBe(STATUS_NO_QUORUM);
+        expect(await registry.getGetStatusName(STATUS_NO_QUORUM)).toBe('NO_QUORUM');
     });
 
     it('lets the legitimate owner cast a vote (ownership confirmed)', async () => {

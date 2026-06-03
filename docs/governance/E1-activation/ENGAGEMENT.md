@@ -140,7 +140,7 @@ The engagement may begin once all rows below are ✅. The live state of each gat
 |-------------|---------|
 | A1 audit complete before mainnet deployment | Gate G-1 + B2 owns deployment |
 | Proposal execution timelock ≥ 48 h | Re-interpreted as off-chain implementation cooldown ≥ 48 h — see [`../PARAMETERS.md`](../PARAMETERS.md) §5. No on-chain timelock is introduced (would re-introduce execution authority) |
-| Quorum set conservatively (high) | P-4 fixed at 22 votes (10 % of supply), at the conservative end of the 10–20 % band in `docs/dao-governance.md` |
+| Quorum set conservatively (high) | P-4 fixed at 23 votes (ceil 10 % of supply), at the conservative end of the 10–20 % band in `docs/dao-governance.md` |
 | Snapshot block taken before proposal creation to prevent vote buying | Enforced by [`../SNAPSHOT.md`](../SNAPSHOT.md) §3 and runbook step 5 ordering |
 
 Additional engagement-level hardening:
@@ -157,7 +157,7 @@ Additional engagement-level hardening:
 |-------------|---------|
 | Governance deploy uses same multi-sig deployer as B2 | Deployment is done by B2; the only mainnet write E1 performs (`set_registry`) uses the same multi-sig per [`RUNBOOK.md`](./RUNBOOK.md) §4 |
 | Voting period ≥ 7 days | P-3 fixed at 604 800 s |
-| Quorum high enough to prevent capture | P-4 fixed at 22 |
+| Quorum high enough to prevent capture | P-4 fixed at 23 |
 | All governance actions logged via TransparencyRegistry | Indexer mirror enabled in Phase 3; the contract already emits events natively |
 
 ---

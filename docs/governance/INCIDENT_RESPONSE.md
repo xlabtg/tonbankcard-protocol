@@ -198,7 +198,7 @@ During a HIGH or CRITICAL severity incident, an emergency governance proposal ma
 Emergency proposals follow an accelerated timeline:
 
 * Voting period: minimum 24 hours (vs. standard 7 days)
-* Quorum threshold: standard threshold applies (22 of 222); no reduction permitted
+* Quorum threshold: standard threshold applies (23 of 222); no reduction permitted
 
 All emergency proposals must include:
 

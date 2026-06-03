@@ -31,10 +31,10 @@ Changes to these parameters after ratification require a new governance proposal
 
 | # | Parameter | Value | On-chain? | Source |
 |---|-----------|-------|-----------|--------|
-| P-1 | **Governance asset** | TBC Diamonds NFT collection (222 NFTs, 1 NFT = 1 vote) | Yes — `ProposalRegistry.DIAMONDS_TOTAL_SUPPLY = 222` | `contracts/governance/ProposalRegistry.tact` |
+| P-1 | **Governance asset** | TBC Diamonds NFT collection (222 NFTs, 1 NFT = 1 vote) | Yes — `DIAMONDS_TOTAL_SUPPLY = 222` | `contracts/governance/ProposalRegistry.tact` |
 | P-2 | **Voting power model** | Flat — `1 NFT = 1 vote`, no delegation, no fractionalisation | Yes — enforced by `CastVote` deduplication via `votes_cast` map | `docs/dao-governance.md` §"TBC Diamonds NFT Collection" |
 | P-3 | **Voting period (duration)** | **7 days** (`604 800` seconds) | Yes — `DEFAULT_VOTING_DURATION = 604800` | `ProposalRegistry.tact` |
-| P-4 | **Quorum threshold** | **22 votes** (≈ 10 % of 222) | Yes — `DEFAULT_QUORUM_THRESHOLD = 22` | `ProposalRegistry.tact` |
+| P-4 | **Quorum threshold** | **23 votes** (ceil(10 % of 222)) | Yes — `DEFAULT_QUORUM_THRESHOLD = 23` | `ProposalRegistry.tact` |
 | P-5 | **Decision rule** | Simple majority among non-abstain votes when quorum is met | Yes — `votes_for > votes_against` after quorum check | `ProposalRegistry.tact` `FinalizeProposal` handler |
 | P-6 | **Proposal threshold (submission)** | **1 TBC Diamond NFT** owned by the author at submission time | Partly — author NFT ID stored, ownership verified off-chain at the snapshot block | `ProposalRegistry.tact` `SubmitProposal` + [`SNAPSHOT.md`](./SNAPSHOT.md) §4 |
 | P-7 | **Snapshot timing** | Snapshot block taken **strictly before** proposal `SubmitProposal` is broadcast; recorded by indexer | Off-chain (indexer) + on-chain `RegisterSnapshot` to `SnapshotVerifier` before `voting_start` | [`SNAPSHOT.md`](./SNAPSHOT.md) §3 |
@@ -58,12 +58,12 @@ Changes to these parameters after ratification require a new governance proposal
 - A 7-day window covers one full weekly cycle, which is necessary because TBC Diamonds holders are geographically distributed.
 - Per-proposal authors **may extend** the window via `SubmitProposal.voting_duration`. They **must not** shorten it: the runbook treats any value below `604 800` as a P-3 violation and aborts.
 
-### P-4 — Quorum: 22 votes (~10 %)
+### P-4 — Quorum: 23 votes (ceil 10 %)
 
 - Issue #132 §6/§7 require quorum "high enough to prevent governance capture by small groups" and "set conservatively initially (err on side of higher quorum)".
-- Contract default is `22 = ceil(0.10 × 222)`. The 222-NFT supply is small; quorum higher than 22 risks freezing governance entirely when participation is low, while quorum lower than 22 weakens capture resistance.
+- Contract default is `23 = ceil(0.10 × 222)`. The 222-NFT supply is small; quorum lower than 23 weakens capture resistance and diverges from the resolver's rounded-up requirement.
 - The 10 % figure mirrors the precedent recorded in [`docs/dao-governance.md`](../dao-governance.md) §"Voting Model" ("recommended: 10–20 % of supply"), at the conservative end of the band.
-- Authors **may raise** quorum per proposal via `SubmitProposal.quorum_threshold`. They **must not** lower it below 22: the runbook treats any value < 22 as a P-4 violation and aborts.
+- Authors **may raise** quorum per proposal via `SubmitProposal.quorum_threshold`. They **must not** lower it below 23: the runbook treats any value < 23 as a P-4 violation and aborts.
 
 ### P-5 — Decision rule: simple majority on non-abstain
 
@@ -108,7 +108,7 @@ The table below is the authoritative cross-walk between the **values in this doc
 |-----------|----------------|-------------------|--------|
 | P-1 | 222 NFTs | `DIAMONDS_TOTAL_SUPPLY = 222` | ✅ |
 | P-3 | 7 days = 604 800 s | `DEFAULT_VOTING_DURATION = 604800` | ✅ |
-| P-4 | 22 votes | `DEFAULT_QUORUM_THRESHOLD = 22` | ✅ |
+| P-4 | 23 votes | `DEFAULT_QUORUM_THRESHOLD = 23` | ✅ |
 | P-9 | 6 categories (0..5) | `CATEGORY_ROADMAP_SIGNAL = 0 … CATEGORY_ECOSYSTEM_GRANT_SIGNAL = 5` | ✅ |
 | P-10 | 3 vote options | `VOTE_FOR = 0`, `VOTE_AGAINST = 1`, `VOTE_ABSTAIN = 2` | ✅ |
 
@@ -142,7 +142,7 @@ The cooldown can be lengthened **per proposal** by the author. It cannot be shor
 |--------|------------------|
 | Adjust **on-chain default** (P-3, P-4) | Code change → new B2-style multi-sig ceremony → new contract address → manifest entry with `supersedes` set; previous contract is `paused` per [`docs/deployments/B2-mainnet/ROLLBACK_PROCEDURES.md`](../deployments/B2-mainnet/ROLLBACK_PROCEDURES.md) §3 |
 | Adjust **off-chain parameter** (P-7, P-8) | New governance proposal (category `ROADMAP_SIGNAL`), `ACCEPTED` outcome, ≥ 48 h cooldown, then a documentation PR that updates this file |
-| Lower P-3 below 7 days, lower P-4 below 22, lower P-8 below 48 h | **Forbidden** in the initial activation cycle. Requires a separate governance round following ratification of this document |
+| Lower P-3 below 7 days, lower P-4 below 23, lower P-8 below 48 h | **Forbidden** in the initial activation cycle. Requires a separate governance round following ratification of this document |
 | Add a new proposal category | **Forbidden** — categories are a fixed enum in the contract |
 
 ---
@@ -181,15 +181,15 @@ This section is the **complete inventory** of every parameter that can be change
 
 | # | Parameter | Contract | Type | Current value | Setter / mechanism | Access guard | Class |
 |---|-----------|----------|------|---------------|--------------------|--------------|-------|
-| PP-1 | `DEFAULT_VOTING_DURATION` | `ProposalRegistry.tact:49` | `const Int` | 604 800 s (7 days) | None — recompile | n/a (const) | **I** |
-| PP-2 | `DEFAULT_QUORUM_THRESHOLD` | `ProposalRegistry.tact:52` | `const Int` | 22 votes | None — recompile | n/a (const) | **I** |
-| PP-3 | `DIAMONDS_TOTAL_SUPPLY` | `ProposalRegistry.tact:128`, `SnapshotVerifier.tact:21` | `const Int` | 222 | None — recompile | n/a (const) | **I** |
-| PP-4 | `DIAMONDS_COLLECTION` | `ProposalRegistry.tact:125`, `SnapshotVerifier.tact:59` | `const Address` | `EQDiamondsCollectionAddressPlaceholder…` (overwritten by B2 deploy) | None — recompile | n/a (const) | **I** |
+| PP-1 | `DEFAULT_VOTING_DURATION` | `ProposalRegistry.tact:54` | `const Int` | 604 800 s (7 days) | None — recompile | n/a (const) | **I** |
+| PP-2 | `DEFAULT_QUORUM_THRESHOLD` | `ProposalRegistry.tact:62` | `const Int` | 23 votes | None — recompile | n/a (const) | **I** |
+| PP-3 | `DIAMONDS_TOTAL_SUPPLY` | `ProposalRegistry.tact:57`, `SnapshotVerifier.tact:21` | `const Int` | 222 | None — recompile | n/a (const) | **I** |
+| PP-4 | `DIAMONDS_COLLECTION` | `ProposalRegistry.tact:193`, `SnapshotVerifier.tact:59` | `const Address` | `EQDiamondsCollectionAddressPlaceholder…` (overwritten by B2 deploy) | None — recompile | n/a (const) | **I** |
 | PP-5 | Category enum `0..5` | `ProposalRegistry.tact:16-21` | `const Int` × 6 | `ROADMAP_SIGNAL … ECOSYSTEM_GRANT_SIGNAL` | None — recompile | n/a (const) | **I** |
 | PP-6 | Vote enum `0..2` | `ProposalRegistry.tact:30-32` | `const Int` × 3 | `FOR/AGAINST/ABSTAIN` | None — recompile | n/a (const) | **I** |
 | PP-7 | `proposal_registry: Address?` | `SnapshotVerifier.tact:62` | state, write-once | unset at init | `receive("set_registry")` (line 77) | sender = any, write-once guard on line 78 | **T** (write-once after deploy) |
 | PP-8 | `latest_snapshot_block`, `latest_snapshot_hash` | `TransparencyRegistry.tact:58-59` | state (data) | 0 / 0 | `RecordSnapshot` receiver (line 300) | sender = indexer wallet (deployment manifest); enforced off-chain pending [#41](https://github.com/xlabtg/tonbankcard-protocol/issues/41) | **G** |
-| PP-9 | `quorum_threshold` | `TransparencyRegistry.tact:62` | state (data), set in `init()` | 22 | none after `init()` | n/a (write-once) | **I** |
+| PP-9 | `quorum_threshold` | `TransparencyRegistry.tact:62` | state (data), set in `init()` | 23 | none after `init()` | n/a (write-once) | **I** |
 | PP-10 | Counters: `total_proposals`, `proposals_accepted`, `proposals_rejected`, `proposals_no_quorum` | `TransparencyRegistry.tact:52-55` | state (data) | 0 (incremented) | mirrored from `ProposalRegistry` via `RecordProposal` / `RecordVotingResult` | sender = indexer wallet | **U** (append-only mirror; not a governance parameter) |
 
 ### 8.3 Payment contracts
@@ -250,20 +250,20 @@ These handlers are **not** governance parameters. They are tracked in this docum
 
 ## 9. Governance-controlled parameters: per-parameter process
 
-For every parameter classified **G** in §8 the table below records the proposal category, the recommended quorum threshold (which may exceed the default 22-vote floor), and the timelock window observed off-chain before the multi-sig executes the setter message. The proposal template that fills in these fields lives in [`PARAMETER_CHANGES.md`](./PARAMETER_CHANGES.md).
+For every parameter classified **G** in §8 the table below records the proposal category, the recommended quorum threshold (which may exceed the default 23-vote floor), and the timelock window observed off-chain before the multi-sig executes the setter message. The proposal template that fills in these fields lives in [`PARAMETER_CHANGES.md`](./PARAMETER_CHANGES.md).
 
 | Parameter | Proposal category | Recommended quorum | Off-chain cooldown | Executor |
 |-----------|-------------------|--------------------|--------------------|----------|
-| PP-8 — TransparencyRegistry snapshot pointer | `RISK_DISCLOSURE` (3) | default (22) | 48 h | Indexer multi-sig (`B2-mainnet/multisig.indexer.json`) |
+| PP-8 — TransparencyRegistry snapshot pointer | `RISK_DISCLOSURE` (3) | default (23) | 48 h | Indexer multi-sig (`B2-mainnet/multisig.indexer.json`) |
 | PP-13 — PaymentHub whitelisted collections | `ROADMAP_SIGNAL` (0) | **44 (supermajority of voters needed; 20% of 222)** | 48 h | PaymentHub admin multi-sig |
-| PP-14 — PaymentHub account initialisation | `ROADMAP_SIGNAL` (0) | default (22) | 48 h | PaymentHub admin multi-sig |
+| PP-14 — PaymentHub account initialisation | `ROADMAP_SIGNAL` (0) | default (23) | 48 h | PaymentHub admin multi-sig |
 | PP-17 — MerchantPaymentHub whitelisted collections | `ROADMAP_SIGNAL` (0) | **44** | 48 h | MerchantPaymentHub admin multi-sig |
-| PP-18 — Merchant account state | `INTEGRATION_RECOMMENDATION` (1) | default (22) | 48 h | MerchantPaymentHub admin multi-sig |
+| PP-18 — Merchant account state | `INTEGRATION_RECOMMENDATION` (1) | default (23) | 48 h | MerchantPaymentHub admin multi-sig |
 | PP-19 — Merchant account balance (initial) | `INTEGRATION_RECOMMENDATION` (1) | **44** | 48 h | MerchantPaymentHub admin multi-sig |
-| PP-20 — Merchant account lock | `RISK_DISCLOSURE` (3) | default (22) | **24 h** (incident response — see [`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §4) | MerchantPaymentHub admin multi-sig |
+| PP-20 — Merchant account lock | `RISK_DISCLOSURE` (3) | default (23) | **24 h** (incident response — see [`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §4) | MerchantPaymentHub admin multi-sig |
 | PP-26 — CrossChainBridge relayer set | `INTEGRATION_RECOMMENDATION` (1) | **44** | 48 h | Bridge admin multi-sig |
-| PP-32 — PublicCollateralLookup wiring | `INTEGRATION_RECOMMENDATION` (1) | default (22) | 48 h | Lookup admin (multi-sig) |
-| PP-34 — NFTAccountResolver wiring | `INTEGRATION_RECOMMENDATION` (1) | default (22) | 48 h | Resolver admin (multi-sig); blocked on [#41](https://github.com/xlabtg/tonbankcard-protocol/issues/41) |
+| PP-32 — PublicCollateralLookup wiring | `INTEGRATION_RECOMMENDATION` (1) | default (23) | 48 h | Lookup admin (multi-sig) |
+| PP-34 — NFTAccountResolver wiring | `INTEGRATION_RECOMMENDATION` (1) | default (23) | 48 h | Resolver admin (multi-sig); blocked on [#41](https://github.com/xlabtg/tonbankcard-protocol/issues/41) |
 
 The **off-chain cooldown** is the minimum interval between `ProposalFinalized = ACCEPTED` and the moment the multi-sig sends the setter message on-chain. For lock-state changes (PP-20) the incident-response runbook permits a 24 h cooldown when the proposal cites a documented incident ticket; all other parameter changes default to the 48 h floor from §5.
 

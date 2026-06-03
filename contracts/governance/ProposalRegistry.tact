@@ -53,8 +53,14 @@ const REQUEST_KIND_PROPOSAL: Int = 1;
 // Default voting window (7 days in seconds)
 const DEFAULT_VOTING_DURATION: Int = 604800;
 
-// Default quorum threshold (10% of 222 = 22 votes minimum)
-const DEFAULT_QUORUM_THRESHOLD: Int = 22;
+// TBC Diamonds total supply and quorum policy.
+const DIAMONDS_TOTAL_SUPPLY: Int = 222;
+const DEFAULT_QUORUM_PERCENTAGE: Int = 10;
+const QUORUM_PERCENT_DENOMINATOR: Int = 100;
+
+// Default quorum threshold: ceil(222 * 10 / 100) = 23 votes.
+const DEFAULT_QUORUM_THRESHOLD: Int =
+    (DIAMONDS_TOTAL_SUPPLY * DEFAULT_QUORUM_PERCENTAGE + QUORUM_PERCENT_DENOMINATOR - 1) / QUORUM_PERCENT_DENOMINATOR;
 
 // ==================== DATA STRUCTURES ====================
 
@@ -186,9 +192,6 @@ contract ProposalRegistry with Deployable {
     // compiles.
     const DIAMONDS_COLLECTION: Address = address("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c");
 
-    // Total supply of TBC Diamonds
-    const DIAMONDS_TOTAL_SUPPLY: Int = 222;
-
     // Contract state
     proposal_count: Int as uint64;
     proposals: map<Int, Proposal>;
@@ -244,7 +247,7 @@ contract ProposalRegistry with Deployable {
         // Validate author NFT ID is valid Diamond (1-222)
         require(
             msg.author_nft_id >= 1 &&
-            msg.author_nft_id <= self.DIAMONDS_TOTAL_SUPPLY,
+            msg.author_nft_id <= DIAMONDS_TOTAL_SUPPLY,
             "Invalid Diamond NFT ID"
         );
 
@@ -255,7 +258,7 @@ contract ProposalRegistry with Deployable {
         // Validate quorum threshold
         let quorum: Int = msg.quorum_threshold > 0 ? msg.quorum_threshold : DEFAULT_QUORUM_THRESHOLD;
         require(quorum > 0, "Quorum must be positive");
-        require(quorum <= self.DIAMONDS_TOTAL_SUPPLY, "Quorum exceeds total supply");
+        require(quorum <= DIAMONDS_TOTAL_SUPPLY, "Quorum exceeds total supply");
 
         // The proposal is NOT recorded here. The sender's ownership of
         // author_nft_id must first be confirmed on-chain by the resolver. We
@@ -309,7 +312,7 @@ contract ProposalRegistry with Deployable {
         // Validate voter NFT ID is valid Diamond (1-222)
         require(
             msg.voter_nft_id >= 1 &&
-            msg.voter_nft_id <= self.DIAMONDS_TOTAL_SUPPLY,
+            msg.voter_nft_id <= DIAMONDS_TOTAL_SUPPLY,
             "Invalid Diamond NFT ID"
         );
 
@@ -610,7 +613,7 @@ contract ProposalRegistry with Deployable {
 
     // Get TBC Diamonds total supply
     get fun getDiamondsTotalSupply(): Int {
-        return self.DIAMONDS_TOTAL_SUPPLY;
+        return DIAMONDS_TOTAL_SUPPLY;
     }
 
     // Get default quorum threshold
