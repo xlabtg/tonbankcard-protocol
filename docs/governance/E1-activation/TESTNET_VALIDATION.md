@@ -95,12 +95,12 @@ Each step records actor, expected event, and pass/fail criteria. The full report
 | Field | Value |
 |-------|-------|
 | Actor | Maintainer multi-sig (via NFT-holder HW-1 wallet for authorship) |
-| Action | Send `ProposalRegistry.SubmitProposal{metadata_hash, author_nft_id=HW-1's NFT, category=0, voting_duration=604800, quorum_threshold=22 or testnet-supply, whichever is lower}` |
+| Action | Send `ProposalRegistry.SubmitProposal{metadata_hash, author_nft_id=HW-1's NFT, category=0, voting_duration=604800, quorum_threshold=23 or testnet-supply, whichever is lower}` |
 | Expected | `ProposalSubmitted` event emitted; `getProposalCount()` increments |
 | Pass | On-chain proposal matches the IPFS-pinned metadata (hash equality) |
 | Fail | Engagement restarts at Step 2 |
 
-> The testnet round-trip uses `min(22, testnet_supply)` for quorum so the round-trip can actually finalise as `ACCEPTED`. Mainnet `E1-PROP-001` uses the full `22`.
+> The testnet round-trip uses `min(23, testnet_supply)` for quorum so the round-trip can actually finalise as `ACCEPTED`. Mainnet `E1-PROP-001` uses the full `23`.
 
 ### Step 7 — Cast votes (≥ quorum)
 

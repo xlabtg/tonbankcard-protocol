@@ -234,7 +234,7 @@ No assumption in this document relies on "trust" alone.
 
 **Categories:** `ROADMAP_SIGNAL(0)` through `ECOSYSTEM_GRANT_SIGNAL(5)`.
 
-**Voting mechanism:** 1 Diamond NFT = 1 vote. Default quorum: 22/222 (10%). 7-day voting window.
+**Voting mechanism:** 1 Diamond NFT = 1 vote. Default quorum: 23/222 (ceil 10%). 7-day voting window.
 
 **Double-vote prevention:** Composite key `proposal_id * 1000 + nft_id`.
 
@@ -441,7 +441,7 @@ This section defines the adversary classes the protocol must defend against. Eac
 **Capabilities:**
 - Owns or has acquired one or more TBC Diamond NFTs (governance tokens).
 - Can submit proposals and cast votes.
-- Can collude with other NFT holders to reach quorum (22/222 = 10%).
+- Can collude with other NFT holders to reach quorum (23/222 = ceil 10%).
 
 **Motivations:** Proposal spam, social manipulation, forcing unfavorable governance outcomes.
 
@@ -598,7 +598,7 @@ This section defines the adversary classes the protocol must defend against. Eac
 
 **Analysis:**
 - Diamond NFTs have a fixed supply of 222. Acquiring governance power requires purchasing NFTs on the open market.
-- The low quorum (22/222 = 10%) means an attacker with 22 NFTs and a favorable vote split could pass proposals.
+- The low quorum (23/222 = ceil 10%) means an attacker with 23 NFTs and a favorable vote split could pass proposals.
 - However, governance proposals are non-executable, limiting the impact.
 
 **Residual risk:** LOW for protocol operations (non-executable governance). MEDIUM for social/reputational damage from malicious proposals.
@@ -1138,7 +1138,7 @@ A payment is considered final when:
 **Blast radius:**
 - Attacker gains 1+ governance votes.
 - Attacker can submit proposals and vote.
-- With 22+ compromised Diamonds (10% quorum), attacker can pass proposals.
+- With 23+ compromised Diamonds (ceil 10% quorum), attacker can pass proposals.
 - Governance proposals are non-executable — passed proposals have no on-chain effect.
 
 **Containment:**

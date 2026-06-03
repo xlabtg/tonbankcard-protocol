@@ -134,14 +134,14 @@ Once §4 is merged and `network-matrix.md` shows `activated: yes`:
 1. **Snapshot block.** Per [`../SNAPSHOT.md`](../SNAPSHOT.md) §3.2, the operator picks the snapshot block. Records it in [`STATUS.md`](./STATUS.md) §3.
 2. **Eligibility map.** Indexer builds the map per [`../SNAPSHOT.md`](../SNAPSHOT.md) §4. Operator pins proposal metadata to IPFS and records the CID.
 3. **`RegisterSnapshot`.** Multi-sig sends `SnapshotVerifier.RegisterSnapshot{proposal_id=1, timestamp=<gen_utime>, eligible_nfts=<map>}`. Awaits `SnapshotRegistered` event.
-4. **`SubmitProposal`.** Multi-sig sends `ProposalRegistry.SubmitProposal{metadata_hash=<sha256>, author_nft_id=<id>, category=0, voting_duration=604800, quorum_threshold=22}`. Awaits `ProposalSubmitted` event.
+4. **`SubmitProposal`.** Multi-sig sends `ProposalRegistry.SubmitProposal{metadata_hash=<sha256>, author_nft_id=<id>, category=0, voting_duration=604800, quorum_threshold=23}`. Awaits `ProposalSubmitted` event.
 5. **Communications.** Communications lead posts the proposal link on GitHub Discussions, the project README banner, and the merchant newsletter. The voting window is 7 days; communications cadence is `T+0`, `T+72h`, `T+144h`, `T+168h - 12h`.
 6. **Voting.** Holders cast votes from any TON wallet (TBC Diamonds NFT ownership at `snapshot_seqno` required).
 
 ### 5.1 Anti-foot-gun rules for §5
 
 - AF-E1-6. `RegisterSnapshot` **must** precede `SubmitProposal`. The runbook rejects the inverse order. Without snapshot, the contract's `isEligible` fallback would silently mark every NFT eligible — see [`../SNAPSHOT.md`](../SNAPSHOT.md) §4.1.
-- AF-E1-7. `quorum_threshold` **must** be ≥ 22. The runbook rejects smaller values.
+- AF-E1-7. `quorum_threshold` **must** be ≥ 23. The runbook rejects smaller values.
 - AF-E1-8. `voting_duration` **must** be ≥ 604 800. The runbook rejects smaller values.
 - AF-E1-9. The proposal author NFT ID **must** appear with `eligible = true` in the just-registered snapshot.
 - AF-E1-10. The proposal metadata hash on-chain **must** match the IPFS CID's SHA-256.

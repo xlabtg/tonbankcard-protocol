@@ -76,7 +76,7 @@ Filled atomically with the manifest commit in §6.
 | Testnet `TransparencyRegistry` address | TBD |
 | `SubmitProposal` tx | TBD |
 | `RegisterSnapshot` tx | TBD |
-| `CastVote` (≥ 22 votes) txs | TBD |
+| `CastVote` (≥ 23 votes) txs | TBD |
 | `FinalizeProposal` tx | TBD |
 | `TransparencyRegistry` mirror txs | TBD |
 | Audit-script verdict (`scripts/governance/audit-snapshot.ts`) | TBD |
@@ -124,7 +124,7 @@ Report PDF: `audit/governance-snapshots/E1-PROP-000-testnet.json` (placeholder u
 | `category` | `0` (ROADMAP_SIGNAL) |
 | `voting_start` | TBD |
 | `voting_end` | TBD (`voting_start + 604 800`) |
-| `quorum_threshold` | `22` |
+| `quorum_threshold` | `23` |
 | Author NFT ID | TBD |
 | Votes FOR / AGAINST / ABSTAIN | TBD |
 | Final outcome | TBD (`ACCEPTED` / `REJECTED` / `NO_QUORUM`) |

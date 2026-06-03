@@ -46,7 +46,7 @@ The author owns at least 1 TBC Diamonds NFT at the snapshot block and produces t
 
 > **Be it resolved by the TBC Diamonds holders that:**
 >
-> 1. The initial governance parameters published in `docs/governance/PARAMETERS.md` (commit `<sha>` of the TONBANKCARD repository) — specifically, voting period = 7 days, quorum = 22 votes, proposal threshold = 1 NFT, decision rule = simple majority on non-abstain, and the off-chain implementation cooldown of ≥ 48 hours — are hereby **ratified** as the baseline configuration of the DAO.
+> 1. The initial governance parameters published in `docs/governance/PARAMETERS.md` (commit `<sha>` of the TONBANKCARD repository) — specifically, voting period = 7 days, quorum = 23 votes, proposal threshold = 1 NFT, decision rule = simple majority on non-abstain, and the off-chain implementation cooldown of ≥ 48 hours — are hereby **ratified** as the baseline configuration of the DAO.
 >
 > 2. The voter snapshot methodology published in `docs/governance/SNAPSHOT.md` (same commit) — specifically, the NFT-only eligibility model, the 24-hour cool-down between draft and snapshot block selection, the exclusion list as published at `excluded_addresses_version = <ver>`, and the on-chain `SnapshotVerifier.RegisterSnapshot` ordering before `ProposalRegistry.SubmitProposal` — is hereby **ratified** as the canonical procedure for selecting voters.
 >
@@ -89,7 +89,7 @@ The following address classes are excluded from voting at snapshot time per [`..
 | `AGAINST` | `1` | Object to one or more items in §3 (objection should be posted in the discussion thread) |
 | `ABSTAIN` | `2` | Counts towards quorum but not towards direction |
 
-Quorum: **22 votes** (P-4). Decision rule: simple majority on non-abstain (P-5) after quorum.
+Quorum: **23 votes** (P-4). Decision rule: simple majority on non-abstain (P-5) after quorum.
 
 ---
 
