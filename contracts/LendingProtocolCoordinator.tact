@@ -211,14 +211,19 @@ contract LendingProtocolCoordinator {
             return;
         }
 
-        let current_time: Int = now();
+        let existing: LendingIntentInfo? = self.lending_intents.get(msg.nft_address);
+        require(existing != null, "No lending intent");
+
+        let i: LendingIntentInfo = existing!!;
+        require(i.intent_state == LENDING_INTENT_ACTIVE, "Lending intent is not active");
 
         // Create cancelled intent info
+        let current_time: Int = now();
         let cancelled_info: LendingIntentInfo = LendingIntentInfo{
             intent_state: LENDING_INTENT_CANCELLED,
-            collateral_signal_amount: 0,
-            target_lender: 0,
-            created_at: current_time,
+            collateral_signal_amount: i.collateral_signal_amount,
+            target_lender: i.target_lender,
+            created_at: i.created_at,
             updated_at: current_time
         };
 
