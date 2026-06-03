@@ -19,17 +19,17 @@ trait ICollateralSignal {
 
     // Get the full collateral signal information for an NFT account
     // Returns: CollateralSignalInfo struct with state, amount, and timestamps
-    get fun getCollateralSignalInfo(nft_address: Address): CollateralSignalInfo;
+    abstract get fun getCollateralSignalInfo(nft_address: Address): CollateralSignalInfo;
 
     // Get the current collateral signal state for an NFT account
     // Returns: NONE (0), ACTIVE (1), WARNING (2), or RELEASED (3)
-    get fun getCollateralSignalState(nft_address: Address): Int;
+    abstract get fun getCollateralSignalState(nft_address: Address): Int;
 
     // Get the signaled collateral amount for an NFT account (informational only)
     // Returns: The amount of TON signaled as collateral (does NOT imply custody)
-    get fun getSignaledCollateralAmount(nft_address: Address): Int;
+    abstract get fun getSignaledCollateralAmount(nft_address: Address): Int;
 
     // Check if an NFT account has active collateral signaled
     // Returns: true if state is ACTIVE or WARNING
-    get fun hasActiveCollateralSignal(nft_address: Address): Bool;
+    abstract get fun hasActiveCollateralSignal(nft_address: Address): Bool;
 }

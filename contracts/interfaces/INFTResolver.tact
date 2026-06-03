@@ -6,8 +6,8 @@
 trait INFTResolver {
 
     // Get the owner of an NFT card
-    get fun getOwner(nft_address: Address): Address;
+    abstract get fun getOwner(nft_address: Address): Address;
 
     // Verify that sender is the owner of the NFT
-    get fun isOwner(nft_address: Address, claimed_owner: Address): Bool;
+    abstract get fun isOwner(nft_address: Address, claimed_owner: Address): Bool;
 }
