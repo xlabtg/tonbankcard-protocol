@@ -466,4 +466,85 @@ describe('CollateralSignal - Adversarial Tests', () => {
             expect(infoAfter.updated_at).toBeGreaterThanOrEqual(infoBefore.updated_at);
         });
     });
+
+    // Regression test for CONTRACTS-M1: write-once guard on RegisterNFTOwner
+    describe('Write-Once Owner Registration (CONTRACTS-M1)', () => {
+        it('should allow first-time NFT owner registration', async () => {
+            const newUser = await blockchain.treasury('newUser');
+
+            const result = await collateralSignal.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                {
+                    $$type: 'RegisterNFTOwner',
+                    nft_address: newUser.address,
+                    owner: newUser.address,
+                }
+            );
+
+            expect(result.transactions).toHaveTransaction({
+                from: deployer.address,
+                to: collateralSignal.address,
+                success: true,
+            });
+        });
+
+        it('should reject re-registration of an already-registered NFT owner', async () => {
+            const attacker2 = await blockchain.treasury('attacker2');
+
+            // Attempt to overwrite Alice's existing registration with a new owner
+            const result = await collateralSignal.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                {
+                    $$type: 'RegisterNFTOwner',
+                    nft_address: alice.address,
+                    owner: attacker2.address,
+                }
+            );
+
+            expect(result.transactions).toHaveTransaction({
+                from: deployer.address,
+                to: collateralSignal.address,
+                success: false,
+                exitCode: expect.any(Number),
+            });
+        });
+
+        it('should preserve original owner binding after rejected re-registration', async () => {
+            const attacker2 = await blockchain.treasury('attacker2');
+
+            // Attempt to overwrite Alice's existing registration
+            await collateralSignal.send(
+                deployer.getSender(),
+                { value: toNano('0.01') },
+                {
+                    $$type: 'RegisterNFTOwner',
+                    nft_address: alice.address,
+                    owner: attacker2.address,
+                }
+            );
+
+            // Alice must still be able to act as owner of her NFT
+            const result = await collateralSignal.send(
+                alice.getSender(),
+                { value: toNano('0.05') },
+                {
+                    $$type: 'UpdateCollateralSignalRequest',
+                    nft_address: alice.address,
+                    new_state: COLLATERAL_SIGNAL_WARNING,
+                    collateral_amount_ton: toNano('500'),
+                }
+            );
+
+            expect(result.transactions).toHaveTransaction({
+                from: alice.address,
+                to: collateralSignal.address,
+                success: true,
+            });
+
+            const signalState = await collateralSignal.getGetCollateralSignalState(alice.address);
+            expect(signalState).toEqual(BigInt(COLLATERAL_SIGNAL_WARNING));
+        });
+    });
 });

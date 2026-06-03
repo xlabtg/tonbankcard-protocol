@@ -366,6 +366,7 @@ contract CollateralSignal with ICollateralSignal {
     receive(msg: RegisterNFTOwner) {
         // Gate: only the deployer can seed test ownership.
         require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
+        require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
         self.nft_owners.set(msg.nft_address, msg.owner);
     }
 }
