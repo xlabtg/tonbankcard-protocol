@@ -1,12 +1,17 @@
 name: Workflow Policy
 
-# Enforces the DEVOPS-H3 hardening rule: every GitHub Actions workflow must
-# declare an explicit top-level `permissions:` block so GITHUB_TOKEN never
-# silently inherits the repository-wide (potentially read-write) default.
+# Enforces workflow hardening rules:
+#   * DEVOPS-H3: every GitHub Actions workflow must declare an explicit
+#     top-level `permissions:` block so GITHUB_TOKEN never silently inherits
+#     the repository-wide (potentially read-write) default.
+#   * DEVOPS-M1: third-party GitHub Actions must be pinned to full commit SHAs
+#     with trailing human-readable version comments.
 #
 # References:
 #   * issue #263 (DEVOPS-H3)
+#   * issue #283 (DEVOPS-M1)
 #   * scripts/tooling/check-workflow-permissions.sh
+#   * scripts/tooling/check-workflow-action-pins.sh
 
 on:
   push:
@@ -14,11 +19,13 @@ on:
     paths:
       - '.github/workflows/**'
       - 'scripts/tooling/check-workflow-permissions.sh'
+      - 'scripts/tooling/check-workflow-action-pins.sh'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/**'
       - 'scripts/tooling/check-workflow-permissions.sh'
+      - 'scripts/tooling/check-workflow-action-pins.sh'
 
 permissions:
   contents: read
@@ -32,3 +39,6 @@ jobs:
 
       - name: Check workflow permissions blocks
         run: bash scripts/tooling/check-workflow-permissions.sh
+
+      - name: Check third-party action pinning
+        run: bash scripts/tooling/check-workflow-action-pins.sh
