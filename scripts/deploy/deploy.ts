@@ -69,7 +69,8 @@ const DEPLOYMENT_ORDER = [
   'PaymentHub',
   'MerchantPaymentHub',
   'CollateralSignal',
-  'PublicCollateralLookup',
+  // PublicCollateralLookup is excluded until hasActiveCollateral reads
+  // Account Locks state instead of returning a stubbed default.
 ] as const;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -26,10 +26,11 @@
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import '@ton/test-utils';
-import { toNano } from '@ton/core';
+import { Dictionary, toNano } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
 import { ProposalRegistry } from './dist/TestHarness_ProposalRegistry';
 import { TestOwnershipResolver } from './dist/TestHarness_TestOwnershipResolver';
+import { SnapshotVerifier } from './dist/SnapshotVerifier_SnapshotVerifier';
 
 // Mirror of the Tact constants (bigint to match generated types).
 const VOTE_FOR = 0n;
@@ -45,6 +46,7 @@ const RESOLVER_STYLE_DEFAULT_QUORUM =
     (TOTAL_DIAMONDS * DEFAULT_QUORUM_PERCENTAGE + PERCENT_DENOMINATOR - 1n) / PERCENT_DENOMINATOR;
 
 const GAS = toNano('0.2');
+const SNAPSHOT_GAS = toNano('2');
 
 describe('ProposalRegistry — on-chain NFT ownership verification', () => {
     let blockchain: Blockchain;
@@ -54,6 +56,7 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
     let attacker: SandboxContract<TreasuryContract>;
     let registry: SandboxContract<ProposalRegistry>;
     let resolver: SandboxContract<TestOwnershipResolver>;
+    let verifier: SandboxContract<SnapshotVerifier>;
 
     async function deployRegistry() {
         const r = blockchain.openContract(await ProposalRegistry.fromInit());
@@ -67,12 +70,49 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
         return r;
     }
 
+    async function deployVerifier() {
+        const v = blockchain.openContract(await SnapshotVerifier.fromInit());
+        await v.send(deployer.getSender(), { value: toNano('0.1') }, { $$type: 'Deploy', queryId: 0n });
+        return v;
+    }
+
     async function registerOwner(nftId: bigint, owner: SandboxContract<TreasuryContract>) {
         await resolver.send(
             deployer.getSender(),
             { value: GAS },
             { $$type: 'RegisterOwner', nft_id: nftId, owner: owner.address }
         );
+    }
+
+    async function registerSnapshot(proposalId: bigint, eligibleIds: bigint[]) {
+        const eligibleNfts = Dictionary.empty(Dictionary.Keys.BigInt(257), Dictionary.Values.Bool());
+        for (const nftId of eligibleIds) {
+            eligibleNfts.set(nftId, true);
+        }
+
+        const result = await verifier.send(
+            deployer.getSender(),
+            { value: SNAPSHOT_GAS },
+            {
+                $$type: 'RegisterSnapshot',
+                proposal_id: proposalId,
+                timestamp: BigInt(blockchain.now ?? Math.floor(Date.now() / 1000)),
+                eligible_nfts: eligibleNfts,
+            }
+        );
+        expect(result.transactions).toHaveTransaction({
+            from: deployer.address,
+            to: verifier.address,
+            success: true,
+        });
+    }
+
+    async function registerRangeSnapshot(proposalId: bigint, start: bigint, end: bigint) {
+        const eligibleIds: bigint[] = [];
+        for (let nftId = start; nftId <= end; nftId++) {
+            eligibleIds.push(nftId);
+        }
+        await registerSnapshot(proposalId, eligibleIds);
     }
 
     // Submit a proposal authored by `author`, claiming `nftId`, and return the
@@ -119,12 +159,18 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
 
         registry = await deployRegistry();
         resolver = await deployResolver();
+        verifier = await deployVerifier();
 
         // One-time deployer-gated resolver configuration.
         await registry.send(
             deployer.getSender(),
             { value: GAS },
             { $$type: 'SetOwnerResolver', resolver: resolver.address }
+        );
+        await registry.send(
+            deployer.getSender(),
+            { value: GAS },
+            { $$type: 'SetSnapshotVerifier', verifier: verifier.address }
         );
 
         // Seed authoritative ownership: NFT #1 -> ownerOf1, NFT #2 -> ownerOf2.
@@ -141,6 +187,9 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
         const configured = await registry.getGetOwnerResolver();
         expect(configured).not.toBeNull();
         expect(configured!.toString()).toBe(resolver.address.toString());
+        const snapshotVerifier = await registry.getGetSnapshotVerifier();
+        expect(snapshotVerifier).not.toBeNull();
+        expect(snapshotVerifier!.toString()).toBe(verifier.address.toString());
     });
 
     it('allows the deployer to set the resolver only once', async () => {
@@ -218,6 +267,7 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
         expect(proposal!.quorum_threshold).toBe(RESOLVER_STYLE_DEFAULT_QUORUM);
 
         const boundaryVotes = RESOLVER_STYLE_DEFAULT_QUORUM - 1n;
+        await registerRangeSnapshot(1n, 2n, boundaryVotes + 1n);
         for (let offset = 0n; offset < boundaryVotes; offset++) {
             const nftId = offset + 2n;
             const voter = await blockchain.treasury(`boundaryVoter${nftId}`);
@@ -242,12 +292,23 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
 
     it('lets the legitimate owner cast a vote (ownership confirmed)', async () => {
         await submitProposal(ownerOf1, 1n);
+        await registerSnapshot(1n, [2n]);
 
         await castVote(ownerOf2, 1n, 2n, VOTE_FOR);
 
         expect(await registry.getHasVoted(1n, 2n)).toBe(true);
         const counts = await registry.getGetVoteCounts(1n);
         expect(counts.get(VOTE_FOR)).toBe(1n);
+    });
+
+    it('does NOT record a vote when no snapshot is registered for the proposal', async () => {
+        await submitProposal(ownerOf1, 1n);
+
+        await castVote(ownerOf2, 1n, 2n, VOTE_FOR);
+
+        expect(await registry.getHasVoted(1n, 2n)).toBe(false);
+        const counts = await registry.getGetVoteCounts(1n);
+        expect(counts.get(VOTE_FOR) ?? 0n).toBe(0n);
     });
 
     // ========================================================================
@@ -265,6 +326,7 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
 
     it('does NOT record a vote when the voter does not own the NFT', async () => {
         await submitProposal(ownerOf1, 1n);
+        await registerSnapshot(1n, [2n]);
 
         // attacker tries to vote with NFT #2 (owned by ownerOf2).
         await castVote(attacker, 1n, 2n, VOTE_FOR);
@@ -276,6 +338,7 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
 
     it('prevents a single wallet from accumulating votes for NFTs it does not own', async () => {
         await submitProposal(ownerOf1, 1n);
+        await registerRangeSnapshot(1n, 1n, 50n);
 
         // The classic attack: one wallet iterates over many Diamond NFT IDs.
         // Only NFTs actually owned by the attacker would resolve to it; here the
@@ -295,6 +358,7 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
 
     it('records exactly one vote when the wallet owns exactly one NFT', async () => {
         await submitProposal(ownerOf1, 1n);
+        await registerSnapshot(1n, [2n]);
 
         // ownerOf2 owns only NFT #2. Even if it tries other NFT IDs, only #2 counts.
         await castVote(ownerOf2, 1n, 1n, VOTE_FOR); // not owned -> ignored
@@ -310,6 +374,7 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
 
     it('prevents the same owner from voting twice on the same proposal', async () => {
         await submitProposal(ownerOf1, 1n);
+        await registerSnapshot(1n, [2n]);
 
         await castVote(ownerOf2, 1n, 2n, VOTE_FOR);
         await castVote(ownerOf2, 1n, 2n, VOTE_AGAINST); // double-vote attempt
