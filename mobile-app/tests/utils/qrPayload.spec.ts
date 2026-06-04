@@ -33,6 +33,14 @@ describe('parseScannedPayment', () => {
     });
   });
 
+  it('rejects ton:// links with an unsafe return URL', () => {
+    const link =
+      `ton://transfer/${VALID_ADDRESS}?amount=1000000000` +
+      `&return=${encodeURIComponent('javascript:alert(1)')}`;
+
+    expect(parseScannedPayment(link)).toBeNull();
+  });
+
   it('rejects ton:// links with an invalid recipient address', () => {
     const link = 'ton://transfer/garbage?amount=1000';
     expect(parseScannedPayment(link)).toBeNull();

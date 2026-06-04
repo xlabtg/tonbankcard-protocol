@@ -140,6 +140,8 @@ describe('Utils', () => {
 
   describe('generateInvoiceLink', () => {
     const merchantNft = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le';
+    const rawMerchantNft =
+      '0:0000000000000000000000000000000000000000000000000000000000000000';
 
     it('should generate a basic ton:// link', () => {
       const link = generateInvoiceLink(merchantNft, {
@@ -148,6 +150,15 @@ describe('Utils', () => {
       expect(link).toContain('ton://transfer/');
       expect(link).toContain(merchantNft);
       expect(link).toContain('amount=1000000000');
+    });
+
+    it('should encode raw-form merchant addresses in the link path', () => {
+      const link = generateInvoiceLink(rawMerchantNft, {
+        amountTbc: '1000000000',
+      });
+
+      expect(link).toContain(`ton://transfer/${encodeURIComponent(rawMerchantNft)}?`);
+      expect(link).not.toContain(`ton://transfer/${rawMerchantNft}?`);
     });
 
     it('should include order ID in link text', () => {

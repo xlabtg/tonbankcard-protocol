@@ -7,7 +7,12 @@
  * - Universal HTTPS links are preferred for App Review compatibility.
  */
 
-import { PaymentService, type PaymentRequest, isValidTonAddress } from '@tonbankcard/mobile-core';
+import {
+  PaymentService,
+  type PaymentRequest,
+  isAllowedReturnUrl,
+  isValidTonAddress,
+} from '@tonbankcard/mobile-core';
 
 export type WalletScheme = 'tonkeeper' | 'tonhub' | 'mytonwallet' | 'openmask' | 'universal';
 
@@ -47,12 +52,16 @@ export function buildPaymentDeepLink(
   const search = tonLink.includes('?') ? tonLink.slice(tonLink.indexOf('?')) : '';
   return {
     tonLink,
-    walletLink: `${base}${options.request.merchantNft}${search}`,
+    walletLink: `${base}${encodeURIComponent(options.request.merchantNft)}${search}`,
     scheme,
   };
 }
 
-const TON_LINK_RE = /^ton:\/\/transfer\/([A-Za-z0-9_\-:]+)\?(.+)$/;
+const TON_LINK_RE = /^ton:\/\/transfer\/([^?]+)\?(.+)$/;
+
+export interface ParseTonLinkOptions {
+  readonly allowedReturnUrlHosts?: readonly string[];
+}
 
 export interface ParsedTonLink {
   readonly recipient: string;
@@ -61,20 +70,38 @@ export interface ParsedTonLink {
   readonly returnUrl?: string;
 }
 
-export function parseTonLink(link: string): ParsedTonLink | null {
+export function parseTonLink(
+  link: string,
+  options: ParseTonLinkOptions = {},
+): ParsedTonLink | null {
   const match = TON_LINK_RE.exec(link);
   if (!match) {
     return null;
   }
-  const [, recipient, query] = match;
+  const [, encodedRecipient, query] = match;
+  let recipient: string;
+  try {
+    recipient = decodeURIComponent(encodedRecipient);
+  } catch {
+    return null;
+  }
+  if (!isValidTonAddress(recipient)) {
+    return null;
+  }
   const params = new URLSearchParams(query);
   const amount = params.get('amount') ?? undefined;
   const text = params.get('text') ?? undefined;
   const returnUrl = params.get('return') ?? undefined;
+  if (
+    returnUrl &&
+    !isAllowedReturnUrl(returnUrl, { allowedHosts: options.allowedReturnUrlHosts })
+  ) {
+    return null;
+  }
   return {
     recipient,
     amount,
-    text: text ? decodeURIComponent(text) : undefined,
+    text: text && text.length > 0 ? text : undefined,
     returnUrl,
   };
 }

@@ -31,6 +31,9 @@ export interface MobileConfig {
 
   /** Optional API endpoint for data queries (read-only) */
   apiEndpoint?: string;
+
+  /** Optional exact host allowlist for HTTPS payment return URLs */
+  allowedReturnUrlHosts?: readonly string[];
 }
 
 /**

@@ -10,6 +10,8 @@
  * - TON Connect protocol:   https://docs.ton.org/develop/dapps/ton-connect/protocol
  */
 
+import { Address } from '@ton/core';
+
 import { KNOWN_WALLETS, type TonConnectWallet } from './wallets';
 import type { TonConnectManifest } from './manifest';
 
@@ -71,11 +73,9 @@ function assertValidAddress(address: string): void {
   if (typeof address !== 'string' || address.length === 0) {
     throw new Error('address is required');
   }
-  // Raw form: 0:hex64. User-friendly form: 48 base64url chars.
-  // Accept either; defer strict checksum validation to consumers using
-  // @ton/core if needed.
-  const valid = /^[A-Za-z0-9_\-:]{40,80}$/.test(address);
-  if (!valid) {
+  try {
+    Address.parse(address);
+  } catch {
     throw new Error(`invalid TON address: ${address}`);
   }
 }
@@ -115,8 +115,8 @@ export function buildTonTransferLink(params: TonTransferParams): string {
 
   const qs = query.toString();
   return qs.length > 0
-    ? `ton://transfer/${params.address}?${qs}`
-    : `ton://transfer/${params.address}`;
+    ? `ton://transfer/${encodeURIComponent(params.address)}?${qs}`
+    : `ton://transfer/${encodeURIComponent(params.address)}`;
 }
 
 /**

@@ -42,6 +42,30 @@ describe('HttpsClient', () => {
     );
   });
 
+  it('accepts HTTPS URLs using a case-insensitive protocol', async () => {
+    const fetchImpl = makeFetch();
+    const client = new HttpsClient({ fetchImpl });
+
+    await expect(client.fetch('HTTPS://api.tonbankcard.app/health')).resolves.toHaveProperty(
+      'status',
+      200,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects whitespace-padded and backslash-obfuscated URLs before fetch', async () => {
+    const fetchImpl = makeFetch();
+    const client = new HttpsClient({ fetchImpl });
+
+    await expect(client.fetch(' https://api.tonbankcard.app/health')).rejects.toBeInstanceOf(
+      HttpsOnlyError,
+    );
+    await expect(client.fetch('https:\\\\api.tonbankcard.app\\health')).rejects.toBeInstanceOf(
+      HttpsOnlyError,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('exposes configured pins for matching hosts only', () => {
     const client = new HttpsClient({
       pins: [

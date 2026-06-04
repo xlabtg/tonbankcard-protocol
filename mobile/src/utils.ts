@@ -6,6 +6,10 @@ import { Address } from '@ton/core';
 
 const NANOCOINS_PER_TBC = 1_000_000_000n;
 
+export interface ReturnUrlValidationOptions {
+  readonly allowedHosts?: readonly string[];
+}
+
 function assertDecimalPlaces(decimals: number): number {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
     throw new RangeError('decimals must be an integer between 0 and 100');
@@ -135,4 +139,52 @@ export function assertAmount(amount: string): string {
     throw new Error(`Invalid amount: ${String(amount)}`);
   }
   return amount;
+}
+
+/**
+ * Validate a post-payment return URL before embedding or exposing it.
+ *
+ * The default policy is intentionally narrow: absolute HTTPS URLs only.
+ * Callers that know their merchant/app callback hosts can additionally
+ * supply an exact hostname allowlist.
+ */
+export function isAllowedReturnUrl(
+  returnUrl: string,
+  options: ReturnUrlValidationOptions = {}
+): boolean {
+  if (typeof returnUrl !== 'string' || returnUrl.length === 0) {
+    return false;
+  }
+  if (returnUrl !== returnUrl.trim()) {
+    return false;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(returnUrl);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'https:') {
+    return false;
+  }
+
+  const allowedHosts = options.allowedHosts;
+  if (allowedHosts && allowedHosts.length > 0) {
+    const host = parsed.hostname.toLowerCase();
+    return allowedHosts.some((allowed) => allowed.toLowerCase() === host);
+  }
+
+  return true;
+}
+
+export function assertReturnUrl(
+  returnUrl: string,
+  options: ReturnUrlValidationOptions = {}
+): string {
+  if (!isAllowedReturnUrl(returnUrl, options)) {
+    throw new Error(`Invalid return URL: ${String(returnUrl)}`);
+  }
+  return returnUrl;
 }

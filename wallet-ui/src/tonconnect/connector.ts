@@ -9,6 +9,8 @@
  * Reference: https://docs.ton.org/develop/dapps/ton-connect/protocol
  */
 
+import { Address } from '@ton/core';
+
 import {
   buildWalletConnectLink,
   buildWalletTransferLink,
@@ -66,6 +68,15 @@ export interface ConnectorStorage {
 }
 
 const DEFAULT_STORAGE_KEY = 'tonbankcard.tonconnect.session';
+
+function isValidTonAddress(address: string): boolean {
+  try {
+    Address.parse(address);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function defaultStorage(): ConnectorStorage {
   if (typeof localStorage !== 'undefined') {
@@ -213,6 +224,9 @@ export class TonConnectConnector {
     if (!reply.address) {
       throw new Error('reply must include address');
     }
+    if (!isValidTonAddress(reply.address)) {
+      throw new Error(`invalid TON address: ${reply.address}`);
+    }
     const walletId = reply.walletId ?? this.state.walletId;
     const wallet = walletId ? getWalletById(walletId) : undefined;
     if (!wallet) {
@@ -281,6 +295,14 @@ export class TonConnectConnector {
           parsed.status === 'connected' ||
           parsed.status === 'disconnected')
       ) {
+        if (parsed.address && !isValidTonAddress(parsed.address)) {
+          this.storage.remove(this.opts.storageKey);
+          return { status: 'disconnected' };
+        }
+        if (parsed.status === 'connected' && !parsed.address) {
+          this.storage.remove(this.opts.storageKey);
+          return { status: 'disconnected' };
+        }
         return parsed;
       }
       return { status: 'disconnected' };

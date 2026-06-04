@@ -3,6 +3,7 @@ export {
   parseTonLink,
   type BuildDeepLinkOptions,
   type DeepLinkBundle,
+  type ParseTonLinkOptions,
   type ParsedTonLink,
   type WalletScheme,
 } from './deepLink';

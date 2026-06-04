@@ -10,6 +10,8 @@ import {
 } from '../../src/tonconnect/connector';
 
 const MANIFEST_URL = 'https://tonbankcard.com/tonconnect-manifest.json';
+const VALID_ADDRESS = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le';
+const STORAGE_KEY = 'tonbankcard.tonconnect.session';
 
 function memoryStorage(): ConnectorStorage {
   const m = new Map<string, string>();
@@ -79,13 +81,11 @@ describe('TonConnectConnector', () => {
   it('applyReply() transitions pending -> connected', () => {
     const c = new TonConnectConnector({ manifestUrl: MANIFEST_URL, storage });
     c.connect('tonkeeper');
-    c.applyReply({ address: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le' });
+    c.applyReply({ address: VALID_ADDRESS });
     const state = c.getState();
     expect(state.status).toBe('connected');
     expect(state.walletId).toBe('tonkeeper');
-    expect(state.address).toBe(
-      'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'
-    );
+    expect(state.address).toBe(VALID_ADDRESS);
   });
 
   it('applyReply() requires pending state', () => {
@@ -95,13 +95,21 @@ describe('TonConnectConnector', () => {
     );
   });
 
+  it('applyReply() rejects invalid wallet addresses', () => {
+    const c = new TonConnectConnector({ manifestUrl: MANIFEST_URL, storage });
+    c.connect('tonkeeper');
+    expect(() => c.applyReply({ address: 'not-a-ton-address' })).toThrow(
+      /invalid TON address/
+    );
+  });
+
   it('persists state to storage and reloads it', () => {
     const c1 = new TonConnectConnector({
       manifestUrl: MANIFEST_URL,
       storage,
     });
     c1.connect('tonkeeper');
-    c1.applyReply({ address: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le' });
+    c1.applyReply({ address: VALID_ADDRESS });
 
     const c2 = new TonConnectConnector({
       manifestUrl: MANIFEST_URL,
@@ -116,7 +124,7 @@ describe('TonConnectConnector', () => {
     const c = new TonConnectConnector({ manifestUrl: MANIFEST_URL, storage });
     c.on(e => events.push(e));
     c.connect('tonkeeper');
-    c.applyReply({ address: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le' });
+    c.applyReply({ address: VALID_ADDRESS });
     c.disconnect();
 
     expect(c.getState().status).toBe('disconnected');
@@ -156,9 +164,9 @@ describe('TonConnectConnector', () => {
   it('buildTransferLink() returns a universal HTTPS link for Tonkeeper', () => {
     const c = new TonConnectConnector({ manifestUrl: MANIFEST_URL, storage });
     c.connect('tonkeeper');
-    c.applyReply({ address: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le' });
+    c.applyReply({ address: VALID_ADDRESS });
     const link = c.buildTransferLink({
-      address: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le',
+      address: VALID_ADDRESS,
       amount: '1000000000',
     });
     expect(link.startsWith('https://app.tonkeeper.com/transfer/')).toBe(true);
@@ -170,10 +178,26 @@ describe('TonConnectConnector', () => {
     const c = new TonConnectConnector({ manifestUrl: MANIFEST_URL, storage });
     c.on(e => events.push(e));
     c.connect('tonkeeper');
-    c.applyReply({ address: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le' });
+    c.applyReply({ address: VALID_ADDRESS });
 
     const types = events.map(e => e.type);
     expect(types).toContain('statusChange');
     expect(types).toContain('connected');
+  });
+
+  it('drops a persisted connected session with a tampered address', () => {
+    storage.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        status: 'connected',
+        walletId: 'tonkeeper',
+        address: 'not-a-ton-address',
+      })
+    );
+
+    const c = new TonConnectConnector({ manifestUrl: MANIFEST_URL, storage });
+
+    expect(c.getState().status).toBe('disconnected');
+    expect(storage.get(STORAGE_KEY)).toBeNull();
   });
 });

@@ -13,6 +13,8 @@ import {
 import { KNOWN_WALLETS, getWalletById } from '../../src/tonconnect/wallets';
 
 const ADDRESS = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le';
+const RAW_ADDRESS =
+  '0:0000000000000000000000000000000000000000000000000000000000000000';
 const MANIFEST = 'https://tonbankcard.com/tonconnect-manifest.json';
 
 describe('buildTonTransferLink', () => {
@@ -43,6 +45,20 @@ describe('buildTonTransferLink', () => {
     expect(() => buildTonTransferLink({ address: '' })).toThrow(/address/);
     expect(() => buildTonTransferLink({ address: 'not-a-ton-addr' })).toThrow(
       /invalid TON address/
+    );
+  });
+
+  it('rejects checksum-corrupted user-friendly addresses', () => {
+    expect(() =>
+      buildTonTransferLink({
+        address: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Lf',
+      })
+    ).toThrow(/invalid TON address/);
+  });
+
+  it('encodes raw-form addresses before interpolating them into the path', () => {
+    expect(buildTonTransferLink({ address: RAW_ADDRESS })).toBe(
+      `ton://transfer/${encodeURIComponent(RAW_ADDRESS)}`
     );
   });
 });
