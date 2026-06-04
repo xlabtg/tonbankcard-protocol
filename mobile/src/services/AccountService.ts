@@ -8,6 +8,7 @@
  */
 
 import { MobileConfig, CardAccount, AccountState } from '../types';
+import { formatTBC } from '../utils';
 
 /**
  * Account Service
@@ -83,8 +84,7 @@ export class AccountService {
    * @returns Formatted balance string
    */
   formatBalance(nanocoins: string, decimals: number = 2): string {
-    const tbc = Number(nanocoins) / 1e9;
-    return tbc.toFixed(decimals);
+    return formatTBC(nanocoins, decimals);
   }
 
   /**

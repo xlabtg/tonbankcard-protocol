@@ -55,6 +55,16 @@ describe('AccountService', () => {
     it('should handle small amounts', () => {
       expect(service.formatBalance('123456789')).toBe('0.12');
     });
+
+    it('should format amounts above Number.MAX_SAFE_INTEGER exactly', () => {
+      expect(service.formatBalance('90071992547409910', 9)).toBe(
+        '90071992.547409910'
+      );
+    });
+
+    it('should round fractional display values without floating point drift', () => {
+      expect(service.formatBalance('995000000')).toBe('1.00');
+    });
   });
 
   describe('getStateLabel', () => {

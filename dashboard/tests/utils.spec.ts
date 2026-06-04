@@ -41,6 +41,14 @@ describe('Utils', () => {
     it('should handle 0 decimals', () => {
       expect(formatTBC('10500000000', 0)).toBe('11');
     });
+
+    it('should format amounts above Number.MAX_SAFE_INTEGER exactly', () => {
+      expect(formatTBC('90071992547409910', 9)).toBe('90071992.547409910');
+    });
+
+    it('should round fractional display values without floating point drift', () => {
+      expect(formatTBC('995000000')).toBe('1.00');
+    });
   });
 
   describe('shortAddress', () => {
@@ -94,6 +102,16 @@ describe('Utils', () => {
 
     it('should format large amounts', () => {
       expect(formatCurrency('1000000000000')).toBe('1,000.00 TBC');
+    });
+
+    it('should format very large currency values exactly', () => {
+      expect(formatCurrency('123456789012345678901234567890')).toBe(
+        '123,456,789,012,345,678,901.23 TBC'
+      );
+    });
+
+    it('should round currency values without floating point drift', () => {
+      expect(formatCurrency('995000000')).toBe('1.00 TBC');
     });
   });
 
