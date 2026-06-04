@@ -60,7 +60,7 @@ curl -s -X POST "$BASE/v1/invoice/create" \
   }' | jq
 
 # 3. (Optional) Use the documented public sandbox API key explicitly
-PUBLIC_KEY=tbc_test_5a6db0c5a6db0c5a6db0c5a6db0c5a6d
+PUBLIC_KEY=tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d
 curl -s -X POST "$BASE/v1/invoice/create" \
   -H "Authorization: Bearer $PUBLIC_KEY" \
   -H 'Content-Type: application/json' \
@@ -69,7 +69,7 @@ curl -s -X POST "$BASE/v1/invoice/create" \
 
 The first two calls are equivalent: when the sandbox sees no
 `Authorization` header, it transparently injects the public sandbox key
-(`tbc_test_5a6db0c5a6db0c5a6db0c5a6db0c5a6d`). Production deployments do **not** do
+(`tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d`). Production deployments do **not** do
 this — you must always send a real key there.
 
 > ⚠️ Even sandbox-issued invoices still require an on-chain payment from a
@@ -156,7 +156,7 @@ accept payments without merchant whitelisting.
 ### Sandbox API key
 
 ```
-tbc_test_5a6db0c5a6db0c5a6db0c5a6db0c5a6d
+tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d
 ```
 
 Equivalent to making an unauthenticated call. Documented here so logs are
@@ -239,7 +239,7 @@ are environment variables — there is no separate sandbox fork of the code.
 
 1. Every response carries `X-Tonbankcard-Environment: sandbox`.
 2. `POST /v1/invoice/create` accepts an empty Authorization header — the
-   sandbox injects `Bearer tbc_test_5a6db0c5a6db0c5a6db0c5a6db0c5a6d` automatically.
+   sandbox injects `Bearer tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d` automatically.
 3. `GET /v1/sandbox/info` returns the JSON envelope SDKs use for discovery.
 
 All other endpoints behave identically to production — same validation, same

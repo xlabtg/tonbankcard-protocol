@@ -47,7 +47,7 @@ export const SANDBOX_HEADER_VALUE = 'sandbox';
  * Anyone may use it; the sandbox is rate-limited like any other tenant.
  */
 export const PUBLIC_SANDBOX_API_KEY =
-  'tbc_test_5a6db0c5a6db0c5a6db0c5a6db0c5a6d';
+  'tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d';
 
 /** Default merchant NFT bound to {@link PUBLIC_SANDBOX_API_KEY}. */
 export const PUBLIC_SANDBOX_MERCHANT_NFT =
