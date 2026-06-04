@@ -3,8 +3,13 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Address } from '@ton/core';
 import {
+  canonicalInvoiceIdPayload,
+  canonicalJson,
+  canonicalizeTonAddress,
   generateInvoiceId,
   createPayloadHash,
   formatTBC,
@@ -15,6 +20,33 @@ import {
   formatTimestamp,
   serializeBigInt,
 } from '../src/utils';
+
+const sdkM5Fixture = JSON.parse(
+  readFileSync(
+    join(__dirname, '../../tests/fixtures/sdk-m5-canonical-hashes.json'),
+    'utf8'
+  )
+) as {
+  invoice: {
+    merchant_nft_friendly: string;
+    merchant_nft_raw: string;
+    amount_tbc: string;
+    order_id: string;
+    timestamp: number;
+    canonical: string;
+    invoice_id: string;
+  };
+  payload: {
+    value: Record<string, unknown> & { amount_tbc: string };
+    value_reordered: Record<string, unknown>;
+    canonical: string;
+    hash_hex: string;
+  };
+};
+
+function hashToHex(hash: bigint): string {
+  return hash.toString(16).padStart(64, '0');
+}
 
 describe('Utils', () => {
   describe('generateInvoiceId', () => {
@@ -53,6 +85,27 @@ describe('Utils', () => {
       expect(id1).not.toBe(id3);
       expect(id2).not.toBe(id3);
     });
+
+    it('should use the shared SDK-M5 canonical invoice fixture', () => {
+      const params = {
+        merchantNft: Address.parse(sdkM5Fixture.invoice.merchant_nft_friendly),
+        amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+        orderId: sdkM5Fixture.invoice.order_id,
+        timestamp: sdkM5Fixture.invoice.timestamp,
+      };
+
+      expect(canonicalizeTonAddress(params.merchantNft)).toBe(
+        sdkM5Fixture.invoice.merchant_nft_raw
+      );
+      expect(canonicalInvoiceIdPayload(params)).toBe(sdkM5Fixture.invoice.canonical);
+      expect(generateInvoiceId(params)).toBe(sdkM5Fixture.invoice.invoice_id);
+      expect(
+        generateInvoiceId({
+          ...params,
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_raw,
+        })
+      ).toBe(sdkM5Fixture.invoice.invoice_id);
+    });
   });
 
   describe('createPayloadHash', () => {
@@ -72,7 +125,36 @@ describe('Utils', () => {
         invoice_id: 'INV-123',
       };
 
-      expect(createPayloadHash(payloadA)).toBe(createPayloadHash(payloadB));
+      expect(hashToHex(createPayloadHash(payloadA))).toBe(
+        hashToHex(createPayloadHash(payloadB))
+      );
+    });
+
+    it('should use the shared SDK-M5 canonical payload fixture', () => {
+      expect(canonicalJson(sdkM5Fixture.payload.value)).toBe(
+        sdkM5Fixture.payload.canonical
+      );
+      expect(canonicalJson(sdkM5Fixture.payload.value_reordered)).toBe(
+        sdkM5Fixture.payload.canonical
+      );
+      expect(hashToHex(createPayloadHash(sdkM5Fixture.payload.value))).toBe(
+        sdkM5Fixture.payload.hash_hex
+      );
+      expect(
+        hashToHex(createPayloadHash(sdkM5Fixture.payload.value_reordered))
+      ).toBe(sdkM5Fixture.payload.hash_hex);
+    });
+
+    it('should encode BigInt payload values as decimal strings', () => {
+      const withBigIntAmount = {
+        ...sdkM5Fixture.payload.value,
+        amount_tbc: BigInt(sdkM5Fixture.payload.value.amount_tbc),
+      };
+
+      expect(canonicalJson(withBigIntAmount)).toBe(sdkM5Fixture.payload.canonical);
+      expect(hashToHex(createPayloadHash(withBigIntAmount))).toBe(
+        sdkM5Fixture.payload.hash_hex
+      );
     });
   });
 

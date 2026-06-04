@@ -37,6 +37,12 @@ from .errors import (
     ServerError,
     SignatureVerificationError,
 )
+from .hashing import (
+    canonical_invoice_id_payload,
+    canonical_json,
+    create_payload_hash,
+    generate_invoice_id,
+)
 from .models import (
     CreateInvoiceRequest,
     Invoice,
@@ -45,6 +51,7 @@ from .models import (
     InvoiceStatusResponse,
     Settlement,
     WebhookPayload,
+    canonicalize_ton_address,
 )
 from .webhooks import (
     DEFAULT_SIGNATURE_HEADER,
@@ -77,7 +84,12 @@ __all__ = [
     "SignatureVerificationError",
     "WebhookPayload",
     "__version__",
+    "canonical_invoice_id_payload",
+    "canonical_json",
+    "canonicalize_ton_address",
     "compute_signature",
+    "create_payload_hash",
+    "generate_invoice_id",
     "verify_webhook",
 ]
 
