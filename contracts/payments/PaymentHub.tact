@@ -192,6 +192,10 @@ contract PaymentHub with Deployable {
     // Whitelisted NFT collections (for NFT Account Resolver functionality)
     whitelisted_collections: map<Address, Bool>;
 
+    // Verified NFT item -> collection mapping. The collection, not the NFT item
+    // address, is the key that must be checked against whitelisted_collections.
+    nft_collections: map<Address, Address>;
+
     // ========================================
     // Initialization
     // ========================================
@@ -313,6 +317,19 @@ contract PaymentHub with Deployable {
         return self.whitelisted_collections.get(collection_address) != null;
     }
 
+    /// @notice Register an NFT item with its collection after resolver verification
+    /// @dev Admin setup only; does not grant fund control or mutate balances.
+    receive(msg: RegisterAccountNFT) {
+        require(sender() == self.admin, "Unauthorized: only admin");
+        require(self.isCollectionWhitelisted(msg.collection_address), "Collection not whitelisted");
+        self.nft_collections.set(msg.nft_address, msg.collection_address);
+    }
+
+    /// @notice Return the registered collection for an NFT item, if known.
+    get fun getRegisteredCollection(nft_address: Address): Address? {
+        return self.nft_collections.get(nft_address);
+    }
+
     // ========================================
     // Account Management
     // ========================================
@@ -422,18 +439,19 @@ contract PaymentHub with Deployable {
 
     // NFT Account Resolver: Validate if NFT is a valid account
     // Checks whitelisted collections and existing accounts
-    fun isValidAccountNFT(nft_address: Address): Bool {
+    get fun isValidAccountNFT(nft_address: Address): Bool {
         // Accept any NFT that already has an account (previously verified)
         let existing: AccountState? = self.accounts.get(nft_address);
         if (existing != null) {
             return true;
         }
 
-        // For new accounts, check if the collection is whitelisted
-        // The whitelisted_collections map is initialized with known NFT collections
-        // In production deployment, collection addresses are set during init()
-        // and NFT-to-collection mapping would be resolved via on-chain query
-        return self.whitelisted_collections.get(nft_address) != null;
+        let collection: Address? = self.nft_collections.get(nft_address);
+        if (collection == null) {
+            return false;
+        }
+
+        return self.whitelisted_collections.get(collection!!) != null;
     }
 
     // Get account state or create new one if doesn't exist
@@ -537,5 +555,11 @@ contract PaymentHub with Deployable {
 
 // Message to whitelist an NFT collection
 message WhitelistCollection {
+    collection_address: Address;
+}
+
+// Message to bind a verified NFT item to its collection.
+message RegisterAccountNFT {
+    nft_address: Address;
     collection_address: Address;
 }

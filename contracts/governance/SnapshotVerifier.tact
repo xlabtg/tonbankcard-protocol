@@ -42,6 +42,21 @@ message VerifyEligibility {
     nft_id: Int as uint64;                // NFT ID to verify
 }
 
+// Asynchronous eligibility check request from the proposal registry.
+message EligibilityCheckRequest {
+    query_id: Int as uint64;              // Correlates the request with its reply
+    proposal_id: Int as uint64;           // Proposal ID
+    nft_id: Int as uint64;                // NFT ID to verify
+}
+
+// Asynchronous eligibility check response returned to the requester.
+message EligibilityCheckResponse {
+    query_id: Int as uint64;              // Echoes the request's query_id
+    proposal_id: Int as uint64;           // Echoes the request's proposal_id
+    nft_id: Int as uint64;                // Echoes the request's nft_id
+    eligible: Bool;                       // Fail-closed eligibility result
+}
+
 // ==================== EVENTS ====================
 
 // Emitted when snapshot is registered
@@ -56,7 +71,7 @@ message SnapshotRegistered {
 contract SnapshotVerifier with Deployable {
 
     // TBC Diamonds NFT collection address
-    const DIAMONDS_COLLECTION: Address = address("EQDiamondsCollectionAddressPlaceholder123456789");
+    const DIAMONDS_COLLECTION: Address = address("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c");
 
     // Proposal registry address (for cross-contract verification)
     proposal_registry: Address?;
@@ -123,6 +138,24 @@ contract SnapshotVerifier with Deployable {
         }.toCell());
     }
 
+    // Answer asynchronous eligibility requests with the same fail-closed logic
+    // used by the getter. The verifier never assumes eligibility without an
+    // explicit snapshot entry.
+    receive(msg: EligibilityCheckRequest) {
+        send(SendParameters{
+            to: sender(),
+            value: 0,
+            mode: SendRemainingValue,
+            bounce: false,
+            body: EligibilityCheckResponse{
+                query_id: msg.query_id,
+                proposal_id: msg.proposal_id,
+                nft_id: msg.nft_id,
+                eligible: self.isEligible(msg.proposal_id, msg.nft_id)
+            }.toCell()
+        });
+    }
+
     // ==================== GET METHODS ====================
 
     // Verify if an NFT ID was eligible to vote at snapshot time
@@ -135,9 +168,7 @@ contract SnapshotVerifier with Deployable {
         // Check snapshot exists
         let snapshot: Snapshot? = self.snapshots.get(proposal_id);
         if (snapshot == null) {
-            // No snapshot registered - assume all valid NFTs are eligible
-            // This is a fallback for simplified implementation
-            return nft_id >= 1 && nft_id <= DIAMONDS_TOTAL_SUPPLY;
+            return false;
         }
 
         // Check eligibility map
@@ -160,8 +191,7 @@ contract SnapshotVerifier with Deployable {
     get fun getEligibleCount(proposal_id: Int): Int {
         let snapshot: Snapshot? = self.snapshots.get(proposal_id);
         if (snapshot == null) {
-            // No snapshot - return total supply as fallback
-            return DIAMONDS_TOTAL_SUPPLY;
+            return 0;
         }
         return snapshot!!.eligible_count;
     }

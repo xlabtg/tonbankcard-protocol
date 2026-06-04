@@ -13,9 +13,11 @@
  *
  * To make sure neither file can be deployed or verified as a production artefact,
  * the deployable contract map below resolves the PaymentHub and NFTAccountResolver
- * to their production Tact sources ONLY. The FunC stubs are kept on disk for audit
- * reference but are listed explicitly in {@link NON_PRODUCTION_STUBS} and excluded
- * from every deployment/verification manifest that imports this module.
+ * to their production Tact sources ONLY. PublicCollateralLookup is also excluded
+ * until it reads Account Locks state instead of returning a stubbed result. The
+ * non-production sources are kept on disk for audit reference but are listed
+ * explicitly in {@link NON_PRODUCTION_STUBS} and excluded from every
+ * deployment/verification manifest that imports this module.
  *
  * Regression coverage: `contracts/payment-hub/non-production-stubs.spec.ts`.
  */
@@ -34,10 +36,6 @@ export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
   PaymentHub: ['contracts/payments/PaymentHub.tact'],
   MerchantPaymentHub: ['contracts/MerchantPaymentHub.tact'],
   CollateralSignal: ['contracts/CollateralSignal.tact'],
-  PublicCollateralLookup: [
-    'contracts/collateral-lookup/PublicCollateralLookup.tact',
-    'contracts/collateral-lookup/public-collateral-lookup.fc',
-  ],
   ProposalRegistry: ['contracts/governance/ProposalRegistry.tact'],
   SnapshotVerifier: ['contracts/governance/SnapshotVerifier.tact'],
   TransparencyRegistry: ['contracts/governance/TransparencyRegistry.tact'],
@@ -51,10 +49,14 @@ export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
  *   logic lands.
  * - `nft_account_resolver.fc` is a stateless read-only reference that rejects
  *   empty/addr_none owners so a dummy owner can never pass an ownership check.
+ * - `PublicCollateralLookup.*` is a non-production collateral lookup because it
+ *   does not yet query Account Locks state.
  */
 export const NON_PRODUCTION_STUBS: string[] = [
   'contracts/payments/payment-hub.fc',
   'contracts/nft-resolver/nft_account_resolver.fc',
+  'contracts/collateral-lookup/PublicCollateralLookup.tact',
+  'contracts/collateral-lookup/public-collateral-lookup.fc',
 ];
 
 /**

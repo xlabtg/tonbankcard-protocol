@@ -25,6 +25,31 @@ const STUB_FILES = [
   'contracts/nft-resolver/nft_account_resolver.fc',
 ];
 
+const NON_PRODUCTION_COLLATERAL_LOOKUP_FILES = [
+  'contracts/collateral-lookup/PublicCollateralLookup.tact',
+  'contracts/collateral-lookup/public-collateral-lookup.fc',
+];
+
+const DEPLOYER_GATED_TEST_ONLY_HANDLERS = [
+  {
+    file: 'contracts/payment-hub/account-state.tact',
+    handlers: [
+      'receive(msg: DepositTBC)',
+      'receive(msg: WithdrawTBC)',
+      'receive(msg: TransferInternal)',
+      'receive(msg: ChangeAccountState)',
+    ],
+  },
+  {
+    file: 'contracts/RecurringPayments.tact',
+    handlers: ['receive(msg: RegisterNFTOwnerRecurring)'],
+  },
+  {
+    file: 'contracts/MultiSigCard.tact',
+    handlers: ['receive(msg: RegisterNFTOwnerMultiSig)'],
+  },
+];
+
 const MANIFEST = 'scripts/deploy/deployable-contracts.ts';
 const DEPLOY_SCRIPTS = [
   'scripts/deploy/check-immutability.ts',
@@ -94,6 +119,43 @@ describe('CONTRACTS-H3: non-production FunC stubs excluded from deployable set',
     for (const stub of STUB_FILES) {
       expect(fs.existsSync(path.join(REPO_ROOT, stub))).toBe(true);
     }
+  });
+});
+
+describe('CONTRACTS-LOW L-3: incomplete collateral lookup excluded from deployable set', () => {
+  it('keeps the on-chain collateral lookup stub out of production deployment manifests', () => {
+    const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
+    for (const source of NON_PRODUCTION_COLLATERAL_LOOKUP_FILES) {
+      expect(deployable).not.toContain(source);
+    }
+  });
+
+  it('marks the collateral lookup sources as non-production until Account Locks state is reflected', () => {
+    for (const source of NON_PRODUCTION_COLLATERAL_LOOKUP_FILES) {
+      expect(read(source)).toMatch(/NON-PRODUCTION|NOT PRODUCTION READY/i);
+    }
+  });
+});
+
+describe('CONTRACTS-LOW I-1: deployable contracts exclude test-only deployer-gated handlers', () => {
+  it('does not deploy sources that still contain issue-specified test-only handlers', () => {
+    const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
+
+    for (const { file, handlers } of DEPLOYER_GATED_TEST_ONLY_HANDLERS) {
+      const source = read(file);
+      const containsForbiddenHandler = handlers.some(handler => source.includes(handler));
+      if (containsForbiddenHandler) {
+        expect(deployable).not.toContain(file);
+      }
+    }
+  });
+
+  it('removes AccountStateMachine deployer-gated mint, move, withdraw, and state-change handlers', () => {
+    const source = read('contracts/payment-hub/account-state.tact');
+    for (const handler of DEPLOYER_GATED_TEST_ONLY_HANDLERS[0].handlers) {
+      expect(source).not.toContain(handler);
+    }
+    expect(source).not.toContain('Unauthorized: only deployer (test-only)');
   });
 });
 

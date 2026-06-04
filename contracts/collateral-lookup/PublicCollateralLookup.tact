@@ -1,6 +1,11 @@
 // Public Collateral Status Lookup Contract
 // Issue Reference: #34 - Issue 6.3 Public Collateral Status Lookup (Privacy-Preserving)
 //
+// NON-PRODUCTION / NOT PRODUCTION READY:
+// hasActiveCollateral currently returns the privacy-preserving default instead
+// of reading Account Locks state. This source is intentionally excluded from
+// deployable manifests until that integration is implemented.
+//
 // PURPOSE:
 // Provides a PUBLIC, READ-ONLY mechanism to verify whether an NFT-based account
 // has active collateral commitments, WITHOUT exposing any sensitive details.

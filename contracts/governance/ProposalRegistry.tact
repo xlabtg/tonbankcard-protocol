@@ -45,6 +45,7 @@ const ERROR_NOT_ELIGIBLE_VOTER: Int = 109;
 const ERROR_INVALID_VOTE_TYPE: Int = 110;
 const ERROR_ZERO_QUORUM: Int = 111;
 const ERROR_RESOLVER_NOT_SET: Int = 112;
+const ERROR_SNAPSHOT_VERIFIER_NOT_SET: Int = 113;
 
 // Ownership-resolution request kinds (used to route the resolver callback)
 const REQUEST_KIND_VOTE: Int = 0;
@@ -126,6 +127,13 @@ message SetOwnerResolver {
     resolver: Address;                    // Address of the NFT ownership resolver
 }
 
+// One-time configuration message: set the snapshot verifier address.
+// Voting is rejected until this verifier is configured because eligibility must
+// fail closed when no proposal snapshot exists.
+message SetSnapshotVerifier {
+    verifier: Address;                    // Address of the SnapshotVerifier
+}
+
 // ==================== OWNERSHIP-VERIFICATION PROTOCOL ====================
 //
 // Voting and proposal submission never trust a caller-supplied NFT ID. Instead
@@ -152,6 +160,21 @@ message OwnershipResolved {
     query_id: Int as uint64;              // Echoes the request's query_id
     nft_id: Int as uint64;                // Echoes the request's nft_id
     owner: Address;                       // Current on-chain owner of nft_id
+}
+
+// Sent by the registry to the snapshot verifier after ownership is confirmed.
+message EligibilityCheckRequest {
+    query_id: Int as uint64;              // Correlates the request with its reply
+    proposal_id: Int as uint64;           // Proposal being voted on
+    nft_id: Int as uint64;                // Diamond NFT ID whose eligibility is checked
+}
+
+// Sent by the snapshot verifier back to the registry.
+message EligibilityCheckResponse {
+    query_id: Int as uint64;              // Echoes the request's query_id
+    proposal_id: Int as uint64;           // Echoes the request's proposal_id
+    nft_id: Int as uint64;                // Echoes the request's nft_id
+    eligible: Bool;                       // True only when snapshot contains nft_id
 }
 
 // ==================== EVENTS ====================
@@ -210,6 +233,9 @@ contract ProposalRegistry with Deployable {
     // on-chain ownership check.
     owner_resolver: Address?;
 
+    // Snapshot verifier used for voter eligibility. Set once by the deployer.
+    snapshot_verifier: Address?;
+
     // Monotonic counter correlating ownership requests with their replies.
     next_query_id: Int as uint64;
 
@@ -218,10 +244,15 @@ contract ProposalRegistry with Deployable {
     pending_votes: map<Int, PendingVote>;
     pending_proposals: map<Int, PendingProposal>;
 
+    // In-flight snapshot eligibility requests, keyed by query_id. A vote is
+    // recorded only after both ownership and snapshot eligibility are confirmed.
+    pending_eligibility_votes: map<Int, PendingVote>;
+
     init() {
         self.proposal_count = 0;
         self.deployer = sender();
         self.owner_resolver = null;
+        self.snapshot_verifier = null;
         self.next_query_id = 0;
     }
 
@@ -232,6 +263,13 @@ contract ProposalRegistry with Deployable {
         require(sender() == self.deployer, "Only deployer can set resolver");
         require(self.owner_resolver == null, "Resolver already set");
         self.owner_resolver = msg.resolver;
+    }
+
+    // Configure the snapshot verifier (one-time, deployer only).
+    receive(msg: SetSnapshotVerifier) {
+        require(sender() == self.deployer, "Only deployer can set snapshot verifier");
+        require(self.snapshot_verifier == null, "Snapshot verifier already set");
+        self.snapshot_verifier = msg.verifier;
     }
 
     // ==================== SUBMIT PROPOSAL ====================
@@ -330,6 +368,9 @@ contract ProposalRegistry with Deployable {
         let vote_key: Int = msg.proposal_id * 1000 + msg.voter_nft_id;
         require(self.votes_cast.get(vote_key) == null, "Already voted");
 
+        // Voting must fail closed until a snapshot verifier is configured.
+        self.requireSnapshotVerifier();
+
         // The vote is NOT recorded here. We bind the request to sender() and ask
         // the resolver who owns voter_nft_id on-chain. The vote is only recorded
         // in the OwnershipResolved callback when the resolved owner equals this
@@ -377,7 +418,7 @@ contract ProposalRegistry with Deployable {
         if (pv != null) {
             let v: PendingVote = pv!!;
             self.pending_votes.del(msg.query_id);
-            self.finalizeVote(v, msg.nft_id, msg.owner);
+            self.requestVoteEligibility(v, msg.nft_id, msg.owner);
             return;
         }
 
@@ -393,6 +434,28 @@ contract ProposalRegistry with Deployable {
         // No matching request — nothing to do (stale or duplicate reply).
     }
 
+    // Reply from the configured snapshot verifier. The vote is only recorded if
+    // the response matches an in-flight request and the NFT was explicitly
+    // included in the proposal snapshot.
+    receive(msg: EligibilityCheckResponse) {
+        require(self.snapshot_verifier != null, "Snapshot verifier not set");
+        require(sender() == self.snapshot_verifier!!, "Unauthorized snapshot verifier");
+
+        let pv: PendingVote? = self.pending_eligibility_votes.get(msg.query_id);
+        if (pv == null) {
+            return;
+        }
+
+        let v: PendingVote = pv!!;
+        self.pending_eligibility_votes.del(msg.query_id);
+
+        if (msg.proposal_id != v.proposal_id) { return; }
+        if (msg.nft_id != v.nft_id) { return; }
+        if (!msg.eligible) { return; }
+
+        self.recordEligibleVote(v);
+    }
+
     // ==================== INTERNAL HELPERS ====================
 
     // Resolve the configured resolver address or abort if it has not been set.
@@ -401,15 +464,56 @@ contract ProposalRegistry with Deployable {
         return self.owner_resolver!!;
     }
 
-    // Record a vote once ownership has been confirmed. Silently drops the vote
-    // (without aborting) when the resolved owner is not the claimant or when the
-    // proposal is no longer votable, so that pending state is always cleaned up.
-    fun finalizeVote(v: PendingVote, resolved_nft_id: Int, resolved_owner: Address) {
+    // Resolve the configured snapshot verifier address or abort if it has not
+    // been set.
+    fun requireSnapshotVerifier(): Address {
+        require(self.snapshot_verifier != null, "Snapshot verifier not configured");
+        return self.snapshot_verifier!!;
+    }
+
+    // Request snapshot eligibility once ownership has been confirmed. Silently
+    // drops the vote when ownership does not match or the proposal is no longer
+    // votable, so that pending state is always cleaned up.
+    fun requestVoteEligibility(v: PendingVote, resolved_nft_id: Int, resolved_owner: Address) {
         // The reply must concern the NFT we asked about and the resolved owner
         // must be the original sender.
         if (resolved_nft_id != v.nft_id) { return; }
         if (resolved_owner != v.claimant) { return; }
 
+        // Re-validate the proposal is still open (time may have advanced).
+        let proposal: Proposal? = self.proposals.get(v.proposal_id);
+        if (proposal == null) { return; }
+        let p: Proposal = proposal!!;
+        if (p.status != STATUS_ACTIVE) { return; }
+        if (now() < p.voting_start || now() > p.voting_end) { return; }
+
+        // Authoritative double-vote guard.
+        let vote_key: Int = v.proposal_id * 1000 + v.nft_id;
+        if (self.votes_cast.get(vote_key) != null) { return; }
+
+        let verifier: Address = self.requireSnapshotVerifier();
+        let qid: Int = self.next_query_id;
+        self.next_query_id = self.next_query_id + 1;
+
+        self.pending_eligibility_votes.set(qid, v);
+
+        send(SendParameters{
+            to: verifier,
+            value: 0,
+            mode: SendRemainingValue,
+            bounce: false,
+            body: EligibilityCheckRequest{
+                query_id: qid,
+                proposal_id: v.proposal_id,
+                nft_id: v.nft_id
+            }.toCell()
+        });
+    }
+
+    // Record a vote once ownership and snapshot eligibility have both been
+    // confirmed. Re-runs proposal and double-vote checks because time/state may
+    // have changed during the asynchronous round-trip.
+    fun recordEligibleVote(v: PendingVote) {
         // Re-validate the proposal is still open (time may have advanced).
         let proposal: Proposal? = self.proposals.get(v.proposal_id);
         if (proposal == null) { return; }
@@ -629,6 +733,11 @@ contract ProposalRegistry with Deployable {
     // Get the configured NFT ownership resolver (null until set by the deployer)
     get fun getOwnerResolver(): Address? {
         return self.owner_resolver;
+    }
+
+    // Get the configured snapshot verifier (null until set by the deployer)
+    get fun getSnapshotVerifier(): Address? {
+        return self.snapshot_verifier;
     }
 
     // Get the deployer address (resolver configuration authority)
