@@ -7,3 +7,11 @@ export type {
 } from './interfaces';
 
 export { InMemorySecureStore } from './secureStore';
+export {
+  BiometricAuthenticationFailedError,
+  BiometricAuthenticationUnavailableError,
+  DEFAULT_PAYMENT_PROMPT_OPTIONS,
+  openUrlWithBiometricGate,
+  requireBiometricAuthentication,
+  type OpenUrlWithBiometricGateOptions,
+} from './biometricGate';
