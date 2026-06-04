@@ -23,7 +23,8 @@ export interface InvoiceIdParams {
  * Friendly address flags such as bounceable/testOnly must not affect hashes.
  */
 export function canonicalizeTonAddress(address: Address | string): string {
-  const parsed = typeof address === 'string' ? Address.parse(address) : address;
+  const parsed =
+    typeof address === 'string' ? Address.parse(address.trim()) : address;
   return parsed.toRawString();
 }
 
@@ -142,7 +143,7 @@ export function createPayloadHash(payload: Record<string, unknown>): bigint {
  */
 export function isValidTonAddress(address: string): boolean {
   try {
-    Address.parse(address);
+    Address.parse(address.trim());
     return true;
   } catch {
     return false;
@@ -174,10 +175,51 @@ export function shortAddress(
  * @returns true if expired, false otherwise
  */
 export function isExpired(expiresAt?: number): boolean {
-  if (!expiresAt) {
+  if (expiresAt === undefined) {
     return false;
   }
-  return expiresAt < Date.now() / 1000;
+  return expiresAt <= Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Deep-copy metadata/payload values so caller mutations cannot affect SDK
+ * objects after creation.
+ */
+export function cloneJsonSerializable<T>(value: T): T {
+  if (value === null) {
+    return value;
+  }
+
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new TypeError('JSON clone does not support non-finite numbers');
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneJsonSerializable(item)) as T;
+  }
+
+  if (typeof value === 'object') {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError('JSON clone supports only plain objects and arrays');
+    }
+
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = cloneJsonSerializable(item);
+    }
+    return result as T;
+  }
+
+  throw new TypeError(`JSON clone does not support ${typeof value} values`);
 }
 
 /**

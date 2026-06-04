@@ -93,19 +93,22 @@ const (
 
 // ValidateMerchantNFT verifies a TON address in friendly or raw form.
 func ValidateMerchantNFT(addr string) error {
-	if !isValidTonAddress(addr) {
+	normalized := strings.TrimSpace(addr)
+	if !isValidTonAddress(normalized) {
 		return fmt.Errorf("tonbankcard: invalid merchant NFT address: %q", addr)
 	}
 	return nil
 }
 
 func isValidTonAddress(addr string) bool {
+	addr = strings.TrimSpace(addr)
 	return isValidRawTonAddress(addr) || isValidFriendlyTonAddress(addr)
 }
 
 // CanonicalizeTonAddress converts a TON friendly or raw address to raw
 // `workchain:account_hex` form for cross-SDK hashing.
 func CanonicalizeTonAddress(addr string) (string, error) {
+	addr = strings.TrimSpace(addr)
 	if isValidRawTonAddress(addr) {
 		parts := strings.SplitN(addr, ":", 2)
 		workchain, err := strconv.Atoi(parts[0])
@@ -177,10 +180,11 @@ func crc16Ton(data []byte) uint16 {
 
 // ValidateAmount verifies a decimal TBC nanocoin amount.
 func ValidateAmount(amount string) error {
-	if !amountRe.MatchString(amount) {
+	normalized := strings.TrimSpace(amount)
+	if !amountRe.MatchString(normalized) {
 		return fmt.Errorf("tonbankcard: invalid amount_tbc %q (expected positive decimal string)", amount)
 	}
-	parsed, ok := new(big.Int).SetString(amount, 10)
+	parsed, ok := new(big.Int).SetString(normalized, 10)
 	if !ok {
 		return fmt.Errorf("tonbankcard: invalid amount_tbc %q", amount)
 	}

@@ -215,19 +215,47 @@ export default router;
 ### Example 2: Payment Status Webhook Handler
 
 ```typescript
-// routes/webhooks.ts (future feature)
+// routes/webhooks.ts
+import crypto from 'node:crypto';
 import express from 'express';
 
 const router = express.Router();
 
-router.post('/webhook/payment-settled', async (req, res) => {
-  // Verify webhook signature (future feature)
-  const signature = req.headers['x-tonbankcard-signature'];
-  if (!verifyWebhookSignature(signature, req.body)) {
+function verifyWebhookSignature(signature: string | undefined, rawBody: Buffer): boolean {
+  if (!signature) return false;
+
+  const parts = Object.fromEntries(
+    signature.split(',').map((part) => {
+      const [key, value] = part.split('=');
+      return [key.trim(), value?.trim()];
+    })
+  );
+  const timestamp = parts.t;
+  const provided = parts.v1;
+  if (!timestamp || !provided) return false;
+
+  const expected = crypto
+    .createHmac('sha256', process.env.TONBANKCARD_WEBHOOK_SECRET!)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest('hex');
+
+  const providedBuffer = Buffer.from(provided, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  return (
+    providedBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(providedBuffer, expectedBuffer)
+  );
+}
+
+router.post('/webhook/payment-settled', express.raw({ type: 'application/json' }), async (req, res) => {
+  const rawBody = req.body as Buffer;
+  const signature = req.header('X-Tonbankcard-Signature');
+  if (!verifyWebhookSignature(signature, rawBody)) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  const { invoice_id, settlement } = req.body;
+  const { invoice_id, settlement } = JSON.parse(rawBody.toString('utf8'));
 
   // Get order from database
   const order = await db.orders.findOne({ invoice_id });
@@ -407,16 +435,29 @@ export function PaymentButton({
    ```typescript
    const crypto = require('crypto');
 
-   function verifyWebhookSignature(signature: string, payload: any): boolean {
+   function verifyWebhookSignature(signature: string | undefined, rawBody: Buffer): boolean {
+     if (!signature) return false;
+
      const secret = process.env.WEBHOOK_SECRET;
-     const expectedSignature = crypto
+     const parts = Object.fromEntries(
+       signature.split(',').map((part) => {
+         const [key, value] = part.split('=');
+         return [key.trim(), value?.trim()];
+       })
+     );
+     if (!parts.t || !parts.v1) return false;
+
+     const expected = crypto
        .createHmac('sha256', secret)
-       .update(JSON.stringify(payload))
+       .update(`${parts.t}.`)
+       .update(rawBody)
        .digest('hex');
 
-     return crypto.timingSafeEqual(
-       Buffer.from(signature),
-       Buffer.from(expectedSignature)
+     const provided = Buffer.from(parts.v1, 'hex');
+     const expectedBuffer = Buffer.from(expected, 'hex');
+     return (
+       provided.length === expectedBuffer.length &&
+       crypto.timingSafeEqual(provided, expectedBuffer)
      );
    }
    ```

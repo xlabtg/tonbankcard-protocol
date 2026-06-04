@@ -23,6 +23,15 @@
 export { TonbankcardSDK } from './sdk';
 
 export {
+  TonbankcardSDKError,
+  TonbankcardValidationError,
+  TonbankcardConfigurationError,
+  TonbankcardApiError,
+  TonbankcardInvoiceNotFoundError,
+  TonbankcardBlockchainError,
+} from './errors';
+
+export {
   // Types
   AccountState,
   PaymentStatus,
@@ -58,6 +67,7 @@ export {
   isExpired,
   formatTimestamp,
   serializeBigInt,
+  cloneJsonSerializable,
 } from './utils';
 
 export {

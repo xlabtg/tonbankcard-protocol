@@ -23,8 +23,9 @@ import {
   SettlementMatchCriteria,
 } from './types';
 import { MAX_TBC_NANOCOINS } from './amount';
-import { generateInvoiceId } from './utils';
+import { cloneJsonSerializable, generateInvoiceId, isExpired } from './utils';
 import { buildWalletLink } from './walletLink';
+import { TonbankcardValidationError } from './errors';
 
 /**
  * Note returned in `error` when `verifySettlement` is called without an invoice
@@ -190,17 +191,30 @@ export class MockTonbankcardSDK {
    */
   createInvoice(params: CreateInvoiceParams): Invoice {
     if (params.amountTbc <= 0n) {
-      throw new Error('Invoice amount must be positive');
+      throw new TonbankcardValidationError('Invoice amount must be positive');
     }
     if (params.amountTbc > MAX_TBC_NANOCOINS) {
-      throw new Error('Invoice amount exceeds maximum of 2^120 - 1');
+      throw new TonbankcardValidationError(
+        'Invoice amount exceeds maximum of 2^120 - 1'
+      );
     }
 
     if (!this.isValidAddress(params.merchantNft)) {
-      throw new Error('Invalid merchant NFT address');
+      throw new TonbankcardValidationError('Invalid merchant NFT address');
     }
 
     const now = Math.floor(Date.now() / 1000);
+    let metadata: Record<string, unknown> | undefined;
+    try {
+      metadata =
+        params.metadata === undefined
+          ? undefined
+          : cloneJsonSerializable(params.metadata);
+    } catch (error) {
+      throw new TonbankcardValidationError(
+        `Invalid invoice metadata: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
 
     const invoiceId = generateInvoiceId({
       merchantNft: params.merchantNft,
@@ -215,11 +229,12 @@ export class MockTonbankcardSDK {
       amountTbc: params.amountTbc,
       orderId: params.orderId,
       description: params.description,
-      metadata: params.metadata,
+      metadata,
       createdAt: now,
-      expiresAt: params.expirationSeconds
-        ? now + params.expirationSeconds
-        : undefined,
+      expiresAt:
+        params.expirationSeconds === undefined
+          ? undefined
+          : now + params.expirationSeconds,
     };
 
     this.invoiceStore.set(invoiceId, invoice);
@@ -241,7 +256,7 @@ export class MockTonbankcardSDK {
     await this.delay();
 
     const invoice = this.invoiceStore.get(invoiceId);
-    if (invoice?.expiresAt && invoice.expiresAt < Date.now() / 1000) {
+    if (isExpired(invoice?.expiresAt)) {
       return PaymentStatus.EXPIRED;
     }
 

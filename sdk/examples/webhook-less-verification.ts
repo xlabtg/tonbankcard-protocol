@@ -62,7 +62,7 @@ async function webhooklessVerificationExample() {
           return true;
         }
 
-        if (status === 'expired' || status === 'failed') {
+        if (status === 'expired') {
           console.log('✗ Payment', status);
           return false;
         }

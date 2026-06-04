@@ -114,6 +114,23 @@ def test_create_invoice_propagates_callback_url(
 
 
 @respx.mock
+def test_create_invoice_normalizes_trimmed_inputs(
+    client: MerchantClient, base_url: str, valid_nft: str
+) -> None:
+    route = respx.post(f"{base_url}/invoice/create").mock(
+        return_value=httpx.Response(201, json=_invoice_response())
+    )
+    client.create_invoice(
+        merchant_nft=f" \n{valid_nft}\t",
+        amount_tbc=" 1000000000 ",
+        metadata={"order_id": "ORDER-1"},
+    )
+    body = json.loads(route.calls.last.request.content)
+    assert body["merchant_nft"] == valid_nft
+    assert body["amount_tbc"] == "1000000000"
+
+
+@respx.mock
 def test_get_invoice_success(client: MerchantClient, base_url: str) -> None:
     respx.get(f"{base_url}/invoice/inv_abc123").mock(
         return_value=httpx.Response(

@@ -137,6 +137,13 @@ class CreateInvoiceRequest:
     expires_at: Optional[str] = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.merchant_nft, str):
+            self.merchant_nft = self.merchant_nft.strip()
+        if isinstance(self.amount_tbc, str):
+            self.amount_tbc = self.amount_tbc.strip()
+        if isinstance(self.expires_at, str):
+            self.expires_at = self.expires_at.strip()
+
         validate_merchant_nft(self.merchant_nft)
         validate_amount(self.amount_tbc)
         if self.currency != "TBC":
@@ -190,7 +197,8 @@ def validate_merchant_nft(address: str) -> None:
     Raises:
         ValueError: when ``address`` is malformed or has an invalid checksum.
     """
-    if not isinstance(address, str) or not _is_valid_ton_address(address):
+    normalized = address.strip() if isinstance(address, str) else address
+    if not isinstance(normalized, str) or not _is_valid_ton_address(normalized):
         raise ValueError(f"Invalid merchant NFT address: {address!r}")
 
 
@@ -198,6 +206,7 @@ def canonicalize_ton_address(address: str) -> str:
     """Convert a TON friendly or raw address to ``workchain:account_hex`` form."""
     if not isinstance(address, str):
         raise ValueError(f"Invalid TON address: {address!r}")
+    address = address.strip()
     if _is_valid_raw_ton_address(address):
         workchain_text, account_id = address.split(":", 1)
         return f"{int(workchain_text, 10)}:{account_id.lower()}"
@@ -212,6 +221,7 @@ def canonicalize_ton_address(address: str) -> str:
 
 
 def _is_valid_ton_address(address: str) -> bool:
+    address = address.strip()
     return _is_valid_raw_ton_address(address) or _is_valid_friendly_ton_address(address)
 
 
@@ -269,11 +279,12 @@ def validate_amount(amount_tbc: str) -> None:
         ValueError: when ``amount_tbc`` is not a positive integer string, is
             zero, or exceeds the on-chain maximum of ``2**120 - 1``.
     """
-    if not isinstance(amount_tbc, str) or not _AMOUNT_RE.match(amount_tbc):
+    normalized = amount_tbc.strip() if isinstance(amount_tbc, str) else amount_tbc
+    if not isinstance(normalized, str) or not _AMOUNT_RE.match(normalized):
         raise ValueError(
             f"Invalid amount_tbc: {amount_tbc!r} — expected a decimal string of nanocoins"
         )
-    if int(amount_tbc) > _TBC_MAX_AMOUNT:
+    if int(normalized) > _TBC_MAX_AMOUNT:
         raise ValueError(f"amount_tbc exceeds maximum of 2**120 - 1: {amount_tbc}")
 
 

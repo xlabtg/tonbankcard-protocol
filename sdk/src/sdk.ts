@@ -22,8 +22,21 @@ import {
   SettlementMatchCriteria,
 } from './types';
 import { MAX_TBC_NANOCOINS } from './amount';
-import { generateInvoiceId, isValidTonAddress } from './utils';
+import {
+  cloneJsonSerializable,
+  generateInvoiceId,
+  isExpired,
+  isValidTonAddress,
+} from './utils';
 import { buildWalletLink } from './walletLink';
+import {
+  TonbankcardApiError,
+  TonbankcardBlockchainError,
+  TonbankcardConfigurationError,
+  TonbankcardInvoiceNotFoundError,
+  TonbankcardSDKError,
+  TonbankcardValidationError,
+} from './errors';
 
 /** Masterchain identifiers (workchain -1, full shard) used for block lookups. */
 const MASTERCHAIN_WORKCHAIN = -1;
@@ -130,18 +143,31 @@ export class TonbankcardSDK {
   createInvoice(params: CreateInvoiceParams): Invoice {
     // Validate amount is positive
     if (params.amountTbc <= 0n) {
-      throw new Error('Invoice amount must be positive');
+      throw new TonbankcardValidationError('Invoice amount must be positive');
     }
     if (params.amountTbc > MAX_TBC_NANOCOINS) {
-      throw new Error('Invoice amount exceeds maximum of 2^120 - 1');
+      throw new TonbankcardValidationError(
+        'Invoice amount exceeds maximum of 2^120 - 1'
+      );
     }
 
     // Validate merchant NFT address
     if (!this.isValidAddress(params.merchantNft)) {
-      throw new Error('Invalid merchant NFT address');
+      throw new TonbankcardValidationError('Invalid merchant NFT address');
     }
 
     const now = Math.floor(Date.now() / 1000);
+    let metadata: Record<string, unknown> | undefined;
+    try {
+      metadata =
+        params.metadata === undefined
+          ? undefined
+          : cloneJsonSerializable(params.metadata);
+    } catch (error) {
+      throw new TonbankcardValidationError(
+        `Invalid invoice metadata: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
 
     // Generate deterministic invoice ID
     const invoiceId = generateInvoiceId({
@@ -157,11 +183,12 @@ export class TonbankcardSDK {
       amountTbc: params.amountTbc,
       orderId: params.orderId,
       description: params.description,
-      metadata: params.metadata,
+      metadata,
       createdAt: now,
-      expiresAt: params.expirationSeconds
-        ? now + params.expirationSeconds
-        : undefined,
+      expiresAt:
+        params.expirationSeconds === undefined
+          ? undefined
+          : now + params.expirationSeconds,
     };
 
     return invoice;
@@ -178,7 +205,7 @@ export class TonbankcardSDK {
    */
   async getInvoice(invoiceId: string): Promise<Invoice | null> {
     if (!this.config.apiEndpoint) {
-      throw new Error(
+      throw new TonbankcardConfigurationError(
         'API endpoint not configured. Invoice storage is merchant responsibility.'
       );
     }
@@ -192,13 +219,19 @@ export class TonbankcardSDK {
         if (response.status === 404) {
           return null;
         }
-        throw new Error(`API error: ${response.statusText}`);
+        throw new TonbankcardApiError(
+          `API error: ${response.statusText}`,
+          response.status
+        );
       }
 
       const data = await response.json();
       return this.parseInvoice(data);
     } catch (error) {
-      throw new Error(
+      if (error instanceof TonbankcardSDKError) {
+        throw error;
+      }
+      throw new TonbankcardApiError(
         `Failed to fetch invoice: ${error instanceof Error ? error.message : String(error)}`
       );
     }
@@ -218,11 +251,11 @@ export class TonbankcardSDK {
     if (this.config.apiEndpoint) {
       const invoice = await this.getInvoice(invoiceId);
       if (!invoice) {
-        throw new Error('Invoice not found');
+        throw new TonbankcardInvoiceNotFoundError();
       }
 
       // Check if invoice expired
-      if (invoice.expiresAt && invoice.expiresAt < Date.now() / 1000) {
+      if (isExpired(invoice.expiresAt)) {
         return PaymentStatus.EXPIRED;
       }
     }
@@ -527,7 +560,7 @@ export class TonbankcardSDK {
         canReceive: canReceive.stack.readBoolean(),
       };
     } catch (error) {
-      throw new Error(
+      throw new TonbankcardBlockchainError(
         `Failed to fetch account info: ${error instanceof Error ? error.message : String(error)}`
       );
     }
@@ -594,7 +627,10 @@ export class TonbankcardSDK {
       amountTbc: BigInt(data.amountTbc),
       orderId: data.orderId,
       description: data.description,
-      metadata: data.metadata,
+      metadata:
+        data.metadata === undefined
+          ? undefined
+          : cloneJsonSerializable(data.metadata),
       createdAt: data.createdAt,
       expiresAt: data.expiresAt,
     };

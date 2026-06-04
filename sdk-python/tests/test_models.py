@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from tonbankcard_merchant.models import (
@@ -26,6 +29,7 @@ class TestValidators:
             VALID_NFT,
             VALID_NFT_STANDARD_BASE64,
             VALID_NFT_RAW,
+            f" \n{VALID_NFT}\t",
         ],
     )
     def test_valid_merchant_nft(self, address: str) -> None:
@@ -48,7 +52,9 @@ class TestValidators:
 
     def test_valid_amount(self) -> None:
         validate_amount("1")
+        validate_amount(" 1 ")
         validate_amount("1000000000")
+        validate_amount("\n1000000000\t")
         validate_amount(str((1 << 120) - 1))
 
     @pytest.mark.parametrize(
@@ -103,6 +109,17 @@ class TestCreateInvoiceRequest:
             "metadata": {"order_id": "ORDER-1"},
             "expires_at": "2025-12-31T23:59:59Z",
         }
+
+    def test_to_dict_uses_normalized_address_and_amount(self) -> None:
+        req = CreateInvoiceRequest(
+            merchant_nft=f" \n{VALID_NFT}\t",
+            amount_tbc=" 1000000000 ",
+        )
+
+        payload = req.to_dict()
+
+        assert payload["merchant_nft"] == VALID_NFT
+        assert payload["amount_tbc"] == "1000000000"
 
     def test_rejects_wrong_currency(self) -> None:
         with pytest.raises(ValueError):
@@ -184,3 +201,9 @@ class TestModelParsing:
         )
         assert settlement.on_chain_verified is False
         assert settlement.verification_url is None
+
+    def test_invoice_status_matches_canonical_fixture(self) -> None:
+        fixture_path = Path(__file__).parents[2] / "tests/fixtures/sdk-low-invoice-statuses.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+        assert [status.value for status in InvoiceStatus] == fixture["statuses"]
