@@ -190,11 +190,20 @@ the full stack on your laptop:
 
 ```bash
 cp .env.sandbox.example .env.sandbox
+# Generate a fresh HMAC secret for sandbox API-key hashing.
+sandbox_secret="$(openssl rand -base64 32)"
+sed -i.bak "s|^SANDBOX_API_KEY_SECRET=.*|SANDBOX_API_KEY_SECRET=${sandbox_secret}|" .env.sandbox
+rm -f .env.sandbox.bak
+
 # Edit .env.sandbox: at minimum set PAYMENT_HUB_ADDRESS / MERCHANT_PAYMENT_HUB_ADDRESS
 # to your deployed testnet contracts.
 
 docker compose -f docker-compose.sandbox.yml --env-file .env.sandbox up --build
 ```
+
+`SANDBOX_API_KEY_SECRET` has no compose default. If it is unset or empty,
+`docker compose` refuses to render the sandbox stack; generate a unique value
+for every sandbox deployment and rotate it if the env file is exposed.
 
 Services come up on these host ports by default:
 
@@ -220,6 +229,7 @@ are environment variables — there is no separate sandbox fork of the code.
 | `SANDBOX_DEFAULT_MERCHANT_NFT` | `EQAA…AAA` | Merchant NFT bound to the public sandbox key. |
 | `SANDBOX_TEST_NFT_CARDS` | _two synthetic cards_ | Comma-separated NFT card IDs for SDK examples. |
 | `SANDBOX_RESET_CADENCE` | `weekly` | Reported by `/v1/sandbox/info` so SDKs can warn users. |
+| `SANDBOX_API_KEY_SECRET` | _required; no default_ | HMAC key for sandbox API-key hashing. Generate with `openssl rand -base64 32`. |
 | `FAUCET_DEFAULT_DISPENSE_NANOCOINS` | `10000000000` | Default 10 TBC per call. |
 | `FAUCET_RATE_LIMIT_WINDOW_MS` | `3600000` | 1-hour window. |
 | `FAUCET_RATE_LIMIT_MAX` | `1` | One dispense per address per window. |
@@ -274,14 +284,15 @@ default to the sandbox.
 
 ## 8. Security posture
 
-- The sandbox holds **no production credentials**. The sandbox API key
-  secret and any faucet signing keys live in sandbox-only KMS keys.
+- The sandbox holds **no production credentials**. The sandbox API-key HMAC
+  secret is generated per deployment, and any faucet signing keys live in
+  sandbox-only KMS keys.
 - The faucet never moves real funds: the default `DryRunDispenser` returns
   synthetic transaction hashes, and the real `TonDispenser` (when wired up)
   is connected exclusively to testnet RPC endpoints.
-- All sandbox addresses, keys, and contracts are documented openly — there
-  are no shared secrets. Treat anything you receive from the sandbox as
-  public information.
+- Sandbox addresses, public API keys, and contracts are documented openly.
+  Do not reuse generated HMAC secrets across deployments, and treat anything
+  you receive from the sandbox as public information.
 - The sandbox stack runs behind the same WAF / rate-limit layer as
   production so that abuse cannot cascade into the production environment.
 

@@ -30,6 +30,11 @@ jobs:
       - name: Verify compose Postgres hardening
         run: scripts/tooling/check-compose-postgres-hardening.sh
 
+      # DEVOPS-M4: sandbox compose must not provide a public API_KEY_SECRET
+      # fallback; operators must inject a fresh SANDBOX_API_KEY_SECRET.
+      - name: Verify sandbox API key secret hardening
+        run: scripts/tooling/check-sandbox-api-key-secret.sh
+
   build-runtime:
     name: Build (Runtime)
     runs-on: ubuntu-latest

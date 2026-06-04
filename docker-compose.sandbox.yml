@@ -41,7 +41,7 @@ services:
       HOST: 0.0.0.0
       TON_NETWORK: ${TON_NETWORK:-testnet}
       ALLOWED_ORIGINS: ${SANDBOX_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:8080}
-      API_KEY_SECRET: ${SANDBOX_API_KEY_SECRET:-sandbox-do-not-use-in-production-32-bytes}
+      API_KEY_SECRET: ${SANDBOX_API_KEY_SECRET:?SANDBOX_API_KEY_SECRET must be set}
       SANDBOX_BASE_URL: ${SANDBOX_BASE_URL:-http://localhost:3001}
       SANDBOX_FAUCET_URL: ${SANDBOX_FAUCET_URL:-http://localhost:4500}
       SANDBOX_RESET_CADENCE: ${SANDBOX_RESET_CADENCE:-weekly}
