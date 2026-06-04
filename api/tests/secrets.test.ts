@@ -54,6 +54,17 @@ describe('resolveApiKeySecret', () => {
       ).toThrow(InsecureSecretError);
     });
 
+    it('throws when API_KEY_SECRET is the historical sandbox compose default', () => {
+      expect(() =>
+        resolveApiKeySecret(
+          env({
+            NODE_ENV: 'production',
+            API_KEY_SECRET: 'sandbox-do-not-use-in-production-32-bytes',
+          })
+        )
+      ).toThrow(InsecureSecretError);
+    });
+
     it('throws on the shipped .env.example placeholder (case-insensitive)', () => {
       expect(() =>
         resolveApiKeySecret(

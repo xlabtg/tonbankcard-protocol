@@ -22,7 +22,9 @@ import {
   TransactionVerification,
   SettlementMatchCriteria,
 } from './types';
+import { MAX_TBC_NANOCOINS } from './amount';
 import { generateInvoiceId } from './utils';
+import { buildWalletLink } from './walletLink';
 
 /**
  * Note returned in `error` when `verifySettlement` is called without an invoice
@@ -159,10 +161,10 @@ export class MockTonbankcardSDK {
   private invoiceStore: Map<string, Invoice>;
   private settlementStore: Map<string, PaymentSettlement>;
   private accountStore: Map<string, AccountInfo>;
+  private config: TonbankcardConfig;
 
-  // config is accepted for interface compatibility but not used internally
-  // (mock SDK does not make network calls)
-  constructor(_config: TonbankcardConfig, options: MockSDKOptions = {}) {
+  constructor(config: TonbankcardConfig, options: MockSDKOptions = {}) {
+    this.config = config;
     this.options = {
       networkDelayMs: options.networkDelayMs ?? 0,
       settlements: options.settlements ?? new Map(),
@@ -189,6 +191,9 @@ export class MockTonbankcardSDK {
   createInvoice(params: CreateInvoiceParams): Invoice {
     if (params.amountTbc <= 0n) {
       throw new Error('Invoice amount must be positive');
+    }
+    if (params.amountTbc > MAX_TBC_NANOCOINS) {
+      throw new Error('Invoice amount exceeds maximum of 2^120 - 1');
     }
 
     if (!this.isValidAddress(params.merchantNft)) {
@@ -252,24 +257,7 @@ export class MockTonbankcardSDK {
    * Generate wallet deep link — identical behavior to real SDK
    */
   generateWalletLink(params: WalletLinkParams): string {
-    const { invoice, returnUrl } = params;
-
-    if (invoice.amountTbc <= 0n) {
-      throw new Error('Invalid invoice amount');
-    }
-
-    const amount = invoice.amountTbc.toString();
-    const text = encodeURIComponent(
-      `TONBANKCARD Payment: ${invoice.id}${invoice.description ? ` - ${invoice.description}` : ''}`
-    );
-
-    let link = `ton://transfer/${invoice.merchantNft.toString()}?amount=${amount}&text=${text}`;
-
-    if (returnUrl) {
-      link += `&return=${encodeURIComponent(returnUrl)}`;
-    }
-
-    return link;
+    return buildWalletLink(this.config, params);
   }
 
   /**

@@ -9,6 +9,56 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [2.0.0] — 2026-06-04
+
+### Security — `generateWalletLink` separates native TON value from TBC amount (Issue #294, SDK-M4)
+
+- `generateWalletLink()` now targets the configured Payment Hub and sets the
+  deep link's native `amount` query parameter to the TON message value
+  (`50_000_000` nanotons by default), not to `invoice.amountTbc`.
+- The TBC amount is encoded inside a binary Tact `MerchantPaymentRequest`
+  payload in the `bin` query parameter, alongside the payer NFT, merchant NFT,
+  and invoice metadata payload.
+- `WalletLinkParams` now requires `payerNft` so the SDK can build a valid
+  Payment Hub request body. This is a breaking API change for integrations that
+  previously called `generateWalletLink({ invoice })`.
+- `MockTonbankcardSDK.generateWalletLink()` uses the same builder as the real
+  SDK, keeping tests aligned with production link generation.
+- Added regression coverage that decodes the generated BOC and asserts the
+  native TON amount is not the raw TBC amount while the payload carries the TBC
+  amount.
+
+---
+
+## [1.3.3] — 2026-06-04
+
+### Fixed — `createInvoice` enforces the on-chain amount upper bound (Issue #293, SDK-M3)
+
+- `TonbankcardSDK.createInvoice()` now rejects TBC nanocoin amounts above
+  `2^120 - 1`, matching the VarUInteger16 on-chain representation and the
+  existing Go/Python SDK validation.
+- `MockTonbankcardSDK.createInvoice()` applies the same upper-bound check so
+  sandbox tests keep parity with the real SDK.
+- Added regression coverage for the boundary: `2^120 - 1` is accepted and
+  `2^120` is rejected.
+
+---
+
+## [1.3.2] — 2026-06-04
+
+### Fixed — TBC amount helpers keep bigint precision (Issue #292, SDK-M2)
+
+- `formatTBC()` and `parseTBC()` now format and parse nanocoin amounts with
+  BigInt and decimal string operations instead of routing values through
+  JavaScript `number`/`parseFloat`, preserving amounts above `2^53`.
+- The main SDK entry point and dependency-free browser entry point share the
+  same amount helper implementation, so `@tonbankcard/merchant-sdk/browser`
+  keeps identical numeric semantics.
+- Added regression coverage that round-trips a value above the JavaScript safe
+  integer limit with 9 decimal places.
+
+---
+
 ## [1.3.1] — 2026-06-02
 
 ### Fixed — Confirmation depth is now a block-height difference (Issue #267, SDK-H2)

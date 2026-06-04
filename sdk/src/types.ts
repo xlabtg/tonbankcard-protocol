@@ -6,7 +6,7 @@
  * All payment operations require user wallet consent via TON Connect or similar.
  */
 
-import { Address } from '@ton/core';
+import { Address, Cell } from '@ton/core';
 
 /**
  * Account states as defined in the Payment Hub contract
@@ -116,6 +116,23 @@ export interface CreateInvoiceParams {
 export interface WalletLinkParams {
   /** The invoice to create a payment link for */
   invoice: Invoice;
+
+  /** Payer's NFT account address, required by MerchantPaymentRequest */
+  payerNft: Address;
+
+  /**
+   * Native TON value sent with the Payment Hub message, in nanotons.
+   * This pays for message execution and is separate from the TBC amount.
+   * Defaults to 50_000_000 nanotons (0.05 TON).
+   */
+  nativeAmountNanoTon?: bigint;
+
+  /**
+   * Optional MerchantPaymentRequest metadata payload. When omitted, the SDK
+   * encodes the invoice ID as the payload so off-chain settlement matching can
+   * compare the emitted payload hash.
+   */
+  payload?: Cell;
 
   /** Optional callback URL after payment */
   returnUrl?: string;

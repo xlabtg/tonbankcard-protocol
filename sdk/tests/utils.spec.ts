@@ -69,6 +69,15 @@ describe('Utils', () => {
       expect(formatTBC(BigInt(10_500_000_000), 4)).toBe('10.5000');
       expect(formatTBC(BigInt(10_500_000_000), 0)).toBe('11');
     });
+
+    it('should preserve values above the JavaScript safe integer limit', () => {
+      const nanocoins = 2n ** 53n + 3n;
+
+      const formatted = formatTBC(nanocoins, 9);
+
+      expect(formatted).toBe('9007199.254740995');
+      expect(parseTBC(formatted)).toBe(nanocoins);
+    });
   });
 
   describe('parseTBC', () => {

@@ -21,7 +21,9 @@ import {
   TransactionVerification,
   SettlementMatchCriteria,
 } from './types';
+import { MAX_TBC_NANOCOINS } from './amount';
 import { generateInvoiceId, isValidTonAddress } from './utils';
+import { buildWalletLink } from './walletLink';
 
 /** Masterchain identifiers (workchain -1, full shard) used for block lookups. */
 const MASTERCHAIN_WORKCHAIN = -1;
@@ -129,6 +131,9 @@ export class TonbankcardSDK {
     // Validate amount is positive
     if (params.amountTbc <= 0n) {
       throw new Error('Invoice amount must be positive');
+    }
+    if (params.amountTbc > MAX_TBC_NANOCOINS) {
+      throw new Error('Invoice amount exceeds maximum of 2^120 - 1');
     }
 
     // Validate merchant NFT address
@@ -244,27 +249,7 @@ export class TonbankcardSDK {
    * @returns Deep link URL
    */
   generateWalletLink(params: WalletLinkParams): string {
-    const { invoice, returnUrl } = params;
-
-    // Validate invoice
-    if (invoice.amountTbc <= 0n) {
-      throw new Error('Invalid invoice amount');
-    }
-
-    // Build TON Connect link
-    // Format: ton://transfer/<address>?amount=<nanotons>&text=<memo>
-    const amount = invoice.amountTbc.toString();
-    const text = encodeURIComponent(
-      `TONBANKCARD Payment: ${invoice.id}${invoice.description ? ` - ${invoice.description}` : ''}`
-    );
-
-    let link = `ton://transfer/${invoice.merchantNft.toString()}?amount=${amount}&text=${text}`;
-
-    if (returnUrl) {
-      link += `&return=${encodeURIComponent(returnUrl)}`;
-    }
-
-    return link;
+    return buildWalletLink(this.config, params);
   }
 
   /**

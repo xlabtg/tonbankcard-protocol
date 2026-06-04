@@ -10,11 +10,42 @@
 import * as React from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { PaymentFacade, parseDecimalToNanocoins, validateAppConfig, type AppConfig } from '../lib';
+import {
+  PaymentFacade,
+  ReactNativeBiometricAuthenticator,
+  formatBalance,
+  openUrlWithBiometricGate,
+  parseDecimalToNanocoins,
+  validateAppConfig,
+  type AppConfig,
+  type BiometricAuthenticator,
+} from '../lib';
 import { DEFAULT_MAINNET_CONFIG } from '../lib/config';
 import { colors, radius, spacing, typography } from '../theme';
 
+let defaultBiometricAuthenticator: BiometricAuthenticator | undefined;
+
+export interface SendPaymentScreenProps {
+  readonly biometricAuthenticator: BiometricAuthenticator;
+}
+
+export function createSendPaymentScreen(
+  biometricAuthenticator: BiometricAuthenticator,
+): () => React.ReactElement {
+  return function InjectedSendPaymentScreen(): React.ReactElement {
+    return <SendPaymentScreenContent biometricAuthenticator={biometricAuthenticator} />;
+  };
+}
+
 export function SendPaymentScreen(): React.ReactElement {
+  return (
+    <SendPaymentScreenContent biometricAuthenticator={getDefaultBiometricAuthenticator()} />
+  );
+}
+
+function SendPaymentScreenContent({
+  biometricAuthenticator,
+}: SendPaymentScreenProps): React.ReactElement {
   const [recipient, setRecipient] = React.useState('');
   const [amount, setAmount] = React.useState('');
   const [note, setNote] = React.useState('');
@@ -27,18 +58,26 @@ export function SendPaymentScreen(): React.ReactElement {
         ...DEFAULT_MAINNET_CONFIG,
         paymentHubAddress: recipient,
       });
-      const facade = new PaymentFacade(config);
-      const bundle = facade.buildPaymentLink({
-        merchantNft: recipient,
-        amountTbc: parseDecimalToNanocoins(amount),
-        description: note || undefined,
-      });
-      Alert.alert('Open wallet?', `${bundle.amountFormatted} → ${recipient}`, [
+      const amountTbc = parseDecimalToNanocoins(amount);
+      const description = note || undefined;
+
+      Alert.alert('Open wallet?', `${formatBalance(amountTbc)} → ${recipient}`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Open',
           onPress: () => {
-            Linking.openURL(bundle.link).catch((openError: unknown) => {
+            openUrlWithBiometricGate({
+              authenticator: biometricAuthenticator,
+              buildUrl: () => {
+                const facade = new PaymentFacade(config);
+                return facade.buildPaymentLink({
+                  merchantNft: recipient,
+                  amountTbc,
+                  description,
+                }).link;
+              },
+              openUrl: (url) => Linking.openURL(url),
+            }).catch((openError: unknown) => {
               setError(openError instanceof Error ? openError.message : String(openError));
             });
           },
@@ -47,7 +86,7 @@ export function SendPaymentScreen(): React.ReactElement {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [recipient, amount, note]);
+  }, [recipient, amount, note, biometricAuthenticator]);
 
   return (
     <View style={styles.container}>
@@ -86,6 +125,11 @@ export function SendPaymentScreen(): React.ReactElement {
       </Text>
     </View>
   );
+}
+
+function getDefaultBiometricAuthenticator(): BiometricAuthenticator {
+  defaultBiometricAuthenticator ??= new ReactNativeBiometricAuthenticator();
+  return defaultBiometricAuthenticator;
 }
 
 const styles = StyleSheet.create({

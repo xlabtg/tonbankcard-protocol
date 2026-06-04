@@ -8,6 +8,8 @@ import { MockTonbankcardSDK, MockSettlementStore, createMockSDK } from '../src/m
 import { PaymentStatus, AccountState } from '../src/types';
 import { parseTBC } from '../src/utils';
 
+const MAX_TBC_NANOCOINS = (2n ** 120n) - 1n;
+
 describe('createMockSDK', () => {
   it('should create a MockTonbankcardSDK with default options', () => {
     const sdk = createMockSDK();
@@ -24,6 +26,12 @@ describe('MockTonbankcardSDK', () => {
   let sdk: MockTonbankcardSDK;
   const testMerchantNft = Address.parse(
     'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'
+  );
+  const testPaymentHub = Address.parse(
+    'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7'
+  );
+  const testPayerNft = Address.parseRaw(
+    '0:1111111111111111111111111111111111111111111111111111111111111111'
   );
 
   beforeEach(() => {
@@ -53,6 +61,21 @@ describe('MockTonbankcardSDK', () => {
           amountTbc: BigInt(0),
         })
       ).toThrow('Invoice amount must be positive');
+    });
+
+    it('should enforce the on-chain amount upper bound', () => {
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: MAX_TBC_NANOCOINS,
+      });
+
+      expect(invoice.amountTbc).toBe(MAX_TBC_NANOCOINS);
+      expect(() =>
+        sdk.createInvoice({
+          merchantNft: testMerchantNft,
+          amountTbc: MAX_TBC_NANOCOINS + 1n,
+        })
+      ).toThrow('Invoice amount exceeds maximum of 2^120 - 1');
     });
   });
 
@@ -120,9 +143,11 @@ describe('MockTonbankcardSDK', () => {
         description: 'Test',
       });
 
-      const link = sdk.generateWalletLink({ invoice });
+      const link = sdk.generateWalletLink({ invoice, payerNft: testPayerNft });
       expect(link).toContain('ton://transfer/');
-      expect(link).toContain('amount=10500000000');
+      expect(link).toContain(testPaymentHub.toString());
+      expect(link).toContain('amount=50000000');
+      expect(link).toContain('bin=');
     });
   });
 

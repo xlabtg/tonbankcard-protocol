@@ -34,6 +34,7 @@ export const MIN_API_KEY_SECRET_LENGTH = 16;
 export const KNOWN_WEAK_API_KEY_SECRETS: ReadonlySet<string> = new Set([
   'default-dev-secret',
   'change-me-to-a-32-byte-random-value',
+  'sandbox-do-not-use-in-production-32-bytes',
   'changeme',
   'change-me',
   'secret',
