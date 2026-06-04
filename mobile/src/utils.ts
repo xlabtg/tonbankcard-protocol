@@ -4,6 +4,15 @@
 
 import { Address } from '@ton/core';
 
+const NANOCOINS_PER_TBC = 1_000_000_000n;
+
+function assertDecimalPlaces(decimals: number): number {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
+    throw new RangeError('decimals must be an integer between 0 and 100');
+  }
+  return decimals;
+}
+
 /**
  * Format TBC amount from nanocoins string to human-readable
  *
@@ -12,8 +21,20 @@ import { Address } from '@ton/core';
  * @returns Formatted string
  */
 export function formatTBC(nanocoins: string, decimals: number = 2): string {
-  const tbc = Number(nanocoins) / 1e9;
-  return tbc.toFixed(decimals);
+  const decimalPlaces = assertDecimalPlaces(decimals);
+  const amount = BigInt(nanocoins);
+  const sign = amount < 0n ? '-' : '';
+  const absoluteAmount = amount < 0n ? -amount : amount;
+  const scale = 10n ** BigInt(decimalPlaces);
+  const rounded = (absoluteAmount * scale + NANOCOINS_PER_TBC / 2n) / NANOCOINS_PER_TBC;
+  const integerPart = rounded / scale;
+
+  if (decimalPlaces === 0) {
+    return `${sign}${integerPart.toString()}`;
+  }
+
+  const fractionalPart = (rounded % scale).toString().padStart(decimalPlaces, '0');
+  return `${sign}${integerPart.toString()}.${fractionalPart}`;
 }
 
 /**

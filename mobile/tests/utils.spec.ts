@@ -37,6 +37,14 @@ describe('Utils', () => {
     it('should handle small amounts', () => {
       expect(formatTBC('123456789')).toBe('0.12');
     });
+
+    it('should format amounts above Number.MAX_SAFE_INTEGER exactly', () => {
+      expect(formatTBC('90071992547409910', 9)).toBe('90071992.547409910');
+    });
+
+    it('should round fractional display values without floating point drift', () => {
+      expect(formatTBC('995000000')).toBe('1.00');
+    });
   });
 
   describe('shortAddress', () => {
