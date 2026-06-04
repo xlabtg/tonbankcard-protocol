@@ -1,7 +1,9 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import {
+  CertificatePinningError,
   HttpsClient,
   HttpsOnlyError,
+  type CertificateFingerprintProvider,
   type CertificateValidator,
 } from '../../src/lib/network/httpsClient';
 
@@ -52,27 +54,91 @@ describe('HttpsClient', () => {
     expect(client.pinsFor('other.example.com')).toEqual([]);
   });
 
-  it('calls the certificate validator with every configured pin', async () => {
+  it('validates pinned hosts against the live certificate fingerprint', async () => {
+    const fetchImpl = makeFetch();
+    const certificateFingerprintProvider = jest.fn<CertificateFingerprintProvider>(
+      async () => 'BBBB',
+    );
     const validator = jest.fn<CertificateValidator>();
     const client = new HttpsClient({
-      fetchImpl: makeFetch(),
+      fetchImpl,
       pins: [{ host: 'api.tonbankcard.app', sha256Pins: ['AAAA', 'BBBB'] }],
+      certificateFingerprintProvider,
       certificateValidator: validator,
     });
     await client.fetch('https://api.tonbankcard.app/health');
-    expect(validator).toHaveBeenCalledTimes(2);
-    expect(validator).toHaveBeenNthCalledWith(1, 'api.tonbankcard.app', 'AAAA');
-    expect(validator).toHaveBeenNthCalledWith(2, 'api.tonbankcard.app', 'BBBB');
+    expect(certificateFingerprintProvider).toHaveBeenCalledTimes(1);
+    expect(certificateFingerprintProvider).toHaveBeenCalledWith(
+      'api.tonbankcard.app',
+      'https://api.tonbankcard.app/health',
+      expect.any(Object),
+    );
+    expect(validator).toHaveBeenCalledTimes(1);
+    expect(validator).toHaveBeenCalledWith('api.tonbankcard.app', 'BBBB');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects pinned hosts whose live fingerprint does not match configured pins', async () => {
+    const fetchImpl = makeFetch();
+    const certificateFingerprintProvider = jest.fn<CertificateFingerprintProvider>(
+      async () => 'CCCC',
+    );
+    const client = new HttpsClient({
+      fetchImpl,
+      pins: [{ host: 'api.tonbankcard.app', sha256Pins: ['AAAA', 'BBBB'] }],
+      certificateFingerprintProvider,
+    });
+    await expect(
+      client.fetch('https://api.tonbankcard.app/health'),
+    ).rejects.toBeInstanceOf(CertificatePinningError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for pinned hosts when no live fingerprint is available', async () => {
+    const fetchImpl = makeFetch();
+    const client = new HttpsClient({
+      fetchImpl,
+      pins: [{ host: 'api.tonbankcard.app', sha256Pins: ['AAAA'] }],
+    });
+    await expect(
+      client.fetch('https://api.tonbankcard.app/health'),
+    ).rejects.toBeInstanceOf(CertificatePinningError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('leaves unpinned hosts permissive', async () => {
+    const fetchImpl = makeFetch();
+    const certificateFingerprintProvider = jest.fn<CertificateFingerprintProvider>(
+      async () => 'CCCC',
+    );
+    const validator = jest.fn<CertificateValidator>();
+    const client = new HttpsClient({
+      fetchImpl,
+      pins: [{ host: 'api.tonbankcard.app', sha256Pins: ['AAAA'] }],
+      certificateFingerprintProvider,
+      certificateValidator: validator,
+    });
+    await expect(client.fetch('https://other.example.com/health')).resolves.toHaveProperty(
+      'status',
+      200,
+    );
+    expect(certificateFingerprintProvider).not.toHaveBeenCalled();
+    expect(validator).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('lets validator failures abort the request', async () => {
     const fetchImpl = makeFetch();
+    const certificateFingerprintProvider = jest.fn<CertificateFingerprintProvider>(
+      async () => 'AAAA',
+    );
     const validator = jest.fn<CertificateValidator>(() => {
       throw new Error('pin mismatch');
     });
     const client = new HttpsClient({
       fetchImpl,
       pins: [{ host: 'api.tonbankcard.app', sha256Pins: ['AAAA'] }],
+      certificateFingerprintProvider,
       certificateValidator: validator,
     });
     await expect(

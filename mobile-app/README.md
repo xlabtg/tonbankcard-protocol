@@ -38,7 +38,7 @@ mobile-app/
 | Control                       | Where                                                         |
 | ----------------------------- | -------------------------------------------------------------- |
 | HTTPS-only network            | `src/lib/network/httpsClient.ts` (`HttpsOnlyError`)            |
-| Certificate pinning hook      | `HttpsClient.certificateValidator`                             |
+| Certificate pinning hook      | `HttpsClient.certificateFingerprintProvider` + configured pins  |
 | Endpoint validation           | `validateAppConfig()` in `src/lib/config.ts`                   |
 | TON Connect manifest enforces | `validateManifest()` — HTTPS for url/iconUrl/terms/privacy     |
 | Secure storage abstraction    | `SecureKeyValueStore` (iOS Keychain / Android Keystore)        |
