@@ -37,7 +37,10 @@ async function webhooklessVerificationExample() {
   // localStorage.setItem(`invoice_${invoice.id}`, JSON.stringify(invoice));
 
   // Step 2: Show payment link to user
-  const paymentLink = sdk.generateWalletLink({ invoice });
+  const paymentLink = sdk.generateWalletLink({
+    invoice,
+    payerNft: Address.parse('EQ...UserPayerNFT'),
+  });
   console.log('Payment link:', paymentLink);
 
   // Step 3: Poll for payment status (client-side)

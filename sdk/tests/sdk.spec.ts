@@ -19,6 +19,7 @@ import { parseTBC } from '../src/utils';
  * Mirrors the constant in `src/sdk.ts` and the indexer's event parser.
  */
 const MERCHANT_PAYMENT_OP = 0x3b4c2365;
+const MERCHANT_PAYMENT_REQUEST_OP = 0x16b56831;
 const MAX_TBC_NANOCOINS = (2n ** 120n) - 1n;
 
 /**
@@ -78,6 +79,9 @@ describe('TonbankcardSDK', () => {
   );
   const testPaymentHub = Address.parse(
     'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7'
+  );
+  const testPayerNft = Address.parseRaw(
+    '0:1111111111111111111111111111111111111111111111111111111111111111'
   );
 
   beforeEach(() => {
@@ -201,6 +205,16 @@ describe('TonbankcardSDK', () => {
   });
 
   describe('generateWalletLink', () => {
+    function parseTonTransferLink(link: string): {
+      address: string;
+      query: URLSearchParams;
+    } {
+      const prefix = 'ton://transfer/';
+      expect(link.startsWith(prefix)).toBe(true);
+      const [target, query = ''] = link.slice(prefix.length).split('?');
+      return { address: target, query: new URLSearchParams(query) };
+    }
+
     it('should generate valid TON Connect link', () => {
       const invoice = sdk.createInvoice({
         merchantNft: testMerchantNft,
@@ -209,12 +223,46 @@ describe('TonbankcardSDK', () => {
         description: 'Test Product',
       });
 
-      const link = sdk.generateWalletLink({ invoice });
+      const link = sdk.generateWalletLink({ invoice, payerNft: testPayerNft });
 
       expect(link).toContain('ton://transfer/');
-      expect(link).toContain(testMerchantNft.toString());
-      expect(link).toContain('amount=10500000000');
+      expect(link).toContain(testPaymentHub.toString());
+      expect(link).toContain('amount=50000000');
+      expect(link).toContain('bin=');
       expect(link).toContain('text=');
+    });
+
+    it('should put native TON in amount and encode the TBC payment request in bin payload', () => {
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC('10.50'),
+        orderId: 'ORDER-123',
+        description: 'Test Product',
+      });
+
+      const link = sdk.generateWalletLink({ invoice, payerNft: testPayerNft });
+      const { address, query } = parseTonTransferLink(link);
+
+      expect(address).toBe(testPaymentHub.toString());
+      expect(query.get('amount')).toBe('50000000');
+      expect(query.get('amount')).not.toBe(invoice.amountTbc.toString());
+
+      const bin = query.get('bin');
+      expect(bin).toBeTruthy();
+
+      const [body] = Cell.fromBoc(Buffer.from(bin!, 'base64url'));
+      const slice = body.beginParse();
+
+      expect(slice.loadUint(32)).toBe(MERCHANT_PAYMENT_REQUEST_OP);
+      expect(slice.loadAddress().equals(testPayerNft)).toBe(true);
+      expect(slice.loadAddress().equals(invoice.merchantNft)).toBe(true);
+      expect(slice.loadCoins()).toBe(invoice.amountTbc);
+
+      const payload = slice.loadMaybeRef();
+      expect(payload).not.toBeNull();
+      const payloadSlice = payload!.beginParse();
+      expect(payloadSlice.loadUint(8)).toBe(2);
+      expect(payloadSlice.loadStringTail()).toBe(invoice.id);
     });
 
     it('should include return URL when specified', () => {
@@ -224,7 +272,11 @@ describe('TonbankcardSDK', () => {
       });
 
       const returnUrl = 'https://example.com/success';
-      const link = sdk.generateWalletLink({ invoice, returnUrl });
+      const link = sdk.generateWalletLink({
+        invoice,
+        payerNft: testPayerNft,
+        returnUrl,
+      });
 
       expect(link).toContain(`return=${encodeURIComponent(returnUrl)}`);
     });
@@ -236,10 +288,12 @@ describe('TonbankcardSDK', () => {
         description: 'Special Product: Test & Demo',
       });
 
-      const link = sdk.generateWalletLink({ invoice });
+      const link = sdk.generateWalletLink({ invoice, payerNft: testPayerNft });
+      const { query } = parseTonTransferLink(link);
 
       expect(link).toContain('text=');
-      expect(link).toContain(encodeURIComponent('TONBANKCARD Payment:'));
+      expect(query.get('text')).toContain('TONBANKCARD Payment:');
+      expect(query.get('text')).toContain('Special Product: Test & Demo');
     });
 
     it('should throw on invalid invoice amount', () => {
@@ -251,9 +305,9 @@ describe('TonbankcardSDK', () => {
       // Manually corrupt the invoice
       invoice.amountTbc = BigInt(0);
 
-      expect(() => sdk.generateWalletLink({ invoice })).toThrow(
-        'Invalid invoice amount'
-      );
+      expect(() =>
+        sdk.generateWalletLink({ invoice, payerNft: testPayerNft })
+      ).toThrow('Invalid invoice amount');
     });
   });
 
