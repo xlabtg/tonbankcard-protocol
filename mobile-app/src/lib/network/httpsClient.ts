@@ -40,8 +40,6 @@ export interface HttpsClientOptions {
   readonly certificateValidator?: CertificateValidator;
 }
 
-const HTTPS_PREFIX = 'https://';
-
 export class HttpsOnlyError extends Error {
   constructor(url: string) {
     super(`Refusing non-HTTPS URL: ${url}`);
@@ -78,10 +76,19 @@ export class HttpsClient {
   }
 
   async fetch(url: string, init: HttpsFetchOptions = {}): Promise<Response> {
-    if (!url.startsWith(HTTPS_PREFIX)) {
+    let parsed: URL;
+    try {
+      if (url !== url.trim() || url.includes('\\')) {
+        throw new Error('URL contains ambiguous formatting');
+      }
+      parsed = new URL(url);
+    } catch {
       throw new HttpsOnlyError(url);
     }
-    const host = init.host ?? new URL(url).hostname;
+    if (parsed.protocol !== 'https:') {
+      throw new HttpsOnlyError(url);
+    }
+    const host = init.host ?? parsed.hostname;
     const pins = this.pinsFor(host);
     if (pins.length > 0) {
       if (!this.fingerprintProvider) {

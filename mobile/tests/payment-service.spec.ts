@@ -12,6 +12,8 @@ const testConfig: MobileConfig = {
 };
 
 const merchantAddress = 'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7';
+const rawMerchantAddress =
+  '0:0000000000000000000000000000000000000000000000000000000000000000';
 
 describe('PaymentService', () => {
   describe('constructor', () => {
@@ -42,6 +44,16 @@ describe('PaymentService', () => {
 
       const link = service.generatePaymentLink(request);
       expect(link).toContain(merchantAddress);
+    });
+
+    it('should encode raw-form merchant addresses in the link path', () => {
+      const link = service.generatePaymentLink({
+        merchantNft: rawMerchantAddress,
+        amountTbc: '1000000000',
+      });
+
+      expect(link).toContain(`ton://transfer/${encodeURIComponent(rawMerchantAddress)}?`);
+      expect(link).not.toContain(`ton://transfer/${rawMerchantAddress}?`);
     });
 
     it('should include amount in link', () => {
@@ -205,6 +217,31 @@ describe('PaymentService', () => {
       // The raw, unencoded ampersand from the return URL must not appear as a
       // standalone query separator that could inject parameters.
       expect(link).not.toContain('&b=2');
+    });
+
+    it('should reject javascript return URLs', () => {
+      expect(() =>
+        service.generatePaymentLink({
+          merchantNft: merchantAddress,
+          amountTbc: '1000000000',
+          returnUrl: 'javascript:alert(1)',
+        })
+      ).toThrow(/Invalid return URL/);
+    });
+
+    it('should reject return URLs outside the configured host allowlist', () => {
+      const allowlistedService = new PaymentService({
+        ...testConfig,
+        allowedReturnUrlHosts: ['shop.example.com'],
+      });
+
+      expect(() =>
+        allowlistedService.generatePaymentLink({
+          merchantNft: merchantAddress,
+          amountTbc: '1000000000',
+          returnUrl: 'https://evil.example.com/callback',
+        })
+      ).toThrow(/Invalid return URL/);
     });
 
     it('should encode reserved characters injected via orderId exactly once', () => {

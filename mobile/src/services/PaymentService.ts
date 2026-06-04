@@ -9,7 +9,7 @@
  */
 
 import { MobileConfig, PaymentRequest, TransactionItem } from '../types';
-import { assertAmount, isValidTonAddress } from '../utils';
+import { assertAmount, assertReturnUrl, isValidTonAddress } from '../utils';
 
 /**
  * Payment Service
@@ -68,7 +68,10 @@ export class PaymentService {
     let link = `ton://transfer/${merchant}?amount=${encodeURIComponent(amount)}&text=${text}`;
 
     if (request.returnUrl) {
-      link += `&return=${encodeURIComponent(request.returnUrl)}`;
+      const returnUrl = assertReturnUrl(request.returnUrl, {
+        allowedHosts: this.config.allowedReturnUrlHosts,
+      });
+      link += `&return=${encodeURIComponent(returnUrl)}`;
     }
 
     return link;

@@ -47,6 +47,9 @@ export {
   formatRelativeTime,
   isValidTonAddress,
   assertAmount,
+  isAllowedReturnUrl,
+  assertReturnUrl,
+  type ReturnUrlValidationOptions,
 } from './utils';
 
 /**
