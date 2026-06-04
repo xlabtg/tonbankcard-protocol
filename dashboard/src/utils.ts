@@ -16,6 +16,7 @@ import { InvoiceGeneratorParams } from './types';
  * and "1.5", but rejects "-1", "1e9", "10&bin=evil", or empty strings.
  */
 const NON_NEGATIVE_AMOUNT = /^\d+(\.\d+)?$/;
+const NANOCOINS_PER_TBC = 1_000_000_000n;
 
 /**
  * Validate that an amount string is a non-negative integer or decimal.
@@ -53,6 +54,13 @@ function assertTonAddress(merchantNft: string): string {
   return merchantNft;
 }
 
+function assertDecimalPlaces(decimals: number): number {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
+    throw new RangeError('decimals must be an integer between 0 and 100');
+  }
+  return decimals;
+}
+
 /**
  * Format nanocoin amount to human-readable TBC string
  *
@@ -61,8 +69,20 @@ function assertTonAddress(merchantNft: string): string {
  * @returns Formatted TBC amount string (e.g., "10.50")
  */
 export function formatTBC(nanocoins: string, decimals: number = 2): string {
-  const tbc = Number(nanocoins) / 1e9;
-  return tbc.toFixed(decimals);
+  const decimalPlaces = assertDecimalPlaces(decimals);
+  const amount = BigInt(nanocoins);
+  const sign = amount < 0n ? '-' : '';
+  const absoluteAmount = amount < 0n ? -amount : amount;
+  const scale = 10n ** BigInt(decimalPlaces);
+  const rounded = (absoluteAmount * scale + NANOCOINS_PER_TBC / 2n) / NANOCOINS_PER_TBC;
+  const integerPart = rounded / scale;
+
+  if (decimalPlaces === 0) {
+    return `${sign}${integerPart.toString()}`;
+  }
+
+  const fractionalPart = (rounded % scale).toString().padStart(decimalPlaces, '0');
+  return `${sign}${integerPart.toString()}.${fractionalPart}`;
 }
 
 /**
@@ -103,8 +123,7 @@ export function formatDate(timestamp: number): string {
  * @returns Formatted currency string (e.g., "1,234.56 TBC")
  */
 export function formatCurrency(nanocoins: string): string {
-  const tbc = Number(nanocoins) / 1e9;
-  const parts = tbc.toFixed(2).split('.');
+  const parts = formatTBC(nanocoins, 2).split('.');
   const integerPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return `${integerPart}.${parts[1]} TBC`;
 }

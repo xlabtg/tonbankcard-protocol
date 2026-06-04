@@ -6,12 +6,16 @@ name: Workflow Policy
 #     the repository-wide (potentially read-write) default.
 #   * DEVOPS-M1: third-party GitHub Actions must be pinned to full commit SHAs
 #     with trailing human-readable version comments.
+#   * DEVOPS-M2: locked npm workspaces in ci.yml must install with npm ci
+#     instead of npm install.
 #
 # References:
 #   * issue #263 (DEVOPS-H3)
 #   * issue #283 (DEVOPS-M1)
+#   * issue #284 (DEVOPS-M2)
 #   * scripts/tooling/check-workflow-permissions.sh
 #   * scripts/tooling/check-workflow-action-pins.sh
+#   * scripts/tooling/check-ci-npm-ci.sh
 
 on:
   push:
@@ -20,12 +24,14 @@ on:
       - '.github/workflows/**'
       - 'scripts/tooling/check-workflow-permissions.sh'
       - 'scripts/tooling/check-workflow-action-pins.sh'
+      - 'scripts/tooling/check-ci-npm-ci.sh'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/**'
       - 'scripts/tooling/check-workflow-permissions.sh'
       - 'scripts/tooling/check-workflow-action-pins.sh'
+      - 'scripts/tooling/check-ci-npm-ci.sh'
 
 permissions:
   contents: read
@@ -42,3 +48,6 @@ jobs:
 
       - name: Check third-party action pinning
         run: bash scripts/tooling/check-workflow-action-pins.sh
+
+      - name: Check CI npm installs use lockfile mode
+        run: bash scripts/tooling/check-ci-npm-ci.sh
