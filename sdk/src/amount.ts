@@ -1,4 +1,5 @@
 const NANOCOINS_PER_TBC = 1_000_000_000n;
+export const MAX_TBC_NANOCOINS = (2n ** 120n) - 1n;
 const MAX_FIXED_DECIMALS = 100;
 const DECIMAL_AMOUNT = /^\+?(?:(\d+)(?:\.(\d*))?|\.(\d+))$/;
 
