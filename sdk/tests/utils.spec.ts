@@ -6,6 +6,7 @@ import { describe, it, expect } from '@jest/globals';
 import { Address } from '@ton/core';
 import {
   generateInvoiceId,
+  createPayloadHash,
   formatTBC,
   parseTBC,
   isValidTonAddress,
@@ -51,6 +52,27 @@ describe('Utils', () => {
       expect(id1).not.toBe(id2);
       expect(id1).not.toBe(id3);
       expect(id2).not.toBe(id3);
+    });
+  });
+
+  describe('createPayloadHash', () => {
+    it('should ignore object key insertion order', () => {
+      const payloadA = {
+        invoice_id: 'INV-123',
+        metadata: {
+          order_id: 'ORDER-123',
+          customer_id: 'CUSTOMER-1',
+        },
+      };
+      const payloadB = {
+        metadata: {
+          customer_id: 'CUSTOMER-1',
+          order_id: 'ORDER-123',
+        },
+        invoice_id: 'INV-123',
+      };
+
+      expect(createPayloadHash(payloadA)).toBe(createPayloadHash(payloadB));
     });
   });
 
