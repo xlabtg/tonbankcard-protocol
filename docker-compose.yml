@@ -9,7 +9,7 @@
 #   cp .env.example .env                       # adjust values as needed
 #   docker compose up --build                  # foreground, with logs
 #   docker compose up -d                       # detached
-#   docker compose --profile postgres up -d    # also start PostgreSQL
+#   docker compose --profile postgres up -d    # also start PostgreSQL after setting POSTGRES_PASSWORD
 #   docker compose down                        # stop and remove containers
 #   docker compose down -v                     # also remove named volumes
 #
@@ -35,8 +35,8 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
       HOST: 0.0.0.0
-      # When PostgresStorage is enabled, connect over the docker network.
-      DATABASE_URL: ${DATABASE_URL:-postgres://tonbankcard:tonbankcard@postgres:5432/tonbankcard}
+      # Leave unset to use in-memory storage; set explicitly for PostgresStorage.
+      DATABASE_URL: ${DATABASE_URL:-}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
     ports:
@@ -108,7 +108,8 @@ services:
       start_period: 5s
 
   # PostgreSQL is optional — the API can run against InMemoryStorage. Enable
-  # this profile when you need persistent invoice storage:
+  # this profile when you need persistent invoice storage. Set a generated
+  # POSTGRES_PASSWORD in .env first; the image refuses empty passwords.
   #   docker compose --profile postgres up -d
   postgres:
     image: postgres:16-alpine
@@ -117,10 +118,10 @@ services:
     profiles: ["postgres"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tonbankcard}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tonbankcard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-tonbankcard}
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:

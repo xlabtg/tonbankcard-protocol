@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   infra-verify:
-    name: Infra (cloud-init port binding)
+    name: Infra (port binding and compose hardening)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -23,6 +23,12 @@ jobs:
       # This asserts the cloud-init template keeps the api/indexer on loopback.
       - name: Verify published ports bind to loopback
         run: infra/terraform/compose-vm/scripts/verify-port-binding.sh
+
+      # DEVOPS-M3: local compose must not ship a default Postgres password,
+      # embed default DB credentials in DATABASE_URL, or expose Postgres on
+      # all host interfaces.
+      - name: Verify compose Postgres hardening
+        run: scripts/tooling/check-compose-postgres-hardening.sh
 
   build-runtime:
     name: Build (Runtime)
