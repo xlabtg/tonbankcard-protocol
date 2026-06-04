@@ -25,8 +25,8 @@ users:
 
 write_files:
   - path: /etc/tonbankcard/.env
-    permissions: "0644"
-    owner: "root:root"
+    permissions: "0600"
+    owner: "tonbankcard:tonbankcard"
     encoding: b64
     content: ${env_file_b64}
   - path: /etc/tonbankcard/secrets.env

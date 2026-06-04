@@ -107,14 +107,15 @@ export function createFaucetServer(options: FaucetServerOptions): Express {
     try {
       const address = typeof req.query.address === 'string' ? req.query.address : undefined;
       const reservoir = dispenser.reservoirBalance ? await dispenser.reservoirBalance() : null;
+      const rateLimitConfig = rateLimiter.getConfig();
       const baseStatus = {
         network,
         defaultDispenseNanocoins: defaultDispenseNanocoins.toString(),
         walletAddress: dispenser.walletAddress ?? null,
         reservoirBalanceNanocoins: reservoir !== null ? reservoir.toString() : null,
         rateLimit: {
-          windowSeconds: 3600,
-          maxPerWindow: 1,
+          windowSeconds: Math.ceil(rateLimitConfig.windowMs / 1000),
+          maxPerWindow: rateLimitConfig.maxPerWindow,
         },
       };
       if (address) {

@@ -26,6 +26,7 @@ spec:
         prometheus.io/path: /v1/health
     spec:
       serviceAccountName: {{ include "merchant-api.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
