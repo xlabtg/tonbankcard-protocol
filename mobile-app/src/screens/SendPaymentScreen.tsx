@@ -12,6 +12,7 @@ import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 're
 
 import {
   PaymentFacade,
+  ReactNativeBiometricAuthenticator,
   formatBalance,
   openUrlWithBiometricGate,
   parseDecimalToNanocoins,
@@ -20,10 +21,9 @@ import {
   type BiometricAuthenticator,
 } from '../lib';
 import { DEFAULT_MAINNET_CONFIG } from '../lib/config';
-import { ReactNativeBiometricAuthenticator } from '../platform/ReactNativeBiometricAuthenticator';
 import { colors, radius, spacing, typography } from '../theme';
 
-const defaultBiometricAuthenticator = new ReactNativeBiometricAuthenticator();
+let defaultBiometricAuthenticator: BiometricAuthenticator | undefined;
 
 export interface SendPaymentScreenProps {
   readonly biometricAuthenticator: BiometricAuthenticator;
@@ -38,7 +38,9 @@ export function createSendPaymentScreen(
 }
 
 export function SendPaymentScreen(): React.ReactElement {
-  return <SendPaymentScreenContent biometricAuthenticator={defaultBiometricAuthenticator} />;
+  return (
+    <SendPaymentScreenContent biometricAuthenticator={getDefaultBiometricAuthenticator()} />
+  );
 }
 
 function SendPaymentScreenContent({
@@ -123,6 +125,11 @@ function SendPaymentScreenContent({
       </Text>
     </View>
   );
+}
+
+function getDefaultBiometricAuthenticator(): BiometricAuthenticator {
+  defaultBiometricAuthenticator ??= new ReactNativeBiometricAuthenticator();
+  return defaultBiometricAuthenticator;
 }
 
 const styles = StyleSheet.create({
