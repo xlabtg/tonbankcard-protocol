@@ -7,6 +7,8 @@ runtime dependencies beyond ``httpx``.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -16,7 +18,8 @@ from typing import Any, Optional, Union
 InvoiceMetadataValue = Union[str, int, float, bool]
 InvoiceMetadata = Mapping[str, InvoiceMetadataValue]
 
-_TON_ADDRESS_RE = re.compile(r"^[EU][Qq][A-Za-z0-9_-]{46}$")
+_FRIENDLY_TON_ADDRESS_RE = re.compile(r"^[A-Za-z0-9+/_-]{48}$")
+_RAW_TON_ADDRESS_RE = re.compile(r"^-?[0-9]+:[0-9a-fA-F]{64}$")
 _AMOUNT_RE = re.compile(r"^[1-9][0-9]*$")
 _METADATA_KEY_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -182,13 +185,58 @@ class WebhookPayload:
 
 
 def validate_merchant_nft(address: str) -> None:
-    """Validate a TON address (Base64url, 48 chars).
+    """Validate a TON address in friendly or raw form.
 
     Raises:
-        ValueError: when ``address`` does not match the TON address pattern.
+        ValueError: when ``address`` is malformed or has an invalid checksum.
     """
-    if not isinstance(address, str) or not _TON_ADDRESS_RE.match(address):
+    if not isinstance(address, str) or not _is_valid_ton_address(address):
         raise ValueError(f"Invalid merchant NFT address: {address!r}")
+
+
+def _is_valid_ton_address(address: str) -> bool:
+    return _is_valid_raw_ton_address(address) or _is_valid_friendly_ton_address(address)
+
+
+def _is_valid_raw_ton_address(address: str) -> bool:
+    if not _RAW_TON_ADDRESS_RE.match(address):
+        return False
+    workchain, account_id = address.split(":", 1)
+    try:
+        int(workchain, 10)
+        bytes.fromhex(account_id)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_valid_friendly_ton_address(address: str) -> bool:
+    if not _FRIENDLY_TON_ADDRESS_RE.match(address):
+        return False
+    normalized = address.replace("-", "+").replace("_", "/")
+    try:
+        decoded = base64.b64decode(normalized, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    if len(decoded) != 36:
+        return False
+    tag = decoded[0] & 0x7F
+    if tag not in (0x11, 0x51):
+        return False
+    expected = (decoded[34] << 8) | decoded[35]
+    return _crc16_ton(decoded[:34]) == expected
+
+
+def _crc16_ton(data: bytes) -> int:
+    crc = 0
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            high_bit_set = crc & 0x8000
+            crc = (crc << 1) & 0xFFFF
+            if high_bit_set:
+                crc ^= 0x1021
+    return crc
 
 
 def validate_amount(amount_tbc: str) -> None:

@@ -57,6 +57,7 @@ async function simpleCheckoutExample() {
   // 3. Generate wallet link for user
   const walletLink = sdk.generateWalletLink({
     invoice,
+    payerNft: Address.parse('EQ...UserPayerNFT'),
     returnUrl: 'https://your-site.com/payment/success',
   });
 

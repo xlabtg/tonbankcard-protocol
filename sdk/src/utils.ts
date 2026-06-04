@@ -5,6 +5,8 @@
 import { Address } from '@ton/core';
 import { sha256_sync } from '@ton/crypto';
 
+export { formatTBC, parseTBC } from './amount';
+
 /**
  * Parameters for generating invoice ID
  */
@@ -57,32 +59,6 @@ export function createPayloadHash(payload: Record<string, any>): bigint {
   const data = JSON.stringify(payload);
   const hash = sha256_sync(data);
   return BigInt('0x' + Buffer.from(hash).toString('hex'));
-}
-
-/**
- * Format TBC amount from nanocoins to human-readable
- *
- * @param nanocoins - Amount in nanocoins (1 TBC = 10^9 nanocoins)
- * @param decimals - Number of decimal places (default: 2)
- * @returns Formatted string
- */
-export function formatTBC(nanocoins: bigint, decimals: number = 2): string {
-  const tbc = Number(nanocoins) / 1e9;
-  return tbc.toFixed(decimals);
-}
-
-/**
- * Parse TBC amount from human-readable to nanocoins
- *
- * @param tbc - Amount in TBC (e.g., "10.5")
- * @returns Amount in nanocoins
- */
-export function parseTBC(tbc: string): bigint {
-  const num = parseFloat(tbc);
-  if (isNaN(num) || num < 0) {
-    throw new Error('Invalid TBC amount');
-  }
-  return BigInt(Math.floor(num * 1e9));
 }
 
 /**

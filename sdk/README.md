@@ -105,6 +105,7 @@ const invoice = sdk.createInvoice({
 // 3. Generate payment link
 const paymentLink = sdk.generateWalletLink({
   invoice,
+  payerNft: Address.parse('EQ...PayerNFT'),
   returnUrl: 'https://your-site.com/success',
 });
 
@@ -155,11 +156,17 @@ const invoice = sdk.createInvoice({
 ```typescript
 const link = sdk.generateWalletLink({
   invoice: Invoice,
+  payerNft: Address,
+  nativeAmountNanoTon?: bigint, // Optional, defaults to 0.05 TON
+  payload?: Cell,               // Optional MerchantPaymentRequest metadata
   returnUrl?: string,
 });
 ```
 
 **Returns:** TON Connect deep link
+
+The link sends native TON only as the Payment Hub message value and encodes the
+TBC amount inside the binary `MerchantPaymentRequest` payload.
 
 **Security:** Opening this link does NOT execute payment. User MUST approve in their wallet.
 
@@ -232,7 +239,10 @@ const invoice = sdk.createInvoice({
 });
 
 // Generate payment link
-const link = sdk.generateWalletLink({ invoice });
+const link = sdk.generateWalletLink({
+  invoice,
+  payerNft: Address.parse('EQ...PayerNFT'),
+});
 
 // Show link to user (QR code, button, etc.)
 // Wait for payment confirmation

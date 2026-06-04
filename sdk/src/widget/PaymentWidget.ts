@@ -13,6 +13,8 @@
  * - Settlement verification is done on-chain
  */
 
+import { formatTBC } from '../amount';
+
 export interface PaymentWidgetConfig {
   /** Merchant NFT address (required) */
   merchantNft: string;
@@ -156,9 +158,7 @@ export class TonbankcardPaymentWidget {
    * Format TBC amount for display
    */
   private formatAmount(): string {
-    const nanocoins = BigInt(this.config.amountTbc);
-    const tbc = Number(nanocoins) / 1e9;
-    return `${tbc.toFixed(2)} TBC`;
+    return `${formatTBC(BigInt(this.config.amountTbc))} TBC`;
   }
 
   /**
