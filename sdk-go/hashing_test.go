@@ -94,6 +94,31 @@ func TestSDKM5CanonicalInvoiceIDFixture(t *testing.T) {
 	}
 }
 
+func TestCanonicalInvoiceIDPayloadEdgeCases(t *testing.T) {
+	t.Parallel()
+	fixture := loadSDKM5Fixture(t)
+	params := InvoiceIDParams{
+		MerchantNFT: fixture.Invoice.MerchantNFTFriendly,
+		AmountTBC:   fixture.Invoice.AmountTBC,
+		OrderID:     "",
+		Timestamp:   9223372036854775807,
+	}
+
+	canonical, err := CanonicalInvoiceIDPayload(params)
+	if err != nil {
+		t.Fatalf("canonical invoice payload: %v", err)
+	}
+	expected := `{"amount_tbc":"` + fixture.Invoice.AmountTBC + `","merchant_nft":"` + fixture.Invoice.MerchantNFTRaw + `","order_id":"","timestamp":"9223372036854775807"}`
+	if canonical != expected {
+		t.Fatalf("canonical invoice payload mismatch: got %q want %q", canonical, expected)
+	}
+
+	params.MerchantNFT = "not-a-ton-address"
+	if _, err := GenerateInvoiceID(params); err == nil {
+		t.Fatal("generate invoice id accepted an invalid merchant NFT address")
+	}
+}
+
 func TestSDKM5CanonicalPayloadHashFixture(t *testing.T) {
 	t.Parallel()
 	fixture := loadSDKM5Fixture(t)
@@ -118,5 +143,26 @@ func TestSDKM5CanonicalPayloadHashFixture(t *testing.T) {
 		if hashHex != fixture.Payload.HashHex {
 			t.Fatalf("%s payload hash mismatch: got %q want %q", name, hashHex, fixture.Payload.HashHex)
 		}
+	}
+}
+
+func TestCanonicalPayloadHashNullValues(t *testing.T) {
+	t.Parallel()
+	payload := map[string]any{
+		"memo": nil,
+		"nested": map[string]any{
+			"value": nil,
+		},
+	}
+
+	canonical, err := CanonicalJSON(payload)
+	if err != nil {
+		t.Fatalf("canonical JSON: %v", err)
+	}
+	if canonical != `{"memo":null,"nested":{"value":null}}` {
+		t.Fatalf("canonical JSON mismatch: got %q", canonical)
+	}
+	if _, err := CreatePayloadHash(payload); err != nil {
+		t.Fatalf("payload hash: %v", err)
 	}
 }

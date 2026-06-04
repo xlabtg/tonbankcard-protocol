@@ -14,7 +14,7 @@ export interface InvoiceIdParams {
   merchantNft: Address | string;
   amountTbc: bigint;
   orderId?: string;
-  timestamp: number;
+  timestamp: number | bigint;
 }
 
 /**
@@ -61,7 +61,9 @@ export function canonicalJson(value: unknown): string {
   if (typeof value === 'object') {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
-      throw new TypeError('Canonical JSON supports only plain objects and arrays');
+      throw new TypeError(
+        'Canonical JSON supports only plain objects and arrays'
+      );
     }
 
     const objectValue = value as Record<string, unknown>;
@@ -74,21 +76,29 @@ export function canonicalJson(value: unknown): string {
   throw new TypeError(`Canonical JSON does not support ${typeof value} values`);
 }
 
+function canonicalTimestamp(timestamp: number | bigint): string {
+  if (typeof timestamp === 'bigint') {
+    return timestamp.toString();
+  }
+  if (!Number.isSafeInteger(timestamp)) {
+    throw new TypeError(
+      'Invoice timestamp must be a safe integer Unix timestamp'
+    );
+  }
+  return timestamp.toString();
+}
+
 /**
  * Canonical byte string hashed by generateInvoiceId.
  */
 export function canonicalInvoiceIdPayload(params: InvoiceIdParams): string {
   const { merchantNft, amountTbc, orderId, timestamp } = params;
 
-  if (!Number.isInteger(timestamp)) {
-    throw new TypeError('Invoice timestamp must be an integer Unix timestamp');
-  }
-
   return canonicalJson({
     amount_tbc: amountTbc.toString(),
     merchant_nft: canonicalizeTonAddress(merchantNft),
     order_id: orderId ?? '',
-    timestamp: timestamp.toString(),
+    timestamp: canonicalTimestamp(timestamp),
   });
 }
 
@@ -146,7 +156,10 @@ export function isValidTonAddress(address: string): boolean {
  * @param chars - Number of characters to show on each side (default: 6)
  * @returns Shortened address (e.g., "EQAjHk...3il-Le")
  */
-export function shortAddress(address: Address | string, chars: number = 6): string {
+export function shortAddress(
+  address: Address | string,
+  chars: number = 6
+): string {
   const addr = typeof address === 'string' ? address : address.toString();
   if (addr.length <= chars * 2 + 3) {
     return addr;

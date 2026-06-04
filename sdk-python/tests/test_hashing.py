@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from tonbankcard_merchant import (
     canonical_invoice_id_payload,
     canonical_json,
@@ -66,6 +68,47 @@ def test_generate_invoice_id_matches_sdk_m5_fixture() -> None:
     )
 
 
+def test_generate_invoice_id_handles_empty_order_id_and_max_int64_timestamp() -> None:
+    fixture = load_sdk_m5_fixture()
+    invoice = fixture["invoice"]
+
+    canonical = canonical_invoice_id_payload(
+        merchant_nft=invoice["merchant_nft_friendly"],
+        amount_tbc=invoice["amount_tbc"],
+        order_id="",
+        timestamp=9223372036854775807,
+    )
+
+    assert (
+        canonical
+        == f'{{"amount_tbc":"{invoice["amount_tbc"]}","merchant_nft":"{invoice["merchant_nft_raw"]}","order_id":"","timestamp":"9223372036854775807"}}'
+    )
+    assert (
+        len(
+            generate_invoice_id(
+                merchant_nft=invoice["merchant_nft_friendly"],
+                amount_tbc=invoice["amount_tbc"],
+                order_id="",
+                timestamp=9223372036854775807,
+            )
+        )
+        == 64
+    )
+
+
+def test_generate_invoice_id_rejects_invalid_merchant_nft_address() -> None:
+    fixture = load_sdk_m5_fixture()
+    invoice = fixture["invoice"]
+
+    with pytest.raises(ValueError, match="Invalid TON address"):
+        generate_invoice_id(
+            merchant_nft="not-a-ton-address",
+            amount_tbc=invoice["amount_tbc"],
+            order_id="",
+            timestamp=invoice["timestamp"],
+        )
+
+
 def test_create_payload_hash_matches_sdk_m5_fixture() -> None:
     fixture = load_sdk_m5_fixture()
     payload_fixture = fixture["payload"]
@@ -73,3 +116,10 @@ def test_create_payload_hash_matches_sdk_m5_fixture() -> None:
     for payload in [payload_fixture["value"], payload_fixture["value_reordered"]]:
         assert canonical_json(payload) == payload_fixture["canonical"]
         assert f"{create_payload_hash(payload):064x}" == payload_fixture["hash_hex"]
+
+
+def test_create_payload_hash_supports_null_values() -> None:
+    payload = {"memo": None, "nested": {"value": None}}
+
+    assert canonical_json(payload) == '{"memo":null,"nested":{"value":null}}'
+    assert create_payload_hash(payload) > 0

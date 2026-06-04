@@ -78,7 +78,10 @@ describe('Utils', () => {
       };
 
       const id1 = generateInvoiceId(base);
-      const id2 = generateInvoiceId({ ...base, amountTbc: BigInt(20_000_000_000) });
+      const id2 = generateInvoiceId({
+        ...base,
+        amountTbc: BigInt(20_000_000_000),
+      });
       const id3 = generateInvoiceId({ ...base, orderId: 'ORDER-456' });
 
       expect(id1).not.toBe(id2);
@@ -97,7 +100,9 @@ describe('Utils', () => {
       expect(canonicalizeTonAddress(params.merchantNft)).toBe(
         sdkM5Fixture.invoice.merchant_nft_raw
       );
-      expect(canonicalInvoiceIdPayload(params)).toBe(sdkM5Fixture.invoice.canonical);
+      expect(canonicalInvoiceIdPayload(params)).toBe(
+        sdkM5Fixture.invoice.canonical
+      );
       expect(generateInvoiceId(params)).toBe(sdkM5Fixture.invoice.invoice_id);
       expect(
         generateInvoiceId({
@@ -105,6 +110,41 @@ describe('Utils', () => {
           merchantNft: sdkM5Fixture.invoice.merchant_nft_raw,
         })
       ).toBe(sdkM5Fixture.invoice.invoice_id);
+    });
+
+    it('should canonicalize empty order ID and max int64 timestamp', () => {
+      const params = {
+        merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+        amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+        orderId: '',
+        timestamp: 9223372036854775807n,
+      };
+
+      expect(canonicalInvoiceIdPayload(params)).toBe(
+        `{"amount_tbc":"${sdkM5Fixture.invoice.amount_tbc}","merchant_nft":"${sdkM5Fixture.invoice.merchant_nft_raw}","order_id":"","timestamp":"9223372036854775807"}`
+      );
+      expect(generateInvoiceId(params)).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('should reject unsafe numeric timestamps', () => {
+      expect(() =>
+        canonicalInvoiceIdPayload({
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+          amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+          timestamp: Number.MAX_SAFE_INTEGER + 1,
+        })
+      ).toThrow('safe integer');
+    });
+
+    it('should reject invalid merchant NFT addresses', () => {
+      expect(() =>
+        generateInvoiceId({
+          merchantNft: 'not-a-ton-address',
+          amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+          orderId: '',
+          timestamp: sdkM5Fixture.invoice.timestamp,
+        })
+      ).toThrow();
     });
   });
 
@@ -151,9 +191,24 @@ describe('Utils', () => {
         amount_tbc: BigInt(sdkM5Fixture.payload.value.amount_tbc),
       };
 
-      expect(canonicalJson(withBigIntAmount)).toBe(sdkM5Fixture.payload.canonical);
+      expect(canonicalJson(withBigIntAmount)).toBe(
+        sdkM5Fixture.payload.canonical
+      );
       expect(hashToHex(createPayloadHash(withBigIntAmount))).toBe(
         sdkM5Fixture.payload.hash_hex
+      );
+    });
+
+    it('should encode null payload values and reject undefined values', () => {
+      expect(canonicalJson({ memo: null, nested: { value: null } })).toBe(
+        '{"memo":null,"nested":{"value":null}}'
+      );
+      expect(createPayloadHash({ memo: null }) > 0n).toBe(true);
+      expect(() => canonicalJson({ memo: undefined })).toThrow(
+        'undefined values'
+      );
+      expect(() => createPayloadHash({ memo: undefined })).toThrow(
+        'undefined values'
       );
     });
   });
@@ -253,7 +308,9 @@ describe('Utils', () => {
     });
 
     it('should accept Address objects', () => {
-      const addr = Address.parse('EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le');
+      const addr = Address.parse(
+        'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'
+      );
       const short = shortAddress(addr);
       expect(short).toContain('...');
     });

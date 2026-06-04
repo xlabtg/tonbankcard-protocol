@@ -17,6 +17,8 @@ SDK hash helpers encode JSON-compatible values as UTF-8 JSON with:
 
 Unsupported values such as functions, symbols, non-finite numbers, or
 non-string object keys are rejected instead of being silently coerced.
+Integer inputs must be supplied exactly; for example, the TypeScript SDK accepts
+`bigint` timestamps and rejects unsafe JavaScript number timestamps.
 
 ## Invoice ID payload
 

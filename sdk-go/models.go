@@ -108,7 +108,10 @@ func isValidTonAddress(addr string) bool {
 func CanonicalizeTonAddress(addr string) (string, error) {
 	if isValidRawTonAddress(addr) {
 		parts := strings.SplitN(addr, ":", 2)
-		workchain, _ := strconv.Atoi(parts[0])
+		workchain, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return "", fmt.Errorf("tonbankcard: invalid TON address: %q", addr)
+		}
 		return fmt.Sprintf("%d:%s", workchain, strings.ToLower(parts[1])), nil
 	}
 
