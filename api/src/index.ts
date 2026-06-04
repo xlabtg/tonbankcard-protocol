@@ -16,6 +16,7 @@ import { setupApiKeyRoutes } from './routes/apiKeyRoutes';
 import { installSandboxMode, isSandboxMode } from './middleware/sandbox';
 import { configureTrustProxy } from './config/trustProxy';
 import { assertApiKeySecretConfigured } from './config/secrets';
+import { invoiceService } from './services/InvoiceService';
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -74,6 +75,7 @@ function startServer(): void {
   // silently hash every API key with a publicly known constant (audit API-H1).
   try {
     assertApiKeySecretConfigured();
+    invoiceService.assertProductionStorageConfigured();
   } catch (err) {
     console.error(`[FATAL] ${(err as Error).message}`);
     process.exit(1);
@@ -85,7 +87,9 @@ function startServer(): void {
     console.log(`Merchant API listening on ${HOST}:${PORT}`);
     console.log(`Health check: http://${HOST}:${PORT}/v1/health`);
     if (isSandboxMode()) {
-      console.log(`Sandbox mode: ON  →  GET http://${HOST}:${PORT}/v1/sandbox/info`);
+      console.log(
+        `Sandbox mode: ON  →  GET http://${HOST}:${PORT}/v1/sandbox/info`,
+      );
     }
   });
 }

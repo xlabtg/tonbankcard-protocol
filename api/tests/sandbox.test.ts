@@ -25,6 +25,7 @@ import {
   SANDBOX_HEADER_VALUE,
 } from '../src/middleware/sandbox';
 import { apiKeyService } from '../src/services/ApiKeyService';
+import { isValidApiKeyFormat } from '../src/utils/apiKeyGenerator';
 
 function makeMockReq(headers: Record<string, string> = {}): Request {
   return { headers } as unknown as Request;
@@ -70,19 +71,33 @@ describe('isSandboxMode()', () => {
   });
 
   it('returns true when TONBANKCARD_SANDBOX=true', () => {
-    expect(isSandboxMode({ TONBANKCARD_SANDBOX: 'true' } as NodeJS.ProcessEnv)).toBe(true);
-    expect(isSandboxMode({ TONBANKCARD_SANDBOX: '1' } as NodeJS.ProcessEnv)).toBe(true);
-    expect(isSandboxMode({ TONBANKCARD_SANDBOX: 'YES' } as NodeJS.ProcessEnv)).toBe(true);
+    expect(
+      isSandboxMode({ TONBANKCARD_SANDBOX: 'true' } as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      isSandboxMode({ TONBANKCARD_SANDBOX: '1' } as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      isSandboxMode({ TONBANKCARD_SANDBOX: 'YES' } as NodeJS.ProcessEnv),
+    ).toBe(true);
   });
 
   it('returns false when TONBANKCARD_SANDBOX=false', () => {
-    expect(isSandboxMode({ TONBANKCARD_SANDBOX: 'false' } as NodeJS.ProcessEnv)).toBe(false);
-    expect(isSandboxMode({ TONBANKCARD_SANDBOX: '0' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(
+      isSandboxMode({ TONBANKCARD_SANDBOX: 'false' } as NodeJS.ProcessEnv),
+    ).toBe(false);
+    expect(
+      isSandboxMode({ TONBANKCARD_SANDBOX: '0' } as NodeJS.ProcessEnv),
+    ).toBe(false);
   });
 
   it('falls back to NODE_ENV=sandbox', () => {
-    expect(isSandboxMode({ NODE_ENV: 'sandbox' } as unknown as NodeJS.ProcessEnv)).toBe(true);
-    expect(isSandboxMode({ NODE_ENV: 'production' } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(
+      isSandboxMode({ NODE_ENV: 'sandbox' } as unknown as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      isSandboxMode({ NODE_ENV: 'production' } as unknown as NodeJS.ProcessEnv),
+    ).toBe(false);
   });
 
   it('returns false when neither env var is set', () => {
@@ -132,6 +147,10 @@ describe('ensureSandboxKeyRegistered', () => {
     apiKeyService.clearAll();
   });
 
+  it('uses a canonical test API key format for the public sandbox key', () => {
+    expect(isValidApiKeyFormat(PUBLIC_SANDBOX_API_KEY)).toBe(true);
+  });
+
   it('registers the public sandbox key idempotently', () => {
     ensureSandboxKeyRegistered();
     const first = apiKeyService.findAndValidateKey(PUBLIC_SANDBOX_API_KEY);
@@ -170,7 +189,10 @@ describe('installSandboxMode', () => {
     delete process.env.TONBANKCARD_SANDBOX;
     process.env.NODE_ENV = 'production';
 
-    const app = { use: jest.fn(), get: jest.fn() } as unknown as import('express').Express;
+    const app = {
+      use: jest.fn(),
+      get: jest.fn(),
+    } as unknown as import('express').Express;
     const installed = installSandboxMode(app);
     expect(installed).toBe(false);
     expect(app.use).not.toHaveBeenCalled();
@@ -180,13 +202,18 @@ describe('installSandboxMode', () => {
   it('installs header + auth middleware + /v1/sandbox/info in sandbox mode', () => {
     process.env.TONBANKCARD_SANDBOX = 'true';
 
-    const app = { use: jest.fn(), get: jest.fn() } as unknown as import('express').Express;
+    const app = {
+      use: jest.fn(),
+      get: jest.fn(),
+    } as unknown as import('express').Express;
     const installed = installSandboxMode(app);
     expect(installed).toBe(true);
     expect(app.use).toHaveBeenCalledTimes(2);
     expect(app.get).toHaveBeenCalledTimes(1);
     expect((app.get as jest.Mock).mock.calls[0][0]).toBe('/v1/sandbox/info');
 
-    expect(() => apiKeyService.findAndValidateKey(PUBLIC_SANDBOX_API_KEY)).not.toThrow();
+    expect(() =>
+      apiKeyService.findAndValidateKey(PUBLIC_SANDBOX_API_KEY),
+    ).not.toThrow();
   });
 });

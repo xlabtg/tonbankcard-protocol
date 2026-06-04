@@ -20,12 +20,12 @@ Related issues: [#124 C3 Test Sandbox Environment](https://github.com/xlabtg/ton
 
 ## 1. Endpoints at a glance
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| Merchant API (sandbox) | `https://sandbox.api.tonbankcard.com` | Hosted instance of `api/` in sandbox mode. |
-| Payment Indexer | `https://sandbox.api.tonbankcard.com/indexer` | Hosted instance of `backend/indexer/` on testnet. |
-| TBC faucet | `https://sandbox.api.tonbankcard.com/faucet` | `scripts/faucet/` — dispenses test TBC. |
-| Discovery | `GET /v1/sandbox/info` | Machine-readable sandbox configuration. |
+| Service                | URL                                           | Purpose                                           |
+| ---------------------- | --------------------------------------------- | ------------------------------------------------- |
+| Merchant API (sandbox) | `https://sandbox.api.tonbankcard.com`         | Hosted instance of `api/` in sandbox mode.        |
+| Payment Indexer        | `https://sandbox.api.tonbankcard.com/indexer` | Hosted instance of `backend/indexer/` on testnet. |
+| TBC faucet             | `https://sandbox.api.tonbankcard.com/faucet`  | `scripts/faucet/` — dispenses test TBC.           |
+| Discovery              | `GET /v1/sandbox/info`                        | Machine-readable sandbox configuration.           |
 
 Every sandbox response carries an explicit environment marker:
 
@@ -60,7 +60,7 @@ curl -s -X POST "$BASE/v1/invoice/create" \
   }' | jq
 
 # 3. (Optional) Use the documented public sandbox API key explicitly
-PUBLIC_KEY=tbck_sandbox_public_anonymous_key
+PUBLIC_KEY=tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d
 curl -s -X POST "$BASE/v1/invoice/create" \
   -H "Authorization: Bearer $PUBLIC_KEY" \
   -H 'Content-Type: application/json' \
@@ -69,7 +69,7 @@ curl -s -X POST "$BASE/v1/invoice/create" \
 
 The first two calls are equivalent: when the sandbox sees no
 `Authorization` header, it transparently injects the public sandbox key
-(`tbck_sandbox_public_anonymous_key`). Production deployments do **not** do
+(`tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d`). Production deployments do **not** do
 this — you must always send a real key there.
 
 > ⚠️ Even sandbox-issued invoices still require an on-chain payment from a
@@ -99,12 +99,12 @@ curl -s -X POST "$FAUCET/faucet/dispense" \
 
 ### Limits
 
-| Limit | Value | Source |
-|-------|-------|--------|
-| Dispense window | 1 hour | `FAUCET_RATE_LIMIT_WINDOW_MS` |
-| Dispenses per address per window | 1 | `FAUCET_RATE_LIMIT_MAX` |
-| Default amount | 10 TBC | `FAUCET_DEFAULT_DISPENSE_NANOCOINS` |
-| Hard upper bound per call | 100 TBC | `MAX_DISPENSE_NANOCOINS` |
+| Limit                            | Value   | Source                              |
+| -------------------------------- | ------- | ----------------------------------- |
+| Dispense window                  | 1 hour  | `FAUCET_RATE_LIMIT_WINDOW_MS`       |
+| Dispenses per address per window | 1       | `FAUCET_RATE_LIMIT_MAX`             |
+| Default amount                   | 10 TBC  | `FAUCET_DEFAULT_DISPENSE_NANOCOINS` |
+| Hard upper bound per call        | 100 TBC | `MAX_DISPENSE_NANOCOINS`            |
 
 Exceeding the per-address limit returns `429 Too Many Requests` with a
 `Retry-After` header and the `RATE_LIMIT_EXCEEDED` error code. The window is
@@ -113,13 +113,13 @@ not work.
 
 ### Error codes
 
-| HTTP | `error.code` | Cause |
-|------|--------------|-------|
-| 400 | `MISSING_FIELD` | `address` field missing from request body. |
-| 400 | `INVALID_ADDRESS` | Address is not a raw `0:hex64` or 48-char base64url form. |
-| 422 | `AMOUNT_EXCEEDED` | Requested amount above the hard cap. |
-| 429 | `RATE_LIMIT_EXCEEDED` | Address has already used its quota for the window. |
-| 500 | `INTERNAL_ERROR` | Dispenser failed; the rate-limit slot is **rolled back** so you can retry safely. |
+| HTTP | `error.code`          | Cause                                                                             |
+| ---- | --------------------- | --------------------------------------------------------------------------------- |
+| 400  | `MISSING_FIELD`       | `address` field missing from request body.                                        |
+| 400  | `INVALID_ADDRESS`     | Address is not a raw `0:hex64` or 48-char base64url form.                         |
+| 422  | `AMOUNT_EXCEEDED`     | Requested amount above the hard cap.                                              |
+| 429  | `RATE_LIMIT_EXCEEDED` | Address has already used its quota for the window.                                |
+| 500  | `INTERNAL_ERROR`      | Dispenser failed; the rate-limit slot is **rolled back** so you can retry safely. |
 
 The faucet implementation lives in [`scripts/faucet/`](../scripts/faucet/) —
 see its README for production hardening notes (Redis-backed limits, KMS key
@@ -156,7 +156,7 @@ accept payments without merchant whitelisting.
 ### Sandbox API key
 
 ```
-tbck_sandbox_public_anonymous_key
+tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d
 ```
 
 Equivalent to making an unauthenticated call. Documented here so logs are
@@ -207,12 +207,12 @@ for every sandbox deployment and rotate it if the env file is exposed.
 
 Services come up on these host ports by default:
 
-| Service | URL |
-|---------|-----|
+| Service                | URL                   |
+| ---------------------- | --------------------- |
 | Merchant API (sandbox) | http://localhost:3001 |
-| Payment Indexer | http://localhost:3002 |
-| TBC faucet | http://localhost:4500 |
-| Redis | localhost:6380 |
+| Payment Indexer        | http://localhost:3002 |
+| TBC faucet             | http://localhost:4500 |
+| Redis                  | localhost:6380        |
 
 The compose file shares the exact image build context with the production
 `docker-compose.yml`, so the only differences between sandbox and production
@@ -220,26 +220,26 @@ are environment variables — there is no separate sandbox fork of the code.
 
 ### Sandbox-specific environment variables
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `TONBANKCARD_SANDBOX` | `true` | Activates sandbox header + anonymous auth + `/v1/sandbox/info`. |
-| `NODE_ENV` | `sandbox` | Alternative way to enable sandbox mode (when `TONBANKCARD_SANDBOX` is unset). |
-| `SANDBOX_BASE_URL` | `https://sandbox.api.tonbankcard.com` | Surfaced in `/v1/sandbox/info`. |
-| `SANDBOX_FAUCET_URL` | `https://sandbox.api.tonbankcard.com/faucet` | Surfaced in `/v1/sandbox/info`. |
-| `SANDBOX_DEFAULT_MERCHANT_NFT` | `EQAA…AAA` | Merchant NFT bound to the public sandbox key. |
-| `SANDBOX_TEST_NFT_CARDS` | _two synthetic cards_ | Comma-separated NFT card IDs for SDK examples. |
-| `SANDBOX_RESET_CADENCE` | `weekly` | Reported by `/v1/sandbox/info` so SDKs can warn users. |
-| `SANDBOX_API_KEY_SECRET` | _required; no default_ | HMAC key for sandbox API-key hashing. Generate with `openssl rand -base64 32`. |
-| `FAUCET_DEFAULT_DISPENSE_NANOCOINS` | `10000000000` | Default 10 TBC per call. |
-| `FAUCET_RATE_LIMIT_WINDOW_MS` | `3600000` | 1-hour window. |
-| `FAUCET_RATE_LIMIT_MAX` | `1` | One dispense per address per window. |
-| `SANDBOX_ALLOWED_ORIGINS` | _three SDK example dev servers_ | CORS allow-list for both API and faucet. |
+| Variable                            | Default                                      | Purpose                                                                        |
+| ----------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ |
+| `TONBANKCARD_SANDBOX`               | `true`                                       | Activates sandbox header + anonymous auth + `/v1/sandbox/info`.                |
+| `NODE_ENV`                          | `sandbox`                                    | Alternative way to enable sandbox mode (when `TONBANKCARD_SANDBOX` is unset).  |
+| `SANDBOX_BASE_URL`                  | `https://sandbox.api.tonbankcard.com`        | Surfaced in `/v1/sandbox/info`.                                                |
+| `SANDBOX_FAUCET_URL`                | `https://sandbox.api.tonbankcard.com/faucet` | Surfaced in `/v1/sandbox/info`.                                                |
+| `SANDBOX_DEFAULT_MERCHANT_NFT`      | `EQAA…AAA`                                   | Merchant NFT bound to the public sandbox key.                                  |
+| `SANDBOX_TEST_NFT_CARDS`            | _two synthetic cards_                        | Comma-separated NFT card IDs for SDK examples.                                 |
+| `SANDBOX_RESET_CADENCE`             | `weekly`                                     | Reported by `/v1/sandbox/info` so SDKs can warn users.                         |
+| `SANDBOX_API_KEY_SECRET`            | _required; no default_                       | HMAC key for sandbox API-key hashing. Generate with `openssl rand -base64 32`. |
+| `FAUCET_DEFAULT_DISPENSE_NANOCOINS` | `10000000000`                                | Default 10 TBC per call.                                                       |
+| `FAUCET_RATE_LIMIT_WINDOW_MS`       | `3600000`                                    | 1-hour window.                                                                 |
+| `FAUCET_RATE_LIMIT_MAX`             | `1`                                          | One dispense per address per window.                                           |
+| `SANDBOX_ALLOWED_ORIGINS`           | _three SDK example dev servers_              | CORS allow-list for both API and faucet.                                       |
 
 ### What sandbox mode changes in the API
 
 1. Every response carries `X-Tonbankcard-Environment: sandbox`.
 2. `POST /v1/invoice/create` accepts an empty Authorization header — the
-   sandbox injects `Bearer tbck_sandbox_public_anonymous_key` automatically.
+   sandbox injects `Bearer tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d` automatically.
 3. `GET /v1/sandbox/info` returns the JSON envelope SDKs use for discovery.
 
 All other endpoints behave identically to production — same validation, same

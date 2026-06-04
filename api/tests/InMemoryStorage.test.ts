@@ -16,7 +16,11 @@ import {
   InMemoryIdempotencyStorage,
 } from '../src/storage/InMemoryStorage';
 import { Invoice } from '../src/types/invoice';
-import { IdempotencyRecord } from '../src/storage/IStorage';
+import {
+  IIdempotencyStorage,
+  IInvoiceStorage,
+  IdempotencyRecord,
+} from '../src/storage/IStorage';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -24,16 +28,72 @@ import { IdempotencyRecord } from '../src/storage/IStorage';
 
 function makeInvoice(partial: Partial<Invoice> = {}): Invoice {
   return {
-    invoice_id:  'inv_0123456789abcdef',
+    invoice_id: 'inv_0123456789abcdef',
     merchant_nft: 'EQAbcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ',
-    amount_tbc:  '1000000000',
-    currency:    'TBC',
-    status:      'pending',
-    created_at:  new Date().toISOString(),
-    expires_at:  new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    amount_tbc: '1000000000',
+    currency: 'TBC',
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     payment_url: 'https://wallet.tonbankcard.io/pay/inv_0123456789abcdef',
     ...partial,
   };
+}
+
+class DurableInvoiceStorage implements IInvoiceStorage {
+  private readonly store = new Map<string, Invoice>();
+
+  async set(invoice: Invoice): Promise<void> {
+    this.store.set(invoice.invoice_id, invoice);
+  }
+
+  async get(invoiceId: string): Promise<Invoice | undefined> {
+    return this.store.get(invoiceId);
+  }
+
+  async delete(invoiceId: string): Promise<void> {
+    this.store.delete(invoiceId);
+  }
+
+  async entries(): Promise<Iterable<[string, Invoice]>> {
+    return this.store.entries();
+  }
+}
+
+class DurableIdempotencyStorage implements IIdempotencyStorage {
+  private readonly store = new Map<string, IdempotencyRecord>();
+
+  async set(key: string, record: IdempotencyRecord): Promise<void> {
+    this.store.set(key, record);
+  }
+
+  async setIfAbsent(
+    key: string,
+    record: IdempotencyRecord,
+  ): Promise<IdempotencyRecord | undefined> {
+    const existing = this.store.get(key);
+    if (existing && existing.expiresAt >= Date.now()) {
+      return existing;
+    }
+    if (existing) {
+      this.store.delete(key);
+    }
+    this.store.set(key, record);
+    return undefined;
+  }
+
+  async get(key: string): Promise<IdempotencyRecord | undefined> {
+    const record = this.store.get(key);
+    if (record && record.expiresAt < Date.now()) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return record;
+  }
+
+  async delete(key: string): Promise<void> {
+    this.store.delete(key);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -82,12 +142,20 @@ describe('InMemoryInvoiceStorage', () => {
   });
 
   it('should silently ignore delete of a non-existent invoice', async () => {
-    await expect(storage.delete('inv_does_not_exist__0000')).resolves.not.toThrow();
+    await expect(
+      storage.delete('inv_does_not_exist__0000'),
+    ).resolves.not.toThrow();
   });
 
   it('should iterate over all stored invoices via entries()', async () => {
-    const invoice1 = makeInvoice({ invoice_id: 'inv_aaaaaaaaaaaaaaaa', amount_tbc: '1000000000' });
-    const invoice2 = makeInvoice({ invoice_id: 'inv_bbbbbbbbbbbbbbbb', amount_tbc: '2000000000' });
+    const invoice1 = makeInvoice({
+      invoice_id: 'inv_aaaaaaaaaaaaaaaa',
+      amount_tbc: '1000000000',
+    });
+    const invoice2 = makeInvoice({
+      invoice_id: 'inv_bbbbbbbbbbbbbbbb',
+      amount_tbc: '2000000000',
+    });
 
     await storage.set(invoice1);
     await storage.set(invoice2);
@@ -127,6 +195,43 @@ describe('InMemoryIdempotencyStorage', () => {
 
     const retrieved = await storage.get('key_abc');
     expect(retrieved).toEqual(record);
+  });
+
+  it('should atomically keep the first active record on setIfAbsent', async () => {
+    const initial: IdempotencyRecord = {
+      invoiceId: 'inv_initial_________',
+      expiresAt: Date.now() + 60_000,
+    };
+    const duplicate: IdempotencyRecord = {
+      invoiceId: 'inv_duplicate_______',
+      expiresAt: Date.now() + 60_000,
+    };
+
+    await expect(
+      storage.setIfAbsent('key_abc', initial),
+    ).resolves.toBeUndefined();
+    await expect(storage.setIfAbsent('key_abc', duplicate)).resolves.toEqual(
+      initial,
+    );
+    await expect(storage.get('key_abc')).resolves.toEqual(initial);
+  });
+
+  it('should replace an expired record on setIfAbsent', async () => {
+    const expired: IdempotencyRecord = {
+      invoiceId: 'inv_expired_________',
+      expiresAt: Date.now() - 1,
+    };
+    const replacement: IdempotencyRecord = {
+      invoiceId: 'inv_replacement_____',
+      expiresAt: Date.now() + 60_000,
+    };
+
+    await storage.set('key_abc', expired);
+
+    await expect(
+      storage.setIfAbsent('key_abc', replacement),
+    ).resolves.toBeUndefined();
+    await expect(storage.get('key_abc')).resolves.toEqual(replacement);
   });
 
   it('should return undefined for a missing key', async () => {
@@ -208,16 +313,24 @@ describe('InvoiceService with injected storage', () => {
   };
 
   it('should use injected storage so invoices survive service scope', async () => {
-    const invoiceStorage     = new InMemoryInvoiceStorage();
+    const invoiceStorage = new InMemoryInvoiceStorage();
     const idempotencyStorage = new InMemoryIdempotencyStorage();
 
     // Create invoice through service A
-    const serviceA = new InvoiceService(keyService, invoiceStorage, idempotencyStorage);
-    const created  = await serviceA.createInvoice(validRequest, TEST_API_KEY);
+    const serviceA = new InvoiceService(
+      keyService,
+      invoiceStorage,
+      idempotencyStorage,
+    );
+    const created = await serviceA.createInvoice(validRequest, TEST_API_KEY);
 
     // Retrieve invoice through a different service instance sharing the same storage
-    const serviceB   = new InvoiceService(keyService, invoiceStorage, idempotencyStorage);
-    const retrieved  = await serviceB.getInvoice(created.invoice_id);
+    const serviceB = new InvoiceService(
+      keyService,
+      invoiceStorage,
+      idempotencyStorage,
+    );
+    const retrieved = await serviceB.getInvoice(created.invoice_id);
 
     expect(retrieved.invoice_id).toBe(created.invoice_id);
     expect(retrieved.status).toBe('pending');
@@ -227,33 +340,86 @@ describe('InvoiceService with injected storage', () => {
     const serviceA = new InvoiceService(
       keyService,
       new InMemoryInvoiceStorage(),
-      new InMemoryIdempotencyStorage()
+      new InMemoryIdempotencyStorage(),
     );
     const serviceB = new InvoiceService(
       keyService,
       new InMemoryInvoiceStorage(),
-      new InMemoryIdempotencyStorage()
+      new InMemoryIdempotencyStorage(),
     );
 
     const created = await serviceA.createInvoice(validRequest, TEST_API_KEY);
 
-    await expect(
-      serviceB.getInvoice(created.invoice_id)
-    ).rejects.toThrow('Invoice not found');
+    await expect(serviceB.getInvoice(created.invoice_id)).rejects.toThrow(
+      'Invoice not found',
+    );
   });
 
   it('default constructor should use in-memory storage', async () => {
     // Constructed without arguments — should still work (in-memory defaults)
     // The default keyService singleton has no registered keys, so we register one first
-    const { apiKeyService: defaultKeyService } = await import('../src/services/ApiKeyService');
+    const { apiKeyService: defaultKeyService } =
+      await import('../src/services/ApiKeyService');
     defaultKeyService.registerKey(TEST_API_KEY, TEST_MERCHANT_NFT);
 
-    const service  = new InvoiceService();
-    const invoice  = await service.createInvoice(validRequest, TEST_API_KEY);
+    const service = new InvoiceService();
+    const invoice = await service.createInvoice(validRequest, TEST_API_KEY);
     const retrieved = await service.getInvoice(invoice.invoice_id);
 
     expect(retrieved.invoice_id).toBe(invoice.invoice_id);
 
     defaultKeyService.clearAll();
+  });
+
+  it('should fail production readiness when default in-memory storage is configured', () => {
+    const service = new InvoiceService(
+      keyService,
+      new InMemoryInvoiceStorage(),
+      new InMemoryIdempotencyStorage(),
+    );
+
+    expect(() =>
+      service.assertProductionStorageConfigured({
+        NODE_ENV: 'production',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(
+      'Persistent invoice and idempotency storage are required in production',
+    );
+  });
+
+  it('should pass production readiness with injected durable storage adapters', () => {
+    const service = new InvoiceService(
+      keyService,
+      new DurableInvoiceStorage(),
+      new DurableIdempotencyStorage(),
+    );
+
+    expect(() =>
+      service.assertProductionStorageConfigured({
+        NODE_ENV: 'production',
+      } as NodeJS.ProcessEnv),
+    ).not.toThrow();
+  });
+
+  it('should deduplicate concurrent identical creates through atomic idempotency storage', async () => {
+    const invoiceStorage = new InMemoryInvoiceStorage();
+    const idempotencyStorage = new InMemoryIdempotencyStorage();
+    const service = new InvoiceService(
+      keyService,
+      invoiceStorage,
+      idempotencyStorage,
+    );
+
+    const invoices = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        service.createInvoice(validRequest, TEST_API_KEY),
+      ),
+    );
+    const invoiceIds = new Set(invoices.map((invoice) => invoice.invoice_id));
+    const storedInvoices = [...(await invoiceStorage.entries())];
+
+    expect(invoiceIds.size).toBe(1);
+    expect(storedInvoices).toHaveLength(1);
+    expect(storedInvoices[0][0]).toBe(invoices[0].invoice_id);
   });
 });

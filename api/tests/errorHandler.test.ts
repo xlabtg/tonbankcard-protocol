@@ -13,7 +13,14 @@
  * @see https://github.com/xlabtg/tonbankcard-protocol/issues/129
  */
 
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  jest,
+} from '@jest/globals';
 import type { Request, Response, NextFunction } from 'express';
 import { ValidationError } from '../src/utils/validation';
 import { ErrorCode, getHttpStatusForErrorCode } from '../src/types/errors';
@@ -22,7 +29,10 @@ import {
   errorHandlerMiddleware,
   notFoundHandlerMiddleware,
 } from '../src/middleware/errorHandler';
-import { requestIdMiddleware, REQUEST_ID_HEADER } from '../src/middleware/requestId';
+import {
+  requestIdMiddleware,
+  REQUEST_ID_HEADER,
+} from '../src/middleware/requestId';
 
 interface CapturedResponse {
   statusCode: number;
@@ -76,7 +86,11 @@ describe('requestIdMiddleware', () => {
     const res = makeRes();
     const next = jest.fn();
 
-    requestIdMiddleware(req, res as unknown as Response, next as unknown as NextFunction);
+    requestIdMiddleware(
+      req,
+      res as unknown as Response,
+      next as unknown as NextFunction,
+    );
 
     expect(next).toHaveBeenCalled();
     expect(typeof (req as any).requestId).toBe('string');
@@ -87,26 +101,36 @@ describe('requestIdMiddleware', () => {
   it('echoes a safe inbound request id', () => {
     const supplied = 'edge-abc.123';
     const req = makeReq({
-      header: (name: string) => (name === REQUEST_ID_HEADER ? supplied : undefined),
+      header: (name: string) =>
+        name === REQUEST_ID_HEADER ? supplied : undefined,
     });
     const res = makeRes();
     const next = jest.fn();
 
-    requestIdMiddleware(req, res as unknown as Response, next as unknown as NextFunction);
+    requestIdMiddleware(
+      req,
+      res as unknown as Response,
+      next as unknown as NextFunction,
+    );
 
     expect((req as any).requestId).toBe(supplied);
     expect(res.headers[REQUEST_ID_HEADER]).toBe(supplied);
   });
 
   it('rejects an unsafe inbound request id and generates a fresh one', () => {
-    const malicious = "abc\r\nSet-Cookie: evil=1";
+    const malicious = 'abc\r\nSet-Cookie: evil=1';
     const req = makeReq({
-      header: (name: string) => (name === REQUEST_ID_HEADER ? malicious : undefined),
+      header: (name: string) =>
+        name === REQUEST_ID_HEADER ? malicious : undefined,
     });
     const res = makeRes();
     const next = jest.fn();
 
-    requestIdMiddleware(req, res as unknown as Response, next as unknown as NextFunction);
+    requestIdMiddleware(
+      req,
+      res as unknown as Response,
+      next as unknown as NextFunction,
+    );
 
     expect((req as any).requestId).not.toBe(malicious);
     expect((req as any).requestId).toMatch(/^[0-9a-f-]{36}$/);
@@ -135,12 +159,18 @@ describe('sendErrorResponse', () => {
     sendErrorResponse(
       req,
       res as unknown as Response,
-      new ValidationError(ErrorCode.INVALID_AMOUNT, 'Amount must be greater than zero', {
-        amountTbc: '-1',
-      }),
+      new ValidationError(
+        ErrorCode.INVALID_AMOUNT,
+        'Amount must be greater than zero',
+        {
+          amountTbc: '-1',
+        },
+      ),
     );
 
-    expect(res.statusCode).toBe(getHttpStatusForErrorCode(ErrorCode.INVALID_AMOUNT));
+    expect(res.statusCode).toBe(
+      getHttpStatusForErrorCode(ErrorCode.INVALID_AMOUNT),
+    );
     expect(res.body).toEqual({
       error: {
         code: ErrorCode.INVALID_AMOUNT,
@@ -172,12 +202,33 @@ describe('sendErrorResponse', () => {
     expect(res.body.error.details.cause).toBeUndefined();
   });
 
+  it('strips whitelistedCollections from client-facing details', () => {
+    const req = makeReq();
+    const res = makeRes();
+
+    sendErrorResponse(
+      req,
+      res as unknown as Response,
+      new ValidationError(ErrorCode.NFT_NOT_WHITELISTED, 'not whitelisted', {
+        nftAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        whitelistedCollections: [
+          'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le',
+        ],
+      }),
+    );
+
+    expect(res.body.error.details).toEqual({
+      nftAddress: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    });
+  });
+
   it('does not expose internal exception text in production', () => {
     const original = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     // Force module to re-evaluate IS_PRODUCTION by re-requiring it.
     jest.resetModules();
-    const reloaded = require('../src/middleware/errorHandler') as typeof import('../src/middleware/errorHandler');
+    const reloaded =
+      require('../src/middleware/errorHandler') as typeof import('../src/middleware/errorHandler');
     try {
       const req = makeReq();
       (req as any).requestId = 'req-prod';

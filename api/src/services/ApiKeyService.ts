@@ -12,7 +12,10 @@
  * 3. The merchant_nft bound to the key is returned and verified at the call
  *    site (isAuthorizedMerchant) to prevent cross-merchant abuse.
  * 4. Authorization checks are cached with a short TTL (60 s) to reduce
- *    redundant lookups on hot paths without meaningfully delaying revocation.
+ *    redundant lookups on hot paths. Direct key validation (`findAndValidateKey`)
+ *    is intentionally uncached, and every register/revoke operation flushes all
+ *    authorization-cache entries for that key hash so revocation and rebinding
+ *    take effect on the next check.
  *
  * In production this in-memory store must be replaced with a persistent
  * database (PostgreSQL, MongoDB, etc.).
@@ -71,9 +74,13 @@ export class ApiKeyService {
   registerApiKey(
     plaintextKey: string,
     merchantNft: string,
-    permissions: ApiKeyPermission[] = ['invoice:create', 'invoice:read', 'invoice:status'],
+    permissions: ApiKeyPermission[] = [
+      'invoice:create',
+      'invoice:read',
+      'invoice:status',
+    ],
     rateLimits?: Partial<ApiKey['rate_limits']>,
-    expiresAt: string | null = null
+    expiresAt: string | null = null,
   ): ApiKey {
     const keyHash = hashApiKey(plaintextKey);
     // Unique per key: derived from a CSPRNG, NOT from the plaintext prefix.
@@ -100,8 +107,9 @@ export class ApiKeyService {
     };
 
     apiKeyRegistry.set(keyHash, apiKey);
-    // Invalidate any cached authorization for this key
-    this._invalidateCacheForKey(keyHash, merchantNft);
+    // Invalidate any cached authorization for this key, including entries
+    // against an older merchant binding for the same plaintext key.
+    this._invalidateCacheForKey(keyHash);
     return apiKey;
   }
 
@@ -136,11 +144,17 @@ export class ApiKeyService {
     }
 
     if (!apiKey.is_active) {
-      throw new ValidationError(ErrorCode.INVALID_API_KEY, 'API key is deactivated');
+      throw new ValidationError(
+        ErrorCode.INVALID_API_KEY,
+        'API key is deactivated',
+      );
     }
 
     if (apiKey.expires_at && new Date(apiKey.expires_at) < new Date()) {
-      throw new ValidationError(ErrorCode.INVALID_API_KEY, 'API key has expired');
+      throw new ValidationError(
+        ErrorCode.INVALID_API_KEY,
+        'API key has expired',
+      );
     }
 
     return apiKey;
@@ -184,14 +198,18 @@ export class ApiKeyService {
   }
 
   /**
-   * Invalidate the authorization cache for a specific key/merchant pair.
-   * Call this when an API key is revoked or its merchant NFT changes.
+   * Invalidate every authorization-cache entry for a specific key.
+   * Call this when an API key is registered, rebound, or revoked.
    *
-   * @param keyHash     - Hash of the raw API key
-   * @param merchantNft - Merchant NFT address
+   * @param keyHash - Hash of the raw API key
    */
-  private _invalidateCacheForKey(keyHash: string, merchantNft: string): void {
-    authCache.delete(`${keyHash}:${merchantNft}`);
+  private _invalidateCacheForKey(keyHash: string): void {
+    const prefix = `${keyHash}:`;
+    for (const cacheKey of authCache.keys()) {
+      if (cacheKey.startsWith(prefix)) {
+        authCache.delete(cacheKey);
+      }
+    }
   }
 
   /**
@@ -232,8 +250,8 @@ export class ApiKeyService {
     if (apiKey) {
       apiKey.is_active = false;
       apiKeyRegistry.set(keyHash, apiKey);
-      // Invalidate cached authorization for all merchant NFTs bound to this key
-      this._invalidateCacheForKey(keyHash, apiKey.merchant_nft);
+      // Invalidate cached authorization for all merchant NFTs seen with this key.
+      this._invalidateCacheForKey(keyHash);
     }
   }
 

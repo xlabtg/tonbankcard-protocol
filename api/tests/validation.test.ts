@@ -26,12 +26,16 @@ describe('Validation Utilities', () => {
 
     it('should reject empty address', () => {
       expect(() => validateTonAddress('')).toThrow(ValidationError);
-      expect(() => validateTonAddress('')).toThrow('Address must be a non-empty string');
+      expect(() => validateTonAddress('')).toThrow(
+        'Address must be a non-empty string',
+      );
     });
 
     it('should reject invalid format', () => {
       expect(() => validateTonAddress('invalid')).toThrow(ValidationError);
-      expect(() => validateTonAddress('invalid')).toThrow('Invalid TON address format');
+      expect(() => validateTonAddress('invalid')).toThrow(
+        'Invalid TON address format',
+      );
     });
 
     it('should reject address with wrong length', () => {
@@ -54,19 +58,27 @@ describe('Validation Utilities', () => {
     });
 
     it('should reject valid TON address not in whitelist', () => {
-      const nonWhitelistedAddress = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-      expect(() => validateWhitelistedNFT(nonWhitelistedAddress)).toThrow(ValidationError);
+      const nonWhitelistedAddress =
+        'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      expect(() => validateWhitelistedNFT(nonWhitelistedAddress)).toThrow(
+        ValidationError,
+      );
     });
 
     it('should reject non-whitelisted address with NFT_NOT_WHITELISTED error code', () => {
-      const nonWhitelistedAddress = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      const nonWhitelistedAddress =
+        'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
       try {
         validateWhitelistedNFT(nonWhitelistedAddress);
         expect(true).toBe(false); // Should not reach here
       } catch (error) {
         expect(error).toBeInstanceOf(ValidationError);
-        expect((error as ValidationError).code).toBe(ErrorCode.NFT_NOT_WHITELISTED);
-        expect((error as ValidationError).message).toBe('NFT address is not from a whitelisted collection');
+        expect((error as ValidationError).code).toBe(
+          ErrorCode.NFT_NOT_WHITELISTED,
+        );
+        expect((error as ValidationError).message).toBe(
+          'NFT address is not from a whitelisted collection',
+        );
       }
     });
 
@@ -75,7 +87,9 @@ describe('Validation Utilities', () => {
       try {
         validateWhitelistedNFT('invalid');
       } catch (error) {
-        expect((error as ValidationError).code).toBe(ErrorCode.INVALID_NFT_ADDRESS);
+        expect((error as ValidationError).code).toBe(
+          ErrorCode.INVALID_NFT_ADDRESS,
+        );
       }
     });
 
@@ -83,15 +97,18 @@ describe('Validation Utilities', () => {
       expect(() => validateWhitelistedNFT('')).toThrow(ValidationError);
     });
 
-    it('error details should include the rejected address and the whitelist', () => {
-      const nonWhitelistedAddress = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    it('error details should include the rejected address but not the full whitelist', () => {
+      const nonWhitelistedAddress =
+        'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
       try {
         validateWhitelistedNFT(nonWhitelistedAddress);
       } catch (error) {
         expect((error as ValidationError).details).toMatchObject({
           nftAddress: nonWhitelistedAddress,
-          whitelistedCollections: WHITELISTED_NFT_COLLECTIONS,
         });
+        expect((error as ValidationError).details).not.toHaveProperty(
+          'whitelistedCollections',
+        );
       }
     });
   });
@@ -104,7 +121,9 @@ describe('Validation Utilities', () => {
 
     it('should reject zero amount', () => {
       expect(() => validateAmount('0')).toThrow(ValidationError);
-      expect(() => validateAmount('0')).toThrow('Amount must be greater than zero');
+      expect(() => validateAmount('0')).toThrow(
+        'Amount must be greater than zero',
+      );
     });
 
     it('should reject negative amount', () => {
@@ -113,7 +132,9 @@ describe('Validation Utilities', () => {
 
     it('should reject non-numeric amount', () => {
       expect(() => validateAmount('abc')).toThrow(ValidationError);
-      expect(() => validateAmount('abc')).toThrow('Amount must be a valid integer');
+      expect(() => validateAmount('abc')).toThrow(
+        'Amount must be a valid integer',
+      );
     });
 
     it('should reject amount exceeding maximum', () => {
@@ -122,7 +143,9 @@ describe('Validation Utilities', () => {
 
       expect(() => validateAmount(maxAmount)).not.toThrow();
       expect(() => validateAmount(tooLarge)).toThrow(ValidationError);
-      expect(() => validateAmount(tooLarge)).toThrow('Amount exceeds maximum allowed value');
+      expect(() => validateAmount(tooLarge)).toThrow(
+        'Amount exceeds maximum allowed value',
+      );
     });
   });
 
@@ -149,7 +172,9 @@ describe('Validation Utilities', () => {
       }
 
       expect(() => validateMetadata(metadata)).toThrow(ValidationError);
-      expect(() => validateMetadata(metadata)).toThrow('cannot have more than 10 fields');
+      expect(() => validateMetadata(metadata)).toThrow(
+        'cannot have more than 10 fields',
+      );
     });
 
     it('should reject invalid field names', () => {
@@ -158,7 +183,9 @@ describe('Validation Utilities', () => {
       };
 
       expect(() => validateMetadata(metadata)).toThrow(ValidationError);
-      expect(() => validateMetadata(metadata)).toThrow('must be alphanumeric with underscores');
+      expect(() => validateMetadata(metadata)).toThrow(
+        'must be alphanumeric with underscores',
+      );
     });
 
     it('should reject invalid value types', () => {
@@ -167,7 +194,9 @@ describe('Validation Utilities', () => {
       };
 
       expect(() => validateMetadata(metadata as any)).toThrow(ValidationError);
-      expect(() => validateMetadata(metadata as any)).toThrow('must be string, number, boolean');
+      expect(() => validateMetadata(metadata as any)).toThrow(
+        'must be string, number, boolean',
+      );
     });
 
     it('should reject metadata exceeding size limit', () => {
@@ -189,7 +218,9 @@ describe('Validation Utilities', () => {
 
     it('should reject invalid timestamp', () => {
       expect(() => validateTimestamp('invalid')).toThrow(ValidationError);
-      expect(() => validateTimestamp('invalid')).toThrow('Invalid ISO 8601 timestamp');
+      expect(() => validateTimestamp('invalid')).toThrow(
+        'Invalid ISO 8601 timestamp',
+      );
     });
 
     it('should reject empty timestamp', () => {
@@ -206,7 +237,9 @@ describe('Validation Utilities', () => {
     it('should reject past timestamp', () => {
       const past = new Date(Date.now() - 60000).toISOString();
       expect(() => validateExpirationTime(past)).toThrow(ValidationError);
-      expect(() => validateExpirationTime(past)).toThrow('Expiration time must be in the future');
+      expect(() => validateExpirationTime(past)).toThrow(
+        'Expiration time must be in the future',
+      );
     });
 
     it('should reject current timestamp', () => {
@@ -223,11 +256,15 @@ describe('Validation Utilities', () => {
 
     it('should reject invalid format', () => {
       expect(() => validateInvoiceId('invalid')).toThrow(ValidationError);
-      expect(() => validateInvoiceId('invalid')).toThrow('Invalid invoice ID format');
+      expect(() => validateInvoiceId('invalid')).toThrow(
+        'Invalid invoice ID format',
+      );
     });
 
     it('should reject missing prefix', () => {
-      expect(() => validateInvoiceId('9f3a7b2c1d4e5f6a')).toThrow(ValidationError);
+      expect(() => validateInvoiceId('9f3a7b2c1d4e5f6a')).toThrow(
+        ValidationError,
+      );
     });
 
     it('should reject wrong length', () => {

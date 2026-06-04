@@ -23,9 +23,10 @@
  *
  * Security notes
  * --------------
- * - The sandbox API key is intentionally low-entropy because the sandbox is
- *   a public testnet — there are no real funds to protect. The key is still
- *   labelled so that abuse can be traced.
+ * - The sandbox API key is public because the sandbox is a public testnet —
+ *   there are no real funds to protect. The key still uses the canonical
+ *   `tbc_test_<32hex>` shape so the normal key-format checks exercise the
+ *   same code path as merchant-issued keys.
  * - The middleware never elevates production keys; the bypass only activates
  *   when `isSandboxMode()` is true.
  * - The default merchant NFT used by the sandbox is documented in
@@ -35,6 +36,7 @@
 
 import type { Request, Response, NextFunction, Express } from 'express';
 import { apiKeyService } from '../services/ApiKeyService';
+import { isValidApiKeyFormat } from '../utils/apiKeyGenerator';
 
 /** Header sent on every sandbox response. */
 export const SANDBOX_HEADER = 'X-Tonbankcard-Environment';
@@ -44,7 +46,8 @@ export const SANDBOX_HEADER_VALUE = 'sandbox';
  * Public, well-known sandbox API key. Documented in `docs/sandbox.md`.
  * Anyone may use it; the sandbox is rate-limited like any other tenant.
  */
-export const PUBLIC_SANDBOX_API_KEY = 'tbck_sandbox_public_anonymous_key';
+export const PUBLIC_SANDBOX_API_KEY =
+  'tbc_test_a3f8c2e91d4b7a6e5c3f8d2a1b9e4c7d';
 
 /** Default merchant NFT bound to {@link PUBLIC_SANDBOX_API_KEY}. */
 export const PUBLIC_SANDBOX_MERCHANT_NFT =
@@ -53,7 +56,8 @@ export const PUBLIC_SANDBOX_MERCHANT_NFT =
 
 /** Where to point integrators for free testnet TBC. */
 export const PUBLIC_SANDBOX_FAUCET_URL =
-  process.env.SANDBOX_FAUCET_URL ?? 'https://sandbox.api.tonbankcard.com/faucet';
+  process.env.SANDBOX_FAUCET_URL ??
+  'https://sandbox.api.tonbankcard.com/faucet';
 
 export const PUBLIC_SANDBOX_BASE_URL =
   process.env.SANDBOX_BASE_URL ?? 'https://sandbox.api.tonbankcard.com';
@@ -75,7 +79,9 @@ export const SANDBOX_TEST_NFT_CARDS = (
  */
 export function isSandboxMode(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.TONBANKCARD_SANDBOX !== undefined) {
-    return ['1', 'true', 'yes', 'on'].includes(env.TONBANKCARD_SANDBOX.toLowerCase());
+    return ['1', 'true', 'yes', 'on'].includes(
+      env.TONBANKCARD_SANDBOX.toLowerCase(),
+    );
   }
   return env.NODE_ENV === 'sandbox';
 }
@@ -88,14 +94,20 @@ export function isSandboxMode(env: NodeJS.ProcessEnv = process.env): boolean {
  * Exported for tests so they can re-register after `clearAll()`.
  */
 export function ensureSandboxKeyRegistered(): void {
+  if (!isValidApiKeyFormat(PUBLIC_SANDBOX_API_KEY)) {
+    throw new Error(
+      'Configured public sandbox API key does not match the canonical format',
+    );
+  }
+
   try {
     apiKeyService.findAndValidateKey(PUBLIC_SANDBOX_API_KEY);
   } catch {
-    apiKeyService.registerApiKey(PUBLIC_SANDBOX_API_KEY, PUBLIC_SANDBOX_MERCHANT_NFT, [
-      'invoice:create',
-      'invoice:read',
-      'invoice:status',
-    ]);
+    apiKeyService.registerApiKey(
+      PUBLIC_SANDBOX_API_KEY,
+      PUBLIC_SANDBOX_MERCHANT_NFT,
+      ['invoice:create', 'invoice:read', 'invoice:status'],
+    );
   }
 }
 
@@ -105,7 +117,11 @@ export function ensureSandboxKeyRegistered(): void {
  * Idempotent: applied early in the pipeline so even error paths carry the
  * header, which means clients can rely on it as a cheap environment check.
  */
-export function sandboxHeaderMiddleware(req: Request, res: Response, next: NextFunction): void {
+export function sandboxHeaderMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   res.setHeader(SANDBOX_HEADER, SANDBOX_HEADER_VALUE);
   next();
 }

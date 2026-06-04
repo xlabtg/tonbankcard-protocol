@@ -93,27 +93,36 @@ Merchants can verify these guarantees by:
 ### API Key Management
 
 **Generation**:
+
 ```
-API Key Format: tbck_<environment>_<32 hex characters>
+API Key Format: tbc_<environment>_<32 hex characters>
 
 Examples:
-- Production: tbck_live_9f3a7b2c1d4e5f6a8b9c0d1e2f3a4b5c
-- Testnet:    tbck_test_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
+- Production: tbc_live_9f3a7b2c1d4e5f6a8b9c0d1e2f3a4b5c
+- Testnet:    tbc_test_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
 ```
 
 **Storage**:
+
 - Keys stored hashed (SHA-256 + salt) in database
 - Never logged in plaintext
 - Transmitted only via HTTPS
 - Rotation supported every 90 days
 
+**Freshness**:
+
+- Direct key validation is uncached and checks active/expired state on every call.
+- Merchant authorization checks may cache results for up to 60 seconds for hot-path latency.
+- Any key issuance, rebinding, or revocation flushes every cached authorization entry for that key hash before the next check.
+
 **Scoping**:
+
 ```typescript
 interface ApiKey {
   key_id: string;
   key_hash: string;
-  merchant_nft: string;      // Authorized merchant NFT
-  permissions: string[];      // ['invoice:create', 'invoice:read']
+  merchant_nft: string; // Authorized merchant NFT
+  permissions: string[]; // ['invoice:create', 'invoice:read']
   rate_limits: RateLimits;
   created_at: string;
   expires_at: string | null;
@@ -126,7 +135,7 @@ interface ApiKey {
 ```
 1. Client Request
    ↓
-   Headers: { Authorization: "Bearer tbck_live_..." }
+   Headers: { Authorization: "Bearer tbc_live_..." }
 
 2. API Gateway
    ↓
@@ -155,10 +164,10 @@ interface ApiKey {
 
 ### Permission Model
 
-| Permission | Endpoints | Description |
-|------------|-----------|-------------|
-| `invoice:create` | `POST /invoice/create` | Create invoices |
-| `invoice:read` | `GET /invoice/:id` | Read invoice details |
+| Permission       | Endpoints                 | Description             |
+| ---------------- | ------------------------- | ----------------------- |
+| `invoice:create` | `POST /invoice/create`    | Create invoices         |
+| `invoice:read`   | `GET /invoice/:id`        | Read invoice details    |
 | `invoice:status` | `GET /invoice/:id/status` | Check settlement status |
 
 **Default permissions**: All new API keys get all permissions.
@@ -172,6 +181,7 @@ interface ApiKey {
 ### Validation Layers
 
 **Layer 1: Schema Validation**
+
 ```typescript
 const createInvoiceSchema = {
   type: 'object',
@@ -202,6 +212,7 @@ const createInvoiceSchema = {
 ```
 
 **Layer 2: Business Logic Validation**
+
 ```typescript
 function validateAmount(amountTbc: string): void {
   const amount = BigInt(amountTbc);
@@ -217,6 +228,7 @@ function validateAmount(amountTbc: string): void {
 ```
 
 **Layer 3: On-Chain Verification**
+
 ```typescript
 async function validateNftWhitelist(nftAddress: string): Promise<void> {
   const nftData = await tonClient.getNftData(nftAddress);
@@ -232,6 +244,7 @@ async function validateNftWhitelist(nftAddress: string): Promise<void> {
 ### Sanitization
 
 **Metadata Sanitization**:
+
 ```typescript
 function sanitizeMetadata(metadata: any): InvoiceMetadata {
   const sanitized: InvoiceMetadata = {};
@@ -260,11 +273,12 @@ function sanitizeMetadata(metadata: any): InvoiceMetadata {
 ```
 
 **SQL Injection Prevention**:
+
 ```typescript
 // Use parameterized queries ALWAYS
 const result = await db.query(
   'SELECT * FROM invoices WHERE invoice_id = $1',
-  [invoiceId] // Parameterized
+  [invoiceId], // Parameterized
 );
 
 // NEVER:
@@ -279,15 +293,16 @@ const result = await db.query(
 
 ### Rate Limit Configuration
 
-| Endpoint | Limit | Window | Burst |
-|----------|-------|--------|-------|
-| `POST /invoice/create` | 100 requests | 1 minute | 10 |
-| `GET /invoice/:id` | 1000 requests | 1 minute | 50 |
-| `GET /invoice/:id/status` | 500 requests | 1 minute | 20 |
+| Endpoint                  | Limit         | Window   | Burst |
+| ------------------------- | ------------- | -------- | ----- |
+| `POST /invoice/create`    | 100 requests  | 1 minute | 10    |
+| `GET /invoice/:id`        | 1000 requests | 1 minute | 50    |
+| `GET /invoice/:id/status` | 500 requests  | 1 minute | 20    |
 
 ### Implementation
 
 **Token Bucket Algorithm**:
+
 ```typescript
 class RateLimiter {
   private buckets = new Map<string, TokenBucket>();
@@ -333,6 +348,7 @@ class RateLimiter {
 ```
 
 **Response Headers**:
+
 ```http
 HTTP/1.1 429 Too Many Requests
 Retry-After: 30
@@ -356,6 +372,7 @@ X-RateLimit-Reset: 1672531200
 ### DDoS Protection
 
 **Additional Layers**:
+
 1. **WAF (Web Application Firewall)**
    - Cloudflare, AWS WAF, or similar
    - Block malicious traffic patterns
@@ -376,6 +393,7 @@ X-RateLimit-Reset: 1672531200
 ### Invoice ID Uniqueness
 
 **Cryptographic Randomness**:
+
 ```typescript
 import crypto from 'crypto';
 
@@ -391,6 +409,7 @@ function generateInvoiceId(): string {
 ```
 
 **Uniqueness Constraint**:
+
 ```sql
 CREATE TABLE invoices (
   invoice_id VARCHAR(32) PRIMARY KEY, -- Enforces uniqueness
@@ -401,6 +420,7 @@ CREATE TABLE invoices (
 ### Idempotency
 
 **Idempotency Key Generation**:
+
 ```typescript
 function generateIdempotencyKey(request: CreateInvoiceRequest): string {
   const data = {
@@ -416,8 +436,11 @@ function generateIdempotencyKey(request: CreateInvoiceRequest): string {
 ```
 
 **Idempotent Invoice Creation**:
+
 ```typescript
-async function createInvoiceIdempotent(request: CreateInvoiceRequest): Promise<Invoice> {
+async function createInvoiceIdempotent(
+  request: CreateInvoiceRequest,
+): Promise<Invoice> {
   const idempotencyKey = generateIdempotencyKey(request);
 
   // Check if invoice already exists
@@ -439,6 +462,7 @@ async function createInvoiceIdempotent(request: CreateInvoiceRequest): Promise<I
 ### Timestamp Validation
 
 **Reject Stale Requests**:
+
 ```typescript
 function validateRequestTimestamp(timestamp: string): void {
   const requestTime = new Date(timestamp).getTime();
@@ -462,10 +486,10 @@ function validateRequestTimestamp(timestamp: string): void {
 
 **Why Deterministic Idempotency Instead of Nonces:**
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Client Nonce** | Client controls uniqueness | Requires nonce storage, tracking, client complexity |
-| **Deterministic Hash** | Automatic, no client burden | Same request = same invoice (by design) |
+| Approach               | Pros                        | Cons                                                |
+| ---------------------- | --------------------------- | --------------------------------------------------- |
+| **Client Nonce**       | Client controls uniqueness  | Requires nonce storage, tracking, client complexity |
+| **Deterministic Hash** | Automatic, no client burden | Same request = same invoice (by design)             |
 
 **How Idempotency Works:**
 
@@ -560,19 +584,19 @@ interface Settlement {
 
 **Confirmation Thresholds:**
 
-| Transaction Value | Required Confirmations | Wait Time (approx) |
-|-------------------|------------------------|-------------------|
-| < 1,000 TBC | 1 confirmation | ~5 seconds |
-| 1,000 - 10,000 TBC | 3 confirmations | ~15 seconds |
-| > 10,000 TBC | 6 confirmations | ~30 seconds |
-| Mission-critical | 12+ confirmations | ~60 seconds |
+| Transaction Value  | Required Confirmations | Wait Time (approx) |
+| ------------------ | ---------------------- | ------------------ |
+| < 1,000 TBC        | 1 confirmation         | ~5 seconds         |
+| 1,000 - 10,000 TBC | 3 confirmations        | ~15 seconds        |
+| > 10,000 TBC       | 6 confirmations        | ~30 seconds        |
+| Mission-critical   | 12+ confirmations      | ~60 seconds        |
 
 **Production Implementation:**
 
 ```typescript
 async function verifySettlementFinality(
   settlement: Settlement,
-  minConfirmations: number = CONSTANTS.MIN_CONFIRMATIONS
+  minConfirmations: number = CONSTANTS.MIN_CONFIRMATIONS,
 ): Promise<{ isFinal: boolean; confirmations: number }> {
   const latestBlock = await tonClient.getLatestBlock();
   const confirmations = latestBlock - settlement.block_number;
@@ -594,6 +618,7 @@ async function verifySettlementFinality(
 ### On-Chain Verification Process
 
 **Step 1: Event Detection**
+
 ```typescript
 // Blockchain indexer detects MerchantPayment event
 interface MerchantPaymentEvent {
@@ -608,8 +633,11 @@ interface MerchantPaymentEvent {
 ```
 
 **Step 2: Event Matching**
+
 ```typescript
-async function matchEventToInvoice(event: MerchantPaymentEvent): Promise<Invoice | null> {
+async function matchEventToInvoice(
+  event: MerchantPaymentEvent,
+): Promise<Invoice | null> {
   // Find pending invoices for this merchant
   const pendingInvoices = await db.invoices.findPending({
     merchant_nft: event.merchant_nft,
@@ -633,6 +661,7 @@ async function matchEventToInvoice(event: MerchantPaymentEvent): Promise<Invoice
 ```
 
 **Step 3: Confirmation Verification**
+
 ```typescript
 async function verifyConfirmations(blockNumber: number): Promise<boolean> {
   const latestBlock = await tonClient.getLatestBlock();
@@ -643,8 +672,11 @@ async function verifyConfirmations(blockNumber: number): Promise<boolean> {
 ```
 
 **Step 4: Settlement Proof**
+
 ```typescript
-async function createSettlementProof(event: MerchantPaymentEvent): Promise<Settlement> {
+async function createSettlementProof(
+  event: MerchantPaymentEvent,
+): Promise<Settlement> {
   return {
     payer_nft: event.payer_nft,
     merchant_nft: event.merchant_nft,
@@ -666,7 +698,9 @@ async function createSettlementProof(event: MerchantPaymentEvent): Promise<Settl
 ```typescript
 import { TonClient } from '@ton/ton';
 
-async function merchantVerifySettlement(settlement: Settlement): Promise<boolean> {
+async function merchantVerifySettlement(
+  settlement: Settlement,
+): Promise<boolean> {
   const tonClient = new TonClient({
     endpoint: 'https://toncenter.com/api/v2/jsonRPC',
   });
@@ -707,20 +741,22 @@ async function merchantVerifySettlement(settlement: Settlement): Promise<boolean
 
 **GDPR / Privacy Compliance**:
 
-| Data Type | Storage | Retention | Purpose |
-|-----------|---------|-----------|---------|
-| Merchant NFT Address | Database | Indefinite | Authentication |
-| Invoice Metadata | Database | 90 days | Payment processing |
-| Customer Email | Metadata (optional) | 90 days | Order fulfillment |
-| API Keys | Database (hashed) | Until revoked | Authentication |
-| Request Logs | Log files | 30 days | Audit / debugging |
+| Data Type            | Storage             | Retention     | Purpose            |
+| -------------------- | ------------------- | ------------- | ------------------ |
+| Merchant NFT Address | Database            | Indefinite    | Authentication     |
+| Invoice Metadata     | Database            | 90 days       | Payment processing |
+| Customer Email       | Metadata (optional) | 90 days       | Order fulfillment  |
+| API Keys             | Database (hashed)   | Until revoked | Authentication     |
+| Request Logs         | Log files           | 30 days       | Audit / debugging  |
 
 **Data Minimization**:
+
 - Only collect necessary data
 - No PII (Personally Identifiable Information) required
 - Metadata is merchant-defined (not required)
 
 **Data Encryption**:
+
 ```typescript
 // At rest
 const encryptedMetadata = encrypt(metadata, ENCRYPTION_KEY);
@@ -736,6 +772,7 @@ app.use((req, res, next) => {
 ```
 
 **Right to Deletion**:
+
 ```typescript
 async function deleteInvoiceData(invoiceId: string): Promise<void> {
   // Anonymize invoice (keep financial records, remove PII)
@@ -755,6 +792,7 @@ async function deleteInvoiceData(invoiceId: string): Promise<void> {
 ### Transport Security
 
 **HTTPS Enforcement**:
+
 ```typescript
 // Redirect HTTP to HTTPS
 app.use((req, res, next) => {
@@ -766,12 +804,16 @@ app.use((req, res, next) => {
 
 // HSTS Header
 app.use((req, res, next) => {
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains',
+  );
   next();
 });
 ```
 
 **TLS Configuration**:
+
 ```
 Minimum TLS version: 1.2
 Preferred TLS version: 1.3
@@ -782,6 +824,7 @@ Certificate: Valid, not expired, trusted CA
 ### CORS Policy
 
 **Restrictive CORS**:
+
 ```typescript
 const corsOptions = {
   origin: (origin, callback) => {
@@ -831,41 +874,47 @@ app.use((req, res, next) => {
 
 ### Incident Categories
 
-| Severity | Examples | Response Time |
-|----------|----------|---------------|
-| **Critical** | Private key exposure (N/A), Fund loss (N/A) | Immediate |
-| **High** | API key leak, DDoS attack | < 1 hour |
-| **Medium** | Rate limit bypass, Validation bypass | < 4 hours |
-| **Low** | Informational errors, Performance issues | < 24 hours |
+| Severity     | Examples                                    | Response Time |
+| ------------ | ------------------------------------------- | ------------- |
+| **Critical** | Private key exposure (N/A), Fund loss (N/A) | Immediate     |
+| **High**     | API key leak, DDoS attack                   | < 1 hour      |
+| **Medium**   | Rate limit bypass, Validation bypass        | < 4 hours     |
+| **Low**      | Informational errors, Performance issues    | < 24 hours    |
 
 ### Response Procedures
 
 **1. Detection**
+
 - Automated monitoring alerts
 - Merchant reports
 - Security audits
 
 **2. Containment**
+
 - Revoke compromised API keys immediately
 - Block malicious IPs
 - Enable maintenance mode if necessary
 
 **3. Investigation**
+
 - Review logs and audit trails
 - Identify root cause
 - Assess impact
 
 **4. Remediation**
+
 - Deploy fixes
 - Rotate affected credentials
 - Update security controls
 
 **5. Communication**
+
 - Notify affected merchants
 - Publish incident report (if public impact)
 - Update documentation
 
 **6. Post-Mortem**
+
 - Document lessons learned
 - Implement preventive measures
 - Update runbooks
@@ -873,6 +922,7 @@ app.use((req, res, next) => {
 ### Security Audit Trail
 
 **Logging Requirements**:
+
 ```typescript
 interface AuditLog {
   timestamp: string;
@@ -895,6 +945,7 @@ interface AuditLog {
 ```
 
 **Log Retention**:
+
 - Critical events: 1 year
 - Security events: 90 days
 - Access logs: 30 days

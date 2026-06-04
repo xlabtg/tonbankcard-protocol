@@ -73,6 +73,23 @@ export class InMemoryIdempotencyStorage implements IIdempotencyStorage {
     this.store.set(key, record);
   }
 
+  async setIfAbsent(
+    key: string,
+    record: IdempotencyRecord,
+  ): Promise<IdempotencyRecord | undefined> {
+    const existing = this.store.get(key);
+
+    if (existing) {
+      if (existing.expiresAt >= Date.now()) {
+        return existing;
+      }
+      this.store.delete(key);
+    }
+
+    this.store.set(key, record);
+    return undefined;
+  }
+
   async get(key: string): Promise<IdempotencyRecord | undefined> {
     const record = this.store.get(key);
 

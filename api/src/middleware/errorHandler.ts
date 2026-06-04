@@ -34,13 +34,17 @@ import {
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 /** Strip implementation detail before details ever leave the process. */
-function sanitiseDetails(details: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+function sanitiseDetails(
+  details: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
   if (!details) return undefined;
   const safe: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(details)) {
     if (value === undefined || value === null) continue;
     // Never echo low-level error messages or stack traces.
     if (key === 'error' || key === 'stack' || key === 'cause') continue;
+    // Avoid disclosing complete allowlists to arbitrary callers.
+    if (key === 'whitelistedCollections') continue;
     safe[key] = value;
   }
   return Object.keys(safe).length ? safe : undefined;

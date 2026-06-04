@@ -18,14 +18,19 @@ This directory contains the reference implementation of the Tonbankcard Merchant
 >
 > The reference implementation uses **in-memory storage** for invoices and idempotency keys.
 > This means:
+>
 > - All data is lost on server restart
 > - No horizontal scaling (each instance has its own store)
 > - No durability guarantees
 >
 > For production use, replace the in-memory stores with:
+>
 > - **PostgreSQL** or **MongoDB** for invoice storage
 > - **Redis** for rate limiting and idempotency key storage
 > - **A blockchain indexer** for settlement verification
+>
+> When `NODE_ENV=production`, the API fails fast during boot if the default
+> in-memory invoice or idempotency storage is still configured.
 >
 > See [Deployment](#deployment) for the complete production checklist.
 
@@ -231,6 +236,7 @@ Create a new payment invoice.
 **Authentication**: Required (Bearer token)
 
 **Request**:
+
 ```json
 {
   "merchant_nft": "EQAbc123...",
@@ -245,6 +251,7 @@ Create a new payment invoice.
 ```
 
 **Response** (201 Created):
+
 ```json
 {
   "invoice_id": "inv_9f3a7b2c1d4e5f6a",
@@ -265,6 +272,7 @@ Retrieve invoice details (public endpoint).
 **Authentication**: Not required
 
 **Response** (200 OK):
+
 ```json
 {
   "invoice_id": "inv_9f3a7b2c1d4e5f6a",
@@ -290,6 +298,7 @@ Check settlement status.
 **Authentication**: Required (Bearer token)
 
 **Response** (200 OK):
+
 ```json
 {
   "invoice_id": "inv_9f3a7b2c1d4e5f6a",
@@ -349,11 +358,14 @@ import { InvoiceService } from '../src/services/InvoiceService';
 describe('InvoiceService', () => {
   it('should create invoice successfully', async () => {
     const service = new InvoiceService();
-    const invoice = await service.createInvoice({
-      merchant_nft: 'EQTest123...',
-      amount_tbc: '1000000000',
-      currency: 'TBC',
-    }, 'test_api_key');
+    const invoice = await service.createInvoice(
+      {
+        merchant_nft: 'EQTest123...',
+        amount_tbc: '1000000000',
+        currency: 'TBC',
+      },
+      'test_api_key',
+    );
 
     expect(invoice.invoice_id).toMatch(/^inv_[a-f0-9]{16}$/);
     expect(invoice.status).toBe('pending');
@@ -425,18 +437,18 @@ spec:
         app: merchant-api
     spec:
       containers:
-      - name: api
-        image: tonbankcard/merchant-api:latest
-        ports:
-        - containerPort: 3000
-        env:
-        - name: NODE_ENV
-          value: "production"
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: merchant-api-secrets
-              key: database-url
+        - name: api
+          image: tonbankcard/merchant-api:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: 'production'
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: merchant-api-secrets
+                  key: database-url
 ```
 
 ---
@@ -464,6 +476,7 @@ spec:
 ### Best Practices
 
 1. **Store API keys securely**
+
    ```typescript
    // ❌ Bad
    const apiKey = 'tbck_live_123...';
@@ -473,6 +486,7 @@ spec:
    ```
 
 2. **Validate API responses**
+
    ```typescript
    const status = await merchantApi.getInvoiceStatus(invoiceId);
 
@@ -553,6 +567,7 @@ See [LICENSE](../LICENSE) for details.
 **This is a reference implementation** demonstrating the Merchant API specification.
 
 In production, you would need to add:
+
 - Database integration (PostgreSQL, MongoDB, etc.)
 - Blockchain indexer integration
 - API key management system
