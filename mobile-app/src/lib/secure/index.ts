@@ -15,3 +15,8 @@ export {
   requireBiometricAuthentication,
   type OpenUrlWithBiometricGateOptions,
 } from './biometricGate';
+
+export {
+  ReactNativeBiometricAuthenticator,
+  type ReactNativeBiometricAuthenticatorOptions,
+} from './reactNativeBiometricAuthenticator';
