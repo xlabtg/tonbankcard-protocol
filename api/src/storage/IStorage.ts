@@ -88,13 +88,8 @@ export interface IInvoiceStorage {
  * are automatically evicted without a manual cleanup pass.
  *
  * Implementations MUST guarantee:
- *  - Atomic check-and-set semantics (or best-effort; see note)
+ *  - Atomic check-and-set semantics
  *  - TTL-based expiration (either native or emulated)
- *
- * Note: Full distributed transactions are not required here because
- * idempotency enforcement is best-effort. A small race window is
- * acceptable; the worst case is two identical invoices being created
- * within the same millisecond, which is extremely unlikely in practice.
  */
 export interface IIdempotencyStorage {
   /**
@@ -106,6 +101,23 @@ export interface IIdempotencyStorage {
    * @param record - Record to store
    */
   set(key: string, record: IdempotencyRecord): Promise<void>;
+
+  /**
+   * Atomically persist an idempotency record only when no active record exists.
+   *
+   * Expired records MUST be treated as absent. When an active record already
+   * exists, the implementation MUST leave it unchanged and return that existing
+   * record to the caller. This is the operation used on the invoice-create hot
+   * path so concurrent identical requests converge on one invoice.
+   *
+   * @param key - Idempotency key (SHA-256 hash of request parameters)
+   * @param record - Candidate record to store
+   * @returns The pre-existing active record, or `undefined` when `record` won
+   */
+  setIfAbsent(
+    key: string,
+    record: IdempotencyRecord,
+  ): Promise<IdempotencyRecord | undefined>;
 
   /**
    * Retrieve an idempotency record.

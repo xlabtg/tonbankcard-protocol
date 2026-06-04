@@ -27,7 +27,7 @@ export class ValidationError extends Error {
   constructor(
     public code: ErrorCode,
     message: string,
-    public details?: Record<string, unknown>
+    public details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ValidationError';
@@ -51,7 +51,7 @@ export function validateTonAddress(address: string): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_NFT_ADDRESS,
       'Address must be a non-empty string',
-      { address }
+      { address },
     );
   }
 
@@ -62,7 +62,7 @@ export function validateTonAddress(address: string): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_NFT_ADDRESS,
       'Invalid TON address format',
-      { address, expected: 'EQxxxxx... (48 characters)' }
+      { address, expected: 'EQxxxxx... (48 characters)' },
     );
   }
 
@@ -85,7 +85,9 @@ export function validateTonAddress(address: string): boolean {
 export function validateWhitelistedNFT(nftAddress: string): boolean {
   validateTonAddress(nftAddress);
 
-  const isWhitelisted = (WHITELISTED_NFT_COLLECTIONS as readonly string[]).includes(nftAddress);
+  const isWhitelisted = (
+    WHITELISTED_NFT_COLLECTIONS as readonly string[]
+  ).includes(nftAddress);
 
   if (!isWhitelisted) {
     throw new ValidationError(
@@ -93,8 +95,7 @@ export function validateWhitelistedNFT(nftAddress: string): boolean {
       'NFT address is not from a whitelisted collection',
       {
         nftAddress,
-        whitelistedCollections: WHITELISTED_NFT_COLLECTIONS,
-      }
+      },
     );
   }
 
@@ -113,7 +114,7 @@ export function validateAmount(amountTbc: string): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_AMOUNT,
       'Amount must be a non-empty string',
-      { amountTbc }
+      { amountTbc },
     );
   }
 
@@ -125,7 +126,7 @@ export function validateAmount(amountTbc: string): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_AMOUNT,
       'Amount must be a valid integer',
-      { amountTbc, error: (error as Error).message }
+      { amountTbc, error: (error as Error).message },
     );
   }
 
@@ -134,7 +135,7 @@ export function validateAmount(amountTbc: string): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_AMOUNT,
       'Amount must be greater than zero',
-      { amountTbc, constraint: 'amount_tbc > 0' }
+      { amountTbc, constraint: 'amount_tbc > 0' },
     );
   }
 
@@ -147,7 +148,7 @@ export function validateAmount(amountTbc: string): boolean {
         amountTbc,
         max: CONSTANTS.MAX_TBC_AMOUNT.toString(),
         constraint: `amount_tbc <= 2^120 - 1`,
-      }
+      },
     );
   }
 
@@ -170,7 +171,7 @@ export function validateMetadata(metadata?: InvoiceMetadata): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_METADATA,
       'Metadata must be an object',
-      { metadata }
+      { metadata },
     );
   }
 
@@ -183,7 +184,7 @@ export function validateMetadata(metadata?: InvoiceMetadata): boolean {
       {
         count: fields.length,
         max: CONSTANTS.MAX_METADATA_FIELDS,
-      }
+      },
     );
   }
 
@@ -194,7 +195,7 @@ export function validateMetadata(metadata?: InvoiceMetadata): boolean {
       throw new ValidationError(
         ErrorCode.INVALID_METADATA,
         'Metadata keys must be alphanumeric with underscores',
-        { invalidKey: key, pattern: 'a-zA-Z0-9_' }
+        { invalidKey: key, pattern: 'a-zA-Z0-9_' },
       );
     }
   }
@@ -211,7 +212,7 @@ export function validateMetadata(metadata?: InvoiceMetadata): boolean {
       throw new ValidationError(
         ErrorCode.INVALID_METADATA,
         'Metadata values must be string, number, boolean, or undefined',
-        { key, value, type: valueType }
+        { key, value, type: valueType },
       );
     }
   }
@@ -227,7 +228,7 @@ export function validateMetadata(metadata?: InvoiceMetadata): boolean {
       {
         size,
         max: CONSTANTS.MAX_METADATA_SIZE,
-      }
+      },
     );
   }
 
@@ -246,7 +247,7 @@ export function validateTimestamp(timestamp: string): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_METADATA,
       'Timestamp must be a non-empty string',
-      { timestamp }
+      { timestamp },
     );
   }
 
@@ -256,7 +257,7 @@ export function validateTimestamp(timestamp: string): boolean {
     throw new ValidationError(
       ErrorCode.INVALID_METADATA,
       'Invalid ISO 8601 timestamp',
-      { timestamp, expected: 'YYYY-MM-DDTHH:mm:ss.sssZ' }
+      { timestamp, expected: 'YYYY-MM-DDTHH:mm:ss.sssZ' },
     );
   }
 
@@ -283,7 +284,7 @@ export function validateExpirationTime(expiresAt: string): boolean {
       {
         expiresAt,
         now: now.toISOString(),
-      }
+      },
     );
   }
 
@@ -302,7 +303,7 @@ export function validateInvoiceId(invoiceId: string): boolean {
     throw new ValidationError(
       ErrorCode.INVOICE_NOT_FOUND,
       'Invoice ID must be a non-empty string',
-      { invoiceId }
+      { invoiceId },
     );
   }
 
@@ -317,7 +318,7 @@ export function validateInvoiceId(invoiceId: string): boolean {
       {
         invoiceId,
         expected: 'inv_<16 hex characters>',
-      }
+      },
     );
   }
 

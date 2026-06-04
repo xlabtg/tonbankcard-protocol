@@ -80,7 +80,11 @@ describe('API Key Authentication', () => {
     const res = makeMockRes();
     const next = jest.fn();
 
-    await middleware(req as Request, res as unknown as Response, next as NextFunction);
+    await middleware(
+      req as Request,
+      res as unknown as Response,
+      next as NextFunction,
+    );
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
@@ -94,7 +98,11 @@ describe('API Key Authentication', () => {
     const res = makeMockRes();
     const next = jest.fn();
 
-    await middleware(req as Request, res as unknown as Response, next as NextFunction);
+    await middleware(
+      req as Request,
+      res as unknown as Response,
+      next as NextFunction,
+    );
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
@@ -106,7 +114,11 @@ describe('API Key Authentication', () => {
     const res = makeMockRes();
     const next = jest.fn();
 
-    await middleware(req as Request, res as unknown as Response, next as NextFunction);
+    await middleware(
+      req as Request,
+      res as unknown as Response,
+      next as NextFunction,
+    );
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
@@ -124,7 +136,11 @@ describe('API Key Authentication', () => {
     const res = makeMockRes();
     const next = jest.fn();
 
-    await middleware(req as Request, res as unknown as Response, next as NextFunction);
+    await middleware(
+      req as Request,
+      res as unknown as Response,
+      next as NextFunction,
+    );
 
     expect(next).toHaveBeenCalled();
     expect(res.statusCode).toBe(200); // unchanged – no error set
@@ -143,7 +159,11 @@ describe('API Key Authentication', () => {
     const res = makeMockRes();
     const next = jest.fn();
 
-    await middleware(req as Request, res as unknown as Response, next as NextFunction);
+    await middleware(
+      req as Request,
+      res as unknown as Response,
+      next as NextFunction,
+    );
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
@@ -157,14 +177,24 @@ describe('API Key Authentication', () => {
 
   it('should reject an expired API key', async () => {
     const pastExpiry = new Date(Date.now() - 1000).toISOString(); // 1 second ago
-    apiKeyService.registerApiKey(VALID_KEY, MERCHANT_NFT, ['invoice:create', 'invoice:read', 'invoice:status'], undefined, pastExpiry);
+    apiKeyService.registerApiKey(
+      VALID_KEY,
+      MERCHANT_NFT,
+      ['invoice:create', 'invoice:read', 'invoice:status'],
+      undefined,
+      pastExpiry,
+    );
 
     const middleware = authenticateWithPermission('invoice:create');
     const req = makeMockReq(`Bearer ${VALID_KEY}`);
     const res = makeMockRes();
     const next = jest.fn();
 
-    await middleware(req as Request, res as unknown as Response, next as NextFunction);
+    await middleware(
+      req as Request,
+      res as unknown as Response,
+      next as NextFunction,
+    );
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
@@ -185,7 +215,11 @@ describe('API Key Authentication', () => {
     const res = makeMockRes();
     const next = jest.fn();
 
-    await middleware(req as Request, res as unknown as Response, next as NextFunction);
+    await middleware(
+      req as Request,
+      res as unknown as Response,
+      next as NextFunction,
+    );
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(403);
@@ -217,5 +251,22 @@ describe('API Key Authentication', () => {
     const rec1 = apiKeyService.registerApiKey(VALID_KEY, MERCHANT_NFT);
     const rec2 = apiKeyService.registerApiKey(ANOTHER_VALID_KEY, MERCHANT_NFT);
     expect(rec1.key_hash).not.toBe(rec2.key_hash);
+  });
+
+  it('flushes every cached authorization entry for a key when the key changes or is revoked', () => {
+    const service = new ApiKeyService();
+    const firstMerchant = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const secondMerchant = 'EQBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+
+    service.registerApiKey(VALID_KEY, firstMerchant);
+    expect(service.isAuthorizedMerchant(VALID_KEY, firstMerchant)).toBe(true);
+
+    service.registerApiKey(VALID_KEY, secondMerchant);
+    expect(service.isAuthorizedMerchant(VALID_KEY, firstMerchant)).toBe(false);
+    expect(service.isAuthorizedMerchant(VALID_KEY, secondMerchant)).toBe(true);
+
+    const registered = service.findAndValidateKey(VALID_KEY);
+    service.deactivateKey(registered.key_hash);
+    expect(service.isAuthorizedMerchant(VALID_KEY, secondMerchant)).toBe(false);
   });
 });

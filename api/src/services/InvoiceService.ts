@@ -54,10 +54,7 @@ import {
   verifySettlementAttestation,
 } from '../utils/settlementAttestation';
 
-import {
-  IInvoiceStorage,
-  IIdempotencyStorage,
-} from '../storage/IStorage';
+import { IInvoiceStorage, IIdempotencyStorage } from '../storage/IStorage';
 
 import {
   InMemoryInvoiceStorage,
@@ -135,6 +132,7 @@ export interface ProcessSettlementResult {
  * // Production (PostgreSQL + Redis)
  * import { Pool } from 'pg';
  * import Redis from 'ioredis';
+ * import { apiKeyService } from './ApiKeyService';
  * import { PostgresInvoiceStorage }    from '../storage/PostgresStorage';
  * import { RedisIdempotencyStorage }   from '../storage/RedisIdempotencyStorage';
  *
@@ -142,6 +140,7 @@ export interface ProcessSettlementResult {
  * const redis = new Redis(process.env.REDIS_URL);
  *
  * const service = new InvoiceService(
+ *   apiKeyService,
  *   new PostgresInvoiceStorage(pool),
  *   new RedisIdempotencyStorage(redis),
  * );
@@ -163,11 +162,35 @@ export class InvoiceService {
   constructor(
     keyService: ApiKeyService = apiKeyService,
     invoiceStorage: IInvoiceStorage = new InMemoryInvoiceStorage(),
-    idempotencyStorage: IIdempotencyStorage = new InMemoryIdempotencyStorage()
+    idempotencyStorage: IIdempotencyStorage = new InMemoryIdempotencyStorage(),
   ) {
     this.apiKeyService = keyService;
     this.invoiceStorage = invoiceStorage;
     this.idempotencyStorage = idempotencyStorage;
+  }
+
+  /**
+   * Fail fast when a production boot still points at reference-only storage.
+   *
+   * Tests and local development may use the in-memory adapters. A production
+   * process must inject durable invoice storage and an atomic shared
+   * idempotency backend before it starts accepting requests.
+   */
+  assertProductionStorageConfigured(
+    env: NodeJS.ProcessEnv = process.env,
+  ): void {
+    if (env.NODE_ENV !== 'production') {
+      return;
+    }
+
+    if (
+      this.invoiceStorage instanceof InMemoryInvoiceStorage ||
+      this.idempotencyStorage instanceof InMemoryIdempotencyStorage
+    ) {
+      throw new Error(
+        'Persistent invoice and idempotency storage are required in production',
+      );
+    }
   }
 
   /**
@@ -183,7 +206,7 @@ export class InvoiceService {
    */
   async createInvoice(
     request: CreateInvoiceRequest,
-    merchantApiKey: string
+    merchantApiKey: string,
   ): Promise<Invoice> {
     // Validate inputs
     this.validateCreateInvoiceRequest(request);
@@ -191,17 +214,22 @@ export class InvoiceService {
     // Verify the API key is authorised for the requested merchant NFT.
     // This prevents any API key holder from creating invoices on behalf of
     // a merchant they are not linked to (UNAUTHORIZED_MERCHANT protection).
-    if (!this.apiKeyService.isAuthorizedMerchant(merchantApiKey, request.merchant_nft)) {
+    if (
+      !this.apiKeyService.isAuthorizedMerchant(
+        merchantApiKey,
+        request.merchant_nft,
+      )
+    ) {
       // Audit-log cross-merchant attempts so operators can detect misuse.
       console.warn(
         `[AUDIT] Unauthorized invoice creation attempt: ` +
-        `merchant_nft="${request.merchant_nft}" ` +
-        `api_key_prefix="${merchantApiKey.slice(0, 12)}…" ` +
-        `timestamp="${new Date().toISOString()}"`
+          `merchant_nft="${request.merchant_nft}" ` +
+          `api_key_prefix="${merchantApiKey.slice(0, 12)}…" ` +
+          `timestamp="${new Date().toISOString()}"`,
       );
       throw new ValidationError(
         ErrorCode.UNAUTHORIZED_MERCHANT,
-        'API key not authorized for this merchant NFT'
+        'API key not authorized for this merchant NFT',
       );
     }
 
@@ -220,7 +248,9 @@ export class InvoiceService {
     const existingEntry = await this.idempotencyStorage.get(idempotencyKey);
 
     if (existingEntry) {
-      const existingInvoice = await this.invoiceStorage.get(existingEntry.invoiceId);
+      const existingInvoice = await this.invoiceStorage.get(
+        existingEntry.invoiceId,
+      );
 
       // Return existing invoice if not expired
       if (existingInvoice && !isExpired(existingInvoice.expires_at)) {
@@ -260,17 +290,42 @@ export class InvoiceService {
       settlement: undefined,
     };
 
-    // Store invoice
+    // Store the candidate invoice before publishing the idempotency record.
+    // If another concurrent request wins `setIfAbsent`, this candidate is
+    // deleted below and the winning invoice is returned instead.
     await this.invoiceStorage.set(invoice);
 
-    // Store idempotency key with TTL
-    // TTL is set to the invoice expiration time, ensuring idempotency
-    // is maintained for the lifetime of the invoice
+    // Atomically publish the idempotency key with TTL. This closes the
+    // check-then-set race where concurrent identical creates could each return
+    // a distinct invoice before the final idempotency write overwrote the map.
     const expiresAtMs = new Date(invoice.expires_at).getTime();
-    await this.idempotencyStorage.set(idempotencyKey, {
-      invoiceId,
-      expiresAt: Math.max(expiresAtMs, Date.now() + IDEMPOTENCY_TTL_MS),
-    });
+    const existingRecord = await this.idempotencyStorage.setIfAbsent(
+      idempotencyKey,
+      {
+        invoiceId,
+        expiresAt: Math.max(expiresAtMs, Date.now() + IDEMPOTENCY_TTL_MS),
+      },
+    );
+
+    if (existingRecord) {
+      await this.invoiceStorage.delete(invoiceId);
+
+      const existingInvoice = await this.invoiceStorage.get(
+        existingRecord.invoiceId,
+      );
+      if (existingInvoice && !isExpired(existingInvoice.expires_at)) {
+        return existingInvoice;
+      }
+
+      // Defensive stale cleanup. `setIfAbsent` treats expired idempotency
+      // records as absent, but the referenced invoice may have expired while
+      // the record is still within its retention window.
+      await this.idempotencyStorage.delete(idempotencyKey);
+      if (existingInvoice) {
+        await this.invoiceStorage.delete(existingRecord.invoiceId);
+      }
+      return this.createInvoice(request, merchantApiKey);
+    }
 
     return invoice;
   }
@@ -298,7 +353,7 @@ export class InvoiceService {
       throw new ValidationError(
         ErrorCode.INVOICE_NOT_FOUND,
         'Invoice not found',
-        { invoice_id: invoiceId }
+        { invoice_id: invoiceId },
       );
     }
 
@@ -347,14 +402,19 @@ export class InvoiceService {
    */
   async getInvoiceDetail(
     invoiceId: string,
-    merchantApiKey: string
+    merchantApiKey: string,
   ): Promise<GetInvoiceResponse> {
     const invoice = await this.getInvoice(invoiceId);
 
-    if (!this.apiKeyService.isAuthorizedMerchant(merchantApiKey, invoice.merchant_nft)) {
+    if (
+      !this.apiKeyService.isAuthorizedMerchant(
+        merchantApiKey,
+        invoice.merchant_nft,
+      )
+    ) {
       throw new ValidationError(
         ErrorCode.UNAUTHORIZED_MERCHANT,
-        'API key not authorized for this invoice'
+        'API key not authorized for this invoice',
       );
     }
 
@@ -393,7 +453,7 @@ export class InvoiceService {
    */
   async getInvoiceStatus(
     invoiceId: string,
-    merchantApiKey: string
+    merchantApiKey: string,
   ): Promise<GetInvoiceStatusResponse> {
     // TODO: In production, validate merchantApiKey
     // if (!this.isValidApiKey(merchantApiKey)) {
@@ -411,7 +471,7 @@ export class InvoiceService {
       throw new ValidationError(
         ErrorCode.INVOICE_NOT_FOUND,
         'Invoice not found',
-        { invoice_id: invoiceId }
+        { invoice_id: invoiceId },
       );
     }
 
@@ -448,7 +508,7 @@ export class InvoiceService {
     if (!request) {
       throw new ValidationError(
         ErrorCode.INVALID_METADATA,
-        'Request body is required'
+        'Request body is required',
       );
     }
 
@@ -463,7 +523,7 @@ export class InvoiceService {
       throw new ValidationError(
         ErrorCode.INVALID_METADATA,
         'Currency must be "TBC"',
-        { currency: request.currency }
+        { currency: request.currency },
       );
     }
 
@@ -488,7 +548,9 @@ export class InvoiceService {
    * @param invoice - Invoice to verify
    * @returns Settlement proof if found, undefined otherwise
    */
-  private async verifySettlementOnChain(invoice: Invoice): Promise<Settlement | undefined> {
+  private async verifySettlementOnChain(
+    invoice: Invoice,
+  ): Promise<Settlement | undefined> {
     // TODO: Implement blockchain verification
     // Example pseudocode:
     //
@@ -560,23 +622,24 @@ export class InvoiceService {
    */
   async processSettlementEvent(
     event: SettlementEvent,
-    options: ProcessSettlementOptions = {}
+    options: ProcessSettlementOptions = {},
   ): Promise<ProcessSettlementResult> {
     const { attestation, currentBlockNumber } = options;
 
     // Guard 1: reject events that do not originate from the trusted indexer.
     // Without this, any caller able to reach the API could forge a settlement.
-    const indexerSecret = options.indexerSecret ?? resolveSettlementIndexerSecret();
+    const indexerSecret =
+      options.indexerSecret ?? resolveSettlementIndexerSecret();
     if (!verifySettlementAttestation(indexerSecret, event, attestation)) {
       console.warn(
         `[AUDIT] Rejected settlement event from untrusted source: ` +
           `merchant_nft="${event.merchant_nft}" ` +
           `tx_hash="${event.tx_hash}" ` +
-          `timestamp="${new Date().toISOString()}"`
+          `timestamp="${new Date().toISOString()}"`,
       );
       throw new ValidationError(
         ErrorCode.UNTRUSTED_SETTLEMENT_SOURCE,
-        'Settlement event is not attested by the trusted indexer'
+        'Settlement event is not attested by the trusted indexer',
       );
     }
 
@@ -588,7 +651,8 @@ export class InvoiceService {
         ? currentBlockNumber - event.block_number
         : undefined;
     const isFinal =
-      confirmations !== undefined && confirmations >= CONSTANTS.MIN_CONFIRMATIONS;
+      confirmations !== undefined &&
+      confirmations >= CONSTANTS.MIN_CONFIRMATIONS;
 
     if (!isFinal) {
       return { settled: false, reason: 'insufficient_confirmations' };
@@ -652,7 +716,10 @@ export class InvoiceService {
    * In production with Redis, idempotency keys are expired automatically via TTL,
    * so idempotency cleanup here is belt-and-suspenders only.
    */
-  async cleanupExpiredInvoices(): Promise<{ invoicesCleaned: number; idempotencyKeysCleaned: number }> {
+  async cleanupExpiredInvoices(): Promise<{
+    invoicesCleaned: number;
+    idempotencyKeysCleaned: number;
+  }> {
     let invoicesCleaned = 0;
     let idempotencyKeysCleaned = 0;
     const now = Date.now();
@@ -667,7 +734,8 @@ export class InvoiceService {
       // Remove invoices that have been expired for >7 days
       if (invoice.status === 'expired') {
         const expiryDate = new Date(invoice.expires_at);
-        const daysSinceExpiry = (now - expiryDate.getTime()) / (1000 * 60 * 60 * 24);
+        const daysSinceExpiry =
+          (now - expiryDate.getTime()) / (1000 * 60 * 60 * 24);
 
         if (daysSinceExpiry > 7) {
           await this.invoiceStorage.delete(invoiceId);

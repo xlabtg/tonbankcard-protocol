@@ -14,7 +14,6 @@
  * ## Prerequisites
  *
  *   npm install ioredis @types/ioredis
- *   # or: npm install redis  (official Node Redis v4 client)
  *
  * ## Setup steps
  *
@@ -32,6 +31,7 @@
  *   import Redis from 'ioredis';
  *   import { RedisIdempotencyStorage } from './storage/RedisIdempotencyStorage';
  *   import { PostgresInvoiceStorage }  from './storage/PostgresStorage';
+ *   import { apiKeyService } from './services/ApiKeyService';
  *   import { InvoiceService }          from './services/InvoiceService';
  *   import { Pool } from 'pg';
  *
@@ -41,7 +41,11 @@
  *   const invoiceStorage     = new PostgresInvoiceStorage(pool);
  *   const idempotencyStorage = new RedisIdempotencyStorage(redis);
  *
- *   export const invoiceService = new InvoiceService(invoiceStorage, idempotencyStorage);
+ *   export const invoiceService = new InvoiceService(
+ *     apiKeyService,
+ *     invoiceStorage,
+ *     idempotencyStorage,
+ *   );
  *   ```
  *
  * ## Key format
@@ -60,11 +64,17 @@ import { IIdempotencyStorage, IdempotencyRecord } from './IStorage';
 const KEY_PREFIX = 'idempotency:';
 
 /**
- * Minimal Redis interface — compatible with both `ioredis` and `redis` (v4)
- * clients so you can pass either without importing them here.
+ * Minimal Redis interface compatible with ioredis-style command arguments,
+ * without importing a concrete Redis client at compile time.
  */
 interface RedisClientLike {
-  set(key: string, value: string, expiryMode: 'PX', px: number): Promise<unknown>;
+  set(
+    key: string,
+    value: string,
+    expiryMode: 'PX',
+    px: number,
+    condition?: 'NX',
+  ): Promise<unknown>;
   get(key: string): Promise<string | null>;
   del(key: string): Promise<unknown>;
 }
@@ -87,13 +97,29 @@ export class RedisIdempotencyStorage implements IIdempotencyStorage {
 
   async set(key: string, record: IdempotencyRecord): Promise<void> {
     const redisKey = KEY_PREFIX + key;
-    const value    = JSON.stringify(record);
+    const value = JSON.stringify(record);
 
     // Compute TTL in milliseconds, clamped to at least 1 ms.
     const ttlMs = Math.max(1, record.expiresAt - Date.now());
 
     // PX sets the expiry in milliseconds — native TTL, no cron needed.
     await this.client.set(redisKey, value, 'PX', ttlMs);
+  }
+
+  async setIfAbsent(
+    key: string,
+    record: IdempotencyRecord,
+  ): Promise<IdempotencyRecord | undefined> {
+    const redisKey = KEY_PREFIX + key;
+    const value = JSON.stringify(record);
+    const ttlMs = Math.max(1, record.expiresAt - Date.now());
+
+    const result = await this.client.set(redisKey, value, 'PX', ttlMs, 'NX');
+    if (result) {
+      return undefined;
+    }
+
+    return this.get(key);
   }
 
   async get(key: string): Promise<IdempotencyRecord | undefined> {

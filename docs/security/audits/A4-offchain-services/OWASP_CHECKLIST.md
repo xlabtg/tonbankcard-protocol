@@ -92,7 +92,7 @@ If a category is genuinely **not applicable**, mark it `n/a` with a one-line rat
 ### In-scope surface
 
 - Post-D4 HMAC-SHA256 webhook signing & verification (delivery side and reference verifier in [`docs/merchant-api-security.md`](../../../merchant-api-security.md) §6)
-- API-key generation, format (`tbck_<env>_<32 hex>`), and storage (hashed at rest per spec)
+- API-key generation, format (`tbc_<env>_<32 hex>`), and storage (hashed at rest per spec)
 - TLS posture for `api/` and `backend/indexer/` endpoints (deployment defaults + recommendations)
 - SDK transport — deep links must not carry secrets
 

@@ -177,7 +177,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: API Key (tbck_live_… / tbck_test_…)
+      bearerFormat: API Key (tbc_live_… / tbc_test_…)
       description: |
         Merchant API key issued via the dashboard. Pass as
         `Authorization: Bearer <MERCHANT_API_KEY>`. Keys are scoped to a

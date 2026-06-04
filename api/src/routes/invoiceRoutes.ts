@@ -50,7 +50,10 @@ function extractApiKey(req: Request): string {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
-    throw new ValidationError(ErrorCode.INVALID_API_KEY, 'Authorization header is required');
+    throw new ValidationError(
+      ErrorCode.INVALID_API_KEY,
+      'Authorization header is required',
+    );
   }
 
   const parts = authHeader.split(' ');
@@ -68,7 +71,10 @@ function extractApiKey(req: Request): string {
 /**
  * POST /v1/invoice/create
  */
-export async function createInvoice(req: Request, res: Response): Promise<Response> {
+export async function createInvoice(
+  req: Request,
+  res: Response,
+): Promise<Response> {
   try {
     const apiKey = extractApiKey(req);
     const invoice = await invoiceService.createInvoice(req.body, apiKey);
@@ -93,7 +99,10 @@ export async function createInvoice(req: Request, res: Response): Promise<Respon
  *
  * @see https://github.com/xlabtg/tonbankcard-protocol/issues/253
  */
-export async function getInvoice(req: Request, res: Response): Promise<Response> {
+export async function getInvoice(
+  req: Request,
+  res: Response,
+): Promise<Response> {
   try {
     const { invoice_id } = req.params;
     const invoice = await invoiceService.getPublicInvoice(invoice_id);
@@ -110,7 +119,10 @@ export async function getInvoice(req: Request, res: Response): Promise<Response>
  * identity, metadata, settlement). The API key must be authorized for the
  * invoice's merchant, otherwise an UNAUTHORIZED_MERCHANT error is returned.
  */
-export async function getInvoiceDetail(req: Request, res: Response): Promise<Response> {
+export async function getInvoiceDetail(
+  req: Request,
+  res: Response,
+): Promise<Response> {
   try {
     const apiKey = extractApiKey(req);
     const { invoice_id } = req.params;
@@ -124,7 +136,10 @@ export async function getInvoiceDetail(req: Request, res: Response): Promise<Res
 /**
  * GET /v1/invoice/:invoice_id/status
  */
-export async function getInvoiceStatus(req: Request, res: Response): Promise<Response> {
+export async function getInvoiceStatus(
+  req: Request,
+  res: Response,
+): Promise<Response> {
   try {
     const apiKey = extractApiKey(req);
     const { invoice_id } = req.params;
@@ -135,7 +150,10 @@ export async function getInvoiceStatus(req: Request, res: Response): Promise<Res
   }
 }
 
-function hasPermission(apiKey: ApiKey, requiredPermission: ApiKeyPermission): boolean {
+function hasPermission(
+  apiKey: ApiKey,
+  requiredPermission: ApiKeyPermission,
+): boolean {
   return apiKey.permissions.includes(requiredPermission);
 }
 
@@ -150,8 +168,14 @@ function hasPermission(apiKey: ApiKey, requiredPermission: ApiKeyPermission): bo
  * to dedicated `express-rate-limit` middleware mounted on each route so
  * the per-endpoint limits can vary independently of authentication.
  */
-export function authenticateWithPermission(requiredPermission: ApiKeyPermission) {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export function authenticateWithPermission(
+  requiredPermission: ApiKeyPermission,
+) {
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
     try {
       const apiKeyValue = extractApiKey(req);
 
@@ -182,15 +206,6 @@ export function authenticateWithPermission(requiredPermission: ApiKeyPermission)
 }
 
 /**
- * Backwards-compatible alias.
- *
- * @deprecated Use `authenticateWithPermission` with the explicit scope.
- */
-export function authenticateApiKey(req: Request, res: Response, next: NextFunction): void {
-  authenticateWithPermission('invoice:create')(req, res, next);
-}
-
-/**
  * CORS middleware configuration.
  *
  * Never defaults to wildcard '*'. When ALLOWED_ORIGINS is unset (e.g. in
@@ -213,11 +228,16 @@ export function authenticateApiKey(req: Request, res: Response, next: NextFuncti
  * @see https://github.com/xlabtg/tonbankcard-protocol/issues/272
  */
 const _allowedOrigins: string[] = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+  ? process.env.ALLOWED_ORIGINS.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
   : [];
 
 export const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  origin: (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void,
+  ) => {
     if (!origin) {
       callback(null, true);
       return;
