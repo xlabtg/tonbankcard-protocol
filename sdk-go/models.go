@@ -1,10 +1,14 @@
 package tonbankcard
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
+	"strconv"
+	"strings"
 )
 
 // InvoiceStatus is the lifecycle state of an invoice.
@@ -75,10 +79,11 @@ type WebhookPayload struct {
 }
 
 var (
-	tonAddressRe  = regexp.MustCompile(`^[EU][Qq][A-Za-z0-9_-]{46}$`)
-	amountRe      = regexp.MustCompile(`^[1-9][0-9]*$`)
-	metadataKeyRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-	maxAmount     = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 120), big.NewInt(1))
+	friendlyTonAddressRe = regexp.MustCompile(`^[A-Za-z0-9+/_-]{48}$`)
+	rawTonAddressRe      = regexp.MustCompile(`^-?[0-9]+:[0-9a-fA-F]{64}$`)
+	amountRe             = regexp.MustCompile(`^[1-9][0-9]*$`)
+	metadataKeyRe        = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+	maxAmount            = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 120), big.NewInt(1))
 )
 
 const (
@@ -86,12 +91,60 @@ const (
 	maxMetadataValueLength = 256
 )
 
-// ValidateMerchantNFT verifies a TON address in Base64url form.
+// ValidateMerchantNFT verifies a TON address in friendly or raw form.
 func ValidateMerchantNFT(addr string) error {
-	if !tonAddressRe.MatchString(addr) {
+	if !isValidTonAddress(addr) {
 		return fmt.Errorf("tonbankcard: invalid merchant NFT address: %q", addr)
 	}
 	return nil
+}
+
+func isValidTonAddress(addr string) bool {
+	return isValidRawTonAddress(addr) || isValidFriendlyTonAddress(addr)
+}
+
+func isValidRawTonAddress(addr string) bool {
+	if !rawTonAddressRe.MatchString(addr) {
+		return false
+	}
+	parts := strings.SplitN(addr, ":", 2)
+	if _, err := strconv.Atoi(parts[0]); err != nil {
+		return false
+	}
+	hash, err := hex.DecodeString(parts[1])
+	return err == nil && len(hash) == 32
+}
+
+func isValidFriendlyTonAddress(addr string) bool {
+	if !friendlyTonAddressRe.MatchString(addr) {
+		return false
+	}
+	normalized := strings.NewReplacer("-", "+", "_", "/").Replace(addr)
+	decoded, err := base64.StdEncoding.DecodeString(normalized)
+	if err != nil || len(decoded) != 36 {
+		return false
+	}
+	tag := decoded[0] & 0x7f
+	if tag != 0x11 && tag != 0x51 {
+		return false
+	}
+	expected := uint16(decoded[34])<<8 | uint16(decoded[35])
+	return crc16Ton(decoded[:34]) == expected
+}
+
+func crc16Ton(data []byte) uint16 {
+	var crc uint16
+	for _, b := range data {
+		crc ^= uint16(b) << 8
+		for i := 0; i < 8; i++ {
+			if crc&0x8000 != 0 {
+				crc = (crc << 1) ^ 0x1021
+			} else {
+				crc <<= 1
+			}
+		}
+	}
+	return crc
 }
 
 // ValidateAmount verifies a decimal TBC nanocoin amount.

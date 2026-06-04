@@ -3,6 +3,14 @@
 All notable changes to `tonbankcard-merchant` (Python SDK) are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-06-04
+
+### Fixed
+
+- Merchant NFT validation now accepts TON friendly addresses in both standard
+  base64 and base64url alphabets, accepts raw `workchain:hex` addresses, and
+  rejects friendly addresses whose CRC16 checksum is corrupt. (SDK-M1, #291)
+
 ## [1.1.0] - 2026-06-02
 
 ### Fixed

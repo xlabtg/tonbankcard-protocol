@@ -14,11 +14,22 @@ from tonbankcard_merchant.models import (
 )
 
 VALID_NFT = "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le"
+VALID_NFT_STANDARD_BASE64 = "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ/qgn3il+Le"
+VALID_NFT_RAW = "0:231e41edb75308a14e5cedd92cef7473f0d331000de84ad4ab710fea827de297"
+CHECKSUM_CORRUPTED_VALID_NFT = "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Lf"
 
 
 class TestValidators:
-    def test_valid_merchant_nft(self) -> None:
-        validate_merchant_nft(VALID_NFT)
+    @pytest.mark.parametrize(
+        "address",
+        [
+            VALID_NFT,
+            VALID_NFT_STANDARD_BASE64,
+            VALID_NFT_RAW,
+        ],
+    )
+    def test_valid_merchant_nft(self, address: str) -> None:
+        validate_merchant_nft(address)
 
     @pytest.mark.parametrize(
         "address",
@@ -28,6 +39,7 @@ class TestValidators:
             "EQ",
             "EQA" + "x" * 50,
             "AQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le",  # wrong prefix
+            CHECKSUM_CORRUPTED_VALID_NFT,
         ],
     )
     def test_invalid_merchant_nft(self, address: str) -> None:

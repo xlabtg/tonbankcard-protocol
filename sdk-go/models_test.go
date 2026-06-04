@@ -6,17 +6,25 @@ import (
 	"testing"
 )
 
-const validNFT = "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le"
+const (
+	validNFT                  = "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le"
+	validNFTStandardBase64    = "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ/qgn3il+Le"
+	validNFTRaw               = "0:231e41edb75308a14e5cedd92cef7473f0d331000de84ad4ab710fea827de297"
+	checksumCorruptedValidNFT = "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Lf"
+)
 
 func TestValidateMerchantNFT(t *testing.T) {
 	t.Parallel()
-	if err := ValidateMerchantNFT(validNFT); err != nil {
-		t.Fatalf("expected valid NFT to pass, got %v", err)
+	for _, addr := range []string{validNFT, validNFTStandardBase64, validNFTRaw} {
+		if err := ValidateMerchantNFT(addr); err != nil {
+			t.Fatalf("expected valid NFT address %q to pass, got %v", addr, err)
+		}
 	}
 	for _, addr := range []string{
 		"",
 		"not-an-address",
 		"AQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le",
+		checksumCorruptedValidNFT,
 		"EQA" + strings.Repeat("x", 50),
 	} {
 		if err := ValidateMerchantNFT(addr); err == nil {
