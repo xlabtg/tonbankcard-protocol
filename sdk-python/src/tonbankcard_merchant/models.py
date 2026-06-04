@@ -194,6 +194,23 @@ def validate_merchant_nft(address: str) -> None:
         raise ValueError(f"Invalid merchant NFT address: {address!r}")
 
 
+def canonicalize_ton_address(address: str) -> str:
+    """Convert a TON friendly or raw address to ``workchain:account_hex`` form."""
+    if not isinstance(address, str):
+        raise ValueError(f"Invalid TON address: {address!r}")
+    if _is_valid_raw_ton_address(address):
+        workchain_text, account_id = address.split(":", 1)
+        return f"{int(workchain_text, 10)}:{account_id.lower()}"
+
+    decoded = _decode_friendly_ton_address(address)
+    if decoded is None:
+        raise ValueError(f"Invalid TON address: {address!r}")
+    workchain_id = decoded[1]
+    if workchain_id >= 128:
+        workchain_id -= 256
+    return f"{workchain_id}:{decoded[2:34].hex()}"
+
+
 def _is_valid_ton_address(address: str) -> bool:
     return _is_valid_raw_ton_address(address) or _is_valid_friendly_ton_address(address)
 
@@ -211,20 +228,26 @@ def _is_valid_raw_ton_address(address: str) -> bool:
 
 
 def _is_valid_friendly_ton_address(address: str) -> bool:
+    return _decode_friendly_ton_address(address) is not None
+
+
+def _decode_friendly_ton_address(address: str) -> Optional[bytes]:
     if not _FRIENDLY_TON_ADDRESS_RE.match(address):
-        return False
+        return None
     normalized = address.replace("-", "+").replace("_", "/")
     try:
         decoded = base64.b64decode(normalized, validate=True)
     except (binascii.Error, ValueError):
-        return False
+        return None
     if len(decoded) != 36:
-        return False
+        return None
     tag = decoded[0] & 0x7F
     if tag not in (0x11, 0x51):
-        return False
+        return None
     expected = (decoded[34] << 8) | decoded[35]
-    return _crc16_ton(decoded[:34]) == expected
+    if _crc16_ton(decoded[:34]) != expected:
+        return None
+    return decoded
 
 
 def _crc16_ton(data: bytes) -> int:

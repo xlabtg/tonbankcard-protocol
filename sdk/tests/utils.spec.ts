@@ -3,9 +3,15 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Address } from '@ton/core';
 import {
+  canonicalInvoiceIdPayload,
+  canonicalJson,
+  canonicalizeTonAddress,
   generateInvoiceId,
+  createPayloadHash,
   formatTBC,
   parseTBC,
   isValidTonAddress,
@@ -14,6 +20,33 @@ import {
   formatTimestamp,
   serializeBigInt,
 } from '../src/utils';
+
+const sdkM5Fixture = JSON.parse(
+  readFileSync(
+    join(__dirname, '../../tests/fixtures/sdk-m5-canonical-hashes.json'),
+    'utf8'
+  )
+) as {
+  invoice: {
+    merchant_nft_friendly: string;
+    merchant_nft_raw: string;
+    amount_tbc: string;
+    order_id: string;
+    timestamp: number;
+    canonical: string;
+    invoice_id: string;
+  };
+  payload: {
+    value: Record<string, unknown> & { amount_tbc: string };
+    value_reordered: Record<string, unknown>;
+    canonical: string;
+    hash_hex: string;
+  };
+};
+
+function hashToHex(hash: bigint): string {
+  return hash.toString(16).padStart(64, '0');
+}
 
 describe('Utils', () => {
   describe('generateInvoiceId', () => {
@@ -45,12 +78,138 @@ describe('Utils', () => {
       };
 
       const id1 = generateInvoiceId(base);
-      const id2 = generateInvoiceId({ ...base, amountTbc: BigInt(20_000_000_000) });
+      const id2 = generateInvoiceId({
+        ...base,
+        amountTbc: BigInt(20_000_000_000),
+      });
       const id3 = generateInvoiceId({ ...base, orderId: 'ORDER-456' });
 
       expect(id1).not.toBe(id2);
       expect(id1).not.toBe(id3);
       expect(id2).not.toBe(id3);
+    });
+
+    it('should use the shared SDK-M5 canonical invoice fixture', () => {
+      const params = {
+        merchantNft: Address.parse(sdkM5Fixture.invoice.merchant_nft_friendly),
+        amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+        orderId: sdkM5Fixture.invoice.order_id,
+        timestamp: sdkM5Fixture.invoice.timestamp,
+      };
+
+      expect(canonicalizeTonAddress(params.merchantNft)).toBe(
+        sdkM5Fixture.invoice.merchant_nft_raw
+      );
+      expect(canonicalInvoiceIdPayload(params)).toBe(
+        sdkM5Fixture.invoice.canonical
+      );
+      expect(generateInvoiceId(params)).toBe(sdkM5Fixture.invoice.invoice_id);
+      expect(
+        generateInvoiceId({
+          ...params,
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_raw,
+        })
+      ).toBe(sdkM5Fixture.invoice.invoice_id);
+    });
+
+    it('should canonicalize empty order ID and max int64 timestamp', () => {
+      const params = {
+        merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+        amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+        orderId: '',
+        timestamp: 9223372036854775807n,
+      };
+
+      expect(canonicalInvoiceIdPayload(params)).toBe(
+        `{"amount_tbc":"${sdkM5Fixture.invoice.amount_tbc}","merchant_nft":"${sdkM5Fixture.invoice.merchant_nft_raw}","order_id":"","timestamp":"9223372036854775807"}`
+      );
+      expect(generateInvoiceId(params)).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('should reject unsafe numeric timestamps', () => {
+      expect(() =>
+        canonicalInvoiceIdPayload({
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+          amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+          timestamp: Number.MAX_SAFE_INTEGER + 1,
+        })
+      ).toThrow('safe integer');
+    });
+
+    it('should reject invalid merchant NFT addresses', () => {
+      expect(() =>
+        generateInvoiceId({
+          merchantNft: 'not-a-ton-address',
+          amountTbc: BigInt(sdkM5Fixture.invoice.amount_tbc),
+          orderId: '',
+          timestamp: sdkM5Fixture.invoice.timestamp,
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('createPayloadHash', () => {
+    it('should ignore object key insertion order', () => {
+      const payloadA = {
+        invoice_id: 'INV-123',
+        metadata: {
+          order_id: 'ORDER-123',
+          customer_id: 'CUSTOMER-1',
+        },
+      };
+      const payloadB = {
+        metadata: {
+          customer_id: 'CUSTOMER-1',
+          order_id: 'ORDER-123',
+        },
+        invoice_id: 'INV-123',
+      };
+
+      expect(hashToHex(createPayloadHash(payloadA))).toBe(
+        hashToHex(createPayloadHash(payloadB))
+      );
+    });
+
+    it('should use the shared SDK-M5 canonical payload fixture', () => {
+      expect(canonicalJson(sdkM5Fixture.payload.value)).toBe(
+        sdkM5Fixture.payload.canonical
+      );
+      expect(canonicalJson(sdkM5Fixture.payload.value_reordered)).toBe(
+        sdkM5Fixture.payload.canonical
+      );
+      expect(hashToHex(createPayloadHash(sdkM5Fixture.payload.value))).toBe(
+        sdkM5Fixture.payload.hash_hex
+      );
+      expect(
+        hashToHex(createPayloadHash(sdkM5Fixture.payload.value_reordered))
+      ).toBe(sdkM5Fixture.payload.hash_hex);
+    });
+
+    it('should encode BigInt payload values as decimal strings', () => {
+      const withBigIntAmount = {
+        ...sdkM5Fixture.payload.value,
+        amount_tbc: BigInt(sdkM5Fixture.payload.value.amount_tbc),
+      };
+
+      expect(canonicalJson(withBigIntAmount)).toBe(
+        sdkM5Fixture.payload.canonical
+      );
+      expect(hashToHex(createPayloadHash(withBigIntAmount))).toBe(
+        sdkM5Fixture.payload.hash_hex
+      );
+    });
+
+    it('should encode null payload values and reject undefined values', () => {
+      expect(canonicalJson({ memo: null, nested: { value: null } })).toBe(
+        '{"memo":null,"nested":{"value":null}}'
+      );
+      expect(createPayloadHash({ memo: null }) > 0n).toBe(true);
+      expect(() => canonicalJson({ memo: undefined })).toThrow(
+        'undefined values'
+      );
+      expect(() => createPayloadHash({ memo: undefined })).toThrow(
+        'undefined values'
+      );
     });
   });
 
@@ -149,7 +308,9 @@ describe('Utils', () => {
     });
 
     it('should accept Address objects', () => {
-      const addr = Address.parse('EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le');
+      const addr = Address.parse(
+        'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'
+      );
       const short = shortAddress(addr);
       expect(short).toContain('...');
     });

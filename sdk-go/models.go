@@ -103,6 +103,26 @@ func isValidTonAddress(addr string) bool {
 	return isValidRawTonAddress(addr) || isValidFriendlyTonAddress(addr)
 }
 
+// CanonicalizeTonAddress converts a TON friendly or raw address to raw
+// `workchain:account_hex` form for cross-SDK hashing.
+func CanonicalizeTonAddress(addr string) (string, error) {
+	if isValidRawTonAddress(addr) {
+		parts := strings.SplitN(addr, ":", 2)
+		workchain, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return "", fmt.Errorf("tonbankcard: invalid TON address: %q", addr)
+		}
+		return fmt.Sprintf("%d:%s", workchain, strings.ToLower(parts[1])), nil
+	}
+
+	decoded, err := decodeFriendlyTonAddress(addr)
+	if err != nil {
+		return "", fmt.Errorf("tonbankcard: invalid TON address: %q", addr)
+	}
+	workchain := int(int8(decoded[1]))
+	return fmt.Sprintf("%d:%s", workchain, hex.EncodeToString(decoded[2:34])), nil
+}
+
 func isValidRawTonAddress(addr string) bool {
 	if !rawTonAddressRe.MatchString(addr) {
 		return false
@@ -116,20 +136,28 @@ func isValidRawTonAddress(addr string) bool {
 }
 
 func isValidFriendlyTonAddress(addr string) bool {
+	_, err := decodeFriendlyTonAddress(addr)
+	return err == nil
+}
+
+func decodeFriendlyTonAddress(addr string) ([]byte, error) {
 	if !friendlyTonAddressRe.MatchString(addr) {
-		return false
+		return nil, fmt.Errorf("invalid friendly address shape")
 	}
 	normalized := strings.NewReplacer("-", "+", "_", "/").Replace(addr)
 	decoded, err := base64.StdEncoding.DecodeString(normalized)
 	if err != nil || len(decoded) != 36 {
-		return false
+		return nil, fmt.Errorf("invalid friendly address base64")
 	}
 	tag := decoded[0] & 0x7f
 	if tag != 0x11 && tag != 0x51 {
-		return false
+		return nil, fmt.Errorf("invalid friendly address tag")
 	}
 	expected := uint16(decoded[34])<<8 | uint16(decoded[35])
-	return crc16Ton(decoded[:34]) == expected
+	if crc16Ton(decoded[:34]) != expected {
+		return nil, fmt.Errorf("invalid friendly address checksum")
+	}
+	return decoded, nil
 }
 
 func crc16Ton(data []byte) uint16 {

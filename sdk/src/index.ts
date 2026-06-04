@@ -45,6 +45,10 @@ export {
 
 export {
   // Utilities
+  InvoiceIdParams,
+  canonicalizeTonAddress,
+  canonicalJson,
+  canonicalInvoiceIdPayload,
   generateInvoiceId,
   createPayloadHash,
   formatTBC,

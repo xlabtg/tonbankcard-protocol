@@ -1,0 +1,36 @@
+{
+  "version": "sdk-m5-canonical-hashes-v1",
+  "invoice": {
+    "merchant_nft_friendly": "EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le",
+    "merchant_nft_raw": "0:231e41edb75308a14e5cedd92cef7473f0d331000de84ad4ab710fea827de297",
+    "amount_tbc": "10000000000",
+    "order_id": "ORDER-123",
+    "timestamp": 1234567890,
+    "canonical": "{\"amount_tbc\":\"10000000000\",\"merchant_nft\":\"0:231e41edb75308a14e5cedd92cef7473f0d331000de84ad4ab710fea827de297\",\"order_id\":\"ORDER-123\",\"timestamp\":\"1234567890\"}",
+    "invoice_id": "fffcc6370be173d5e469b0337257252b9050c96d5ccdc8647044af3e2e2b55f0"
+  },
+  "payload": {
+    "value": {
+      "invoice_id": "INV-123",
+      "metadata": {
+        "order_id": "ORDER-123",
+        "customer_id": "CUSTOMER-1"
+      },
+      "settled": true,
+      "items": ["sku-1", "sku-2"],
+      "amount_tbc": "10000000000"
+    },
+    "value_reordered": {
+      "settled": true,
+      "amount_tbc": "10000000000",
+      "items": ["sku-1", "sku-2"],
+      "metadata": {
+        "customer_id": "CUSTOMER-1",
+        "order_id": "ORDER-123"
+      },
+      "invoice_id": "INV-123"
+    },
+    "canonical": "{\"amount_tbc\":\"10000000000\",\"invoice_id\":\"INV-123\",\"items\":[\"sku-1\",\"sku-2\"],\"metadata\":{\"customer_id\":\"CUSTOMER-1\",\"order_id\":\"ORDER-123\"},\"settled\":true}",
+    "hash_hex": "ae83ebe9a5ec1448179eeed440445e22d542a4691363197e55ef098fdbc808ff"
+  }
+}

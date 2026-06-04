@@ -10,11 +10,96 @@ export { formatTBC, parseTBC } from './amount';
 /**
  * Parameters for generating invoice ID
  */
-interface InvoiceIdParams {
-  merchantNft: Address;
+export interface InvoiceIdParams {
+  merchantNft: Address | string;
   amountTbc: bigint;
   orderId?: string;
-  timestamp: number;
+  timestamp: number | bigint;
+}
+
+/**
+ * Canonicalize a TON address to raw `workchain:account_hex` form.
+ *
+ * Friendly address flags such as bounceable/testOnly must not affect hashes.
+ */
+export function canonicalizeTonAddress(address: Address | string): string {
+  const parsed = typeof address === 'string' ? Address.parse(address) : address;
+  return parsed.toRawString();
+}
+
+/**
+ * Canonical JSON used by SDK hashing helpers.
+ *
+ * Objects are encoded with lexicographically sorted keys, arrays keep their
+ * original order, BigInt values are decimal strings, and no insignificant
+ * whitespace is emitted.
+ */
+export function canonicalJson(value: unknown): string {
+  if (value === null) {
+    return 'null';
+  }
+
+  if (typeof value === 'bigint') {
+    return JSON.stringify(value.toString());
+  }
+
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new TypeError('Canonical JSON does not support non-finite numbers');
+    }
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+
+  if (typeof value === 'object') {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(
+        'Canonical JSON supports only plain objects and arrays'
+      );
+    }
+
+    const objectValue = value as Record<string, unknown>;
+    return `{${Object.keys(objectValue)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(objectValue[key])}`)
+      .join(',')}}`;
+  }
+
+  throw new TypeError(`Canonical JSON does not support ${typeof value} values`);
+}
+
+function canonicalTimestamp(timestamp: number | bigint): string {
+  if (typeof timestamp === 'bigint') {
+    return timestamp.toString();
+  }
+  if (!Number.isSafeInteger(timestamp)) {
+    throw new TypeError(
+      'Invoice timestamp must be a safe integer Unix timestamp'
+    );
+  }
+  return timestamp.toString();
+}
+
+/**
+ * Canonical byte string hashed by generateInvoiceId.
+ */
+export function canonicalInvoiceIdPayload(params: InvoiceIdParams): string {
+  const { merchantNft, amountTbc, orderId, timestamp } = params;
+
+  return canonicalJson({
+    amount_tbc: amountTbc.toString(),
+    merchant_nft: canonicalizeTonAddress(merchantNft),
+    order_id: orderId ?? '',
+    timestamp: canonicalTimestamp(timestamp),
+  });
 }
 
 /**
@@ -32,20 +117,8 @@ interface InvoiceIdParams {
  * @returns Hex-encoded invoice ID
  */
 export function generateInvoiceId(params: InvoiceIdParams): string {
-  const { merchantNft, amountTbc, orderId, timestamp } = params;
-
-  // Concatenate parameters for hashing
-  const data = [
-    merchantNft.toString(),
-    amountTbc.toString(),
-    orderId || '',
-    timestamp.toString(),
-  ].join('|');
-
-  // Hash using SHA-256
+  const data = canonicalInvoiceIdPayload(params);
   const hash = sha256_sync(data);
-
-  // Return hex-encoded hash
   return Buffer.from(hash).toString('hex');
 }
 
@@ -55,8 +128,8 @@ export function generateInvoiceId(params: InvoiceIdParams): string {
  * @param payload - Payment payload (order ID, memo, etc.)
  * @returns Hash as bigint
  */
-export function createPayloadHash(payload: Record<string, any>): bigint {
-  const data = JSON.stringify(payload);
+export function createPayloadHash(payload: Record<string, unknown>): bigint {
+  const data = canonicalJson(payload);
   const hash = sha256_sync(data);
   return BigInt('0x' + Buffer.from(hash).toString('hex'));
 }
@@ -83,7 +156,10 @@ export function isValidTonAddress(address: string): boolean {
  * @param chars - Number of characters to show on each side (default: 6)
  * @returns Shortened address (e.g., "EQAjHk...3il-Le")
  */
-export function shortAddress(address: Address | string, chars: number = 6): string {
+export function shortAddress(
+  address: Address | string,
+  chars: number = 6
+): string {
   const addr = typeof address === 'string' ? address : address.toString();
   if (addr.length <= chars * 2 + 3) {
     return addr;
