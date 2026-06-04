@@ -25,5 +25,10 @@ export * from './tonconnect';
 export * from './secure';
 export * from './utils';
 
-export { HttpsClient, HttpsOnlyError } from './network/httpsClient';
-export type { HttpsClientOptions, HttpsFetchOptions, CertificateValidator } from './network/httpsClient';
+export { CertificatePinningError, HttpsClient, HttpsOnlyError } from './network/httpsClient';
+export type {
+  CertificateFingerprintProvider,
+  CertificateValidator,
+  HttpsClientOptions,
+  HttpsFetchOptions,
+} from './network/httpsClient';
