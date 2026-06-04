@@ -34,6 +34,15 @@ describe('browser entry', () => {
     expect(formatTBC(1_000_000_000n)).toBe('1.00');
   });
 
+  it('parseTBC and formatTBC preserve values above the JavaScript safe integer limit', () => {
+    const nanocoins = 2n ** 53n + 3n;
+
+    const formatted = formatTBC(nanocoins, 9);
+
+    expect(formatted).toBe('9007199.254740995');
+    expect(parseTBC(formatted)).toBe(nanocoins);
+  });
+
   it('parseTBC rejects negative and NaN values', () => {
     expect(() => parseTBC('-1')).toThrow('Invalid TBC amount');
     expect(() => parseTBC('abc')).toThrow('Invalid TBC amount');

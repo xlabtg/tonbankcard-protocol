@@ -9,6 +9,21 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [1.3.2] — 2026-06-04
+
+### Fixed — TBC amount helpers keep bigint precision (Issue #292, SDK-M2)
+
+- `formatTBC()` and `parseTBC()` now format and parse nanocoin amounts with
+  BigInt and decimal string operations instead of routing values through
+  JavaScript `number`/`parseFloat`, preserving amounts above `2^53`.
+- The main SDK entry point and dependency-free browser entry point share the
+  same amount helper implementation, so `@tonbankcard/merchant-sdk/browser`
+  keeps identical numeric semantics.
+- Added regression coverage that round-trips a value above the JavaScript safe
+  integer limit with 9 decimal places.
+
+---
+
 ## [1.3.1] — 2026-06-02
 
 ### Fixed — Confirmation depth is now a block-height difference (Issue #267, SDK-H2)

@@ -123,4 +123,16 @@ describe('TonbankcardPaymentWidget', () => {
       expect(link).toContain('amount=5000000000');
     });
   });
+
+  describe('formatAmount', () => {
+    it('should format large display amounts without JavaScript number precision loss', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        amountTbc: '123456789012345678901234567890',
+      });
+      const formatAmount = Reflect.get(widget, 'formatAmount') as () => string;
+
+      expect(formatAmount.call(widget)).toBe('123456789012345678901.23 TBC');
+    });
+  });
 });
