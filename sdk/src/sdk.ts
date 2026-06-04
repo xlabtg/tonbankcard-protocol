@@ -21,6 +21,7 @@ import {
   TransactionVerification,
   SettlementMatchCriteria,
 } from './types';
+import { MAX_TBC_NANOCOINS } from './amount';
 import { generateInvoiceId, isValidTonAddress } from './utils';
 
 /** Masterchain identifiers (workchain -1, full shard) used for block lookups. */
@@ -129,6 +130,9 @@ export class TonbankcardSDK {
     // Validate amount is positive
     if (params.amountTbc <= 0n) {
       throw new Error('Invoice amount must be positive');
+    }
+    if (params.amountTbc > MAX_TBC_NANOCOINS) {
+      throw new Error('Invoice amount exceeds maximum of 2^120 - 1');
     }
 
     // Validate merchant NFT address

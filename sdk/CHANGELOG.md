@@ -9,6 +9,20 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [1.3.3] — 2026-06-04
+
+### Fixed — `createInvoice` enforces the on-chain amount upper bound (Issue #293, SDK-M3)
+
+- `TonbankcardSDK.createInvoice()` now rejects TBC nanocoin amounts above
+  `2^120 - 1`, matching the VarUInteger16 on-chain representation and the
+  existing Go/Python SDK validation.
+- `MockTonbankcardSDK.createInvoice()` applies the same upper-bound check so
+  sandbox tests keep parity with the real SDK.
+- Added regression coverage for the boundary: `2^120 - 1` is accepted and
+  `2^120` is rejected.
+
+---
+
 ## [1.3.2] — 2026-06-04
 
 ### Fixed — TBC amount helpers keep bigint precision (Issue #292, SDK-M2)

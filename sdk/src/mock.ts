@@ -22,6 +22,7 @@ import {
   TransactionVerification,
   SettlementMatchCriteria,
 } from './types';
+import { MAX_TBC_NANOCOINS } from './amount';
 import { generateInvoiceId } from './utils';
 
 /**
@@ -189,6 +190,9 @@ export class MockTonbankcardSDK {
   createInvoice(params: CreateInvoiceParams): Invoice {
     if (params.amountTbc <= 0n) {
       throw new Error('Invoice amount must be positive');
+    }
+    if (params.amountTbc > MAX_TBC_NANOCOINS) {
+      throw new Error('Invoice amount exceeds maximum of 2^120 - 1');
     }
 
     if (!this.isValidAddress(params.merchantNft)) {

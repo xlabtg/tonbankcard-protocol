@@ -19,6 +19,7 @@ import { parseTBC } from '../src/utils';
  * Mirrors the constant in `src/sdk.ts` and the indexer's event parser.
  */
 const MERCHANT_PAYMENT_OP = 0x3b4c2365;
+const MAX_TBC_NANOCOINS = (2n ** 120n) - 1n;
 
 /**
  * Build the body cell of a `MerchantPayment` external-out event as Tact's
@@ -120,6 +121,21 @@ describe('TonbankcardSDK', () => {
           amountTbc: BigInt(-1000),
         })
       ).toThrow('Invoice amount must be positive');
+    });
+
+    it('should enforce the on-chain amount upper bound', () => {
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: MAX_TBC_NANOCOINS,
+      });
+
+      expect(invoice.amountTbc).toBe(MAX_TBC_NANOCOINS);
+      expect(() =>
+        sdk.createInvoice({
+          merchantNft: testMerchantNft,
+          amountTbc: MAX_TBC_NANOCOINS + 1n,
+        })
+      ).toThrow('Invoice amount exceeds maximum of 2^120 - 1');
     });
 
     it('should throw on a malformed merchant NFT address', () => {
