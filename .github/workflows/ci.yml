@@ -48,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend/indexer
-        run: npm install
+        run: npm ci
 
       - name: Build runtime
         working-directory: backend/indexer
@@ -88,7 +88,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: wallet-ui
-        run: npm install
+        run: npm ci
 
       - name: Build Wallet UI
         working-directory: wallet-ui
@@ -107,7 +107,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: mobile
-        run: npm install
+        run: npm ci
 
       - name: Build Mobile Core
         working-directory: mobile
@@ -126,7 +126,7 @@ jobs:
 
       - name: Install mobile-core dependencies
         working-directory: mobile
-        run: npm install
+        run: npm ci
 
       - name: Build mobile-core (provides typings for mobile-app)
         working-directory: mobile
@@ -134,7 +134,7 @@ jobs:
 
       - name: Install mobile-app dependencies
         working-directory: mobile-app
-        run: npm install
+        run: npm ci
 
       - name: Typecheck Mobile App (platform-agnostic core)
         working-directory: mobile-app
@@ -153,7 +153,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: dashboard
-        run: npm install
+        run: npm ci
 
       - name: Build Merchant Dashboard
         working-directory: dashboard
@@ -181,7 +181,7 @@ jobs:
 
       - name: Install indexer dependencies
         working-directory: backend/indexer
-        run: npm install
+        run: npm ci
 
       - name: Lint indexer
         working-directory: backend/indexer
@@ -189,7 +189,7 @@ jobs:
 
       - name: Install wallet-ui dependencies
         working-directory: wallet-ui
-        run: npm install
+        run: npm ci
 
       - name: Lint wallet-ui
         working-directory: wallet-ui
@@ -197,7 +197,7 @@ jobs:
 
       - name: Install mobile-core dependencies
         working-directory: mobile
-        run: npm install
+        run: npm ci
 
       - name: Lint mobile-core
         working-directory: mobile
@@ -209,7 +209,7 @@ jobs:
 
       - name: Install mobile-app dependencies
         working-directory: mobile-app
-        run: npm install
+        run: npm ci
 
       - name: Lint mobile-app
         working-directory: mobile-app
@@ -217,7 +217,7 @@ jobs:
 
       - name: Install dashboard dependencies
         working-directory: dashboard
-        run: npm install
+        run: npm ci
 
       - name: Lint dashboard
         working-directory: dashboard
@@ -290,7 +290,7 @@ jobs:
 
       - name: Install indexer dependencies
         working-directory: backend/indexer
-        run: npm install
+        run: npm ci
 
       - name: Test indexer
         working-directory: backend/indexer
@@ -298,7 +298,7 @@ jobs:
 
       - name: Install wallet-ui dependencies
         working-directory: wallet-ui
-        run: npm install
+        run: npm ci
 
       - name: Test wallet-ui
         working-directory: wallet-ui
@@ -306,7 +306,7 @@ jobs:
 
       - name: Install mobile-core dependencies
         working-directory: mobile
-        run: npm install
+        run: npm ci
 
       - name: Test mobile-core
         working-directory: mobile
@@ -318,7 +318,7 @@ jobs:
 
       - name: Install mobile-app dependencies
         working-directory: mobile-app
-        run: npm install
+        run: npm ci
 
       - name: Test mobile-app
         working-directory: mobile-app
@@ -326,7 +326,7 @@ jobs:
 
       - name: Install dashboard dependencies
         working-directory: dashboard
-        run: npm install
+        run: npm ci
 
       - name: Test dashboard
         working-directory: dashboard
@@ -365,7 +365,7 @@ jobs:
 
       - name: Install indexer dependencies
         working-directory: backend/indexer
-        run: npm install
+        run: npm ci
 
       - name: TypeScript check indexer
         working-directory: backend/indexer
@@ -373,7 +373,7 @@ jobs:
 
       - name: Install wallet-ui dependencies
         working-directory: wallet-ui
-        run: npm install
+        run: npm ci
 
       - name: TypeScript check wallet-ui
         working-directory: wallet-ui
@@ -381,7 +381,7 @@ jobs:
 
       - name: Install mobile-core dependencies
         working-directory: mobile
-        run: npm install
+        run: npm ci
 
       - name: TypeScript check mobile-core
         working-directory: mobile
@@ -393,7 +393,7 @@ jobs:
 
       - name: Install mobile-app dependencies
         working-directory: mobile-app
-        run: npm install
+        run: npm ci
 
       - name: TypeScript check mobile-app
         working-directory: mobile-app
@@ -401,7 +401,7 @@ jobs:
 
       - name: Install dashboard dependencies
         working-directory: dashboard
-        run: npm install
+        run: npm ci
 
       - name: TypeScript check dashboard
         working-directory: dashboard
