@@ -16,34 +16,56 @@ import {
 } from 'rate-limiter-flexible';
 import Redis from 'ioredis';
 
-/**
- * Extract the real client IP address.
- *
- * When `trustProxy` is true we inspect, in order of preference:
- *   1. CF-Connecting-IP  (Cloudflare)
- *   2. X-Forwarded-For   (first / leftmost address, i.e. the actual client)
- *
- * Falls back to `req.socket.remoteAddress` when no proxy header is present or
- * when trust-proxy is disabled.
- */
-function getClientIp(req: express.Request, trustProxy: boolean): string {
-  if (trustProxy) {
-    const cf = req.headers['cf-connecting-ip'];
-    if (typeof cf === 'string' && cf.trim()) {
-      return cf.trim();
-    }
+export interface ClientIpOptions {
+  trustProxy: boolean;
+  trustedProxyCount: number;
+}
 
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) {
-      const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-      const first = raw.split(',')[0].trim();
-      if (first) {
-        return first;
-      }
-    }
+function splitForwardedFor(value: string | string[] | undefined): string[] {
+  if (!value) {
+    return [];
   }
 
-  return req.socket?.remoteAddress || 'unknown';
+  const rawValues = Array.isArray(value) ? value : [value];
+  return rawValues
+    .flatMap((raw) => raw.split(','))
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+/**
+ * Extract the client IP used for rate-limit keying.
+ *
+ * When proxy headers are trusted, derive the key from the rightmost untrusted
+ * hop in the `X-Forwarded-For` chain plus the socket peer. This ignores
+ * spoofable leftmost entries a client can prepend and avoids treating
+ * single-value headers such as `CF-Connecting-IP` as proof of identity.
+ */
+export function getClientIp(
+  req: express.Request,
+  options: ClientIpOptions
+): string {
+  const remoteAddress = req.socket?.remoteAddress || 'unknown';
+
+  if (!options.trustProxy) {
+    return remoteAddress;
+  }
+
+  const trustedProxyCount = Math.max(
+    0,
+    Math.floor(options.trustedProxyCount)
+  );
+  const chain = [
+    ...splitForwardedFor(req.headers['x-forwarded-for']),
+    remoteAddress,
+  ];
+
+  const clientIndex = chain.length - trustedProxyCount - 1;
+  if (clientIndex >= 0) {
+    return chain[clientIndex];
+  }
+
+  return remoteAddress;
 }
 
 export class ApiServer {
@@ -154,9 +176,10 @@ export class ApiServer {
     // Distributed-safe rate limiting with proper IP extraction and headers
     const { maxRequests, windowMs } = this.config.api.rateLimit;
     const trustProxy = this.config.api.trustProxy;
+    const trustedProxyCount = this.config.api.trustedProxyCount;
 
     this.app.use(async (req, res, next) => {
-      const ip = getClientIp(req, trustProxy);
+      const ip = getClientIp(req, { trustProxy, trustedProxyCount });
 
       try {
         const rateLimiterRes: RateLimiterRes =

@@ -16,7 +16,11 @@
 /**
  * Supported external payment/exchange providers
  */
-export type ExternalProvider = 'ChangeNOW' | 'NOWPayments' | 'CoinRabbit';
+export type ExternalProvider =
+  | 'ChangeNOW'
+  | 'NOWPayments'
+  | 'CoinRabbit'
+  | 'RecurringPayments';
 
 /**
  * Transaction status lifecycle

@@ -111,6 +111,7 @@ env:
   REDIS_HOST: ""
   REDIS_PORT: "6379"
   API_TRUST_PROXY: "true"
+  API_TRUSTED_PROXY_COUNT: "1"
 
 existingSecret: tonbankcard-indexer
 

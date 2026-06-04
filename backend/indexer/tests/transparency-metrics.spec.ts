@@ -53,6 +53,7 @@ function fakeConfig(): IndexerConfig {
       port: 0,
       host: '127.0.0.1',
       trustProxy: false,
+      trustedProxyCount: 0,
       rateLimit: { windowMs: 60000, maxRequests: 100 },
     },
     logging: { level: 'silent' as any, pretty: false },

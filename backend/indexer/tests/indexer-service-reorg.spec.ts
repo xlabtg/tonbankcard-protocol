@@ -38,6 +38,7 @@ function makeConfig(): IndexerConfig {
       port: 3000,
       host: 'localhost',
       trustProxy: false,
+      trustedProxyCount: 0,
       rateLimit: { windowMs: 60000, maxRequests: 100 },
     },
     logging: { level: 'silent', pretty: false },

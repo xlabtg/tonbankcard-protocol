@@ -43,8 +43,10 @@ export interface IndexerConfig {
   api: {
     port: number;
     host: string;
-    /** Trust X-Forwarded-For / CF-Connecting-IP headers from a reverse proxy */
+    /** Trust X-Forwarded-For from configured reverse proxy hops */
     trustProxy: boolean;
+    /** Number of trusted proxy hops nearest to this service */
+    trustedProxyCount: number;
     rateLimit: {
       windowMs: number;
       maxRequests: number;
@@ -101,6 +103,8 @@ export function loadConfig(): IndexerConfig {
     return value ? value.toLowerCase() === 'true' : defaultValue;
   };
 
+  const trustProxy = getEnvBoolean('API_TRUST_PROXY', false);
+
   return {
     network: (getEnv('TON_NETWORK', 'testnet') as 'mainnet' | 'testnet'),
     tonApiEndpoint: getEnv(
@@ -142,7 +146,12 @@ export function loadConfig(): IndexerConfig {
     api: {
       port: getEnvNumber('PORT', 3000),
       host: getEnv('HOST', '0.0.0.0'),
-      trustProxy: getEnvBoolean('API_TRUST_PROXY', false),
+      trustProxy,
+      trustedProxyCount: getEnvNumber(
+        'API_TRUSTED_PROXY_COUNT',
+        trustProxy ? 1 : 0,
+        { min: 0 },
+      ),
       rateLimit: {
         windowMs: getEnvNumber('API_RATE_LIMIT_WINDOW_MS', 60000),
         maxRequests: getEnvNumber('API_RATE_LIMIT_MAX_REQUESTS', 100),

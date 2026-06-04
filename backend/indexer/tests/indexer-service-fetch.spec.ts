@@ -10,14 +10,16 @@ import { IndexerConfig } from '../src/types/config';
 // Minimal stubs
 // ---------------------------------------------------------------------------
 
-function makeConfig(): IndexerConfig {
+function makeConfig(tonApiKey = ''): IndexerConfig {
   return {
+    network: 'testnet',
     tonApiEndpoint: 'https://toncenter.example.com/api/v2',
-    tonApiKey: '',
+    tonApiKey,
     contracts: {
       paymentHub: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le',
       merchantPaymentHub: '',
       nftCollections: [],
+      transparencyRegistry: '',
     },
     indexer: {
       pollIntervalMs: 5000,
@@ -28,10 +30,14 @@ function makeConfig(): IndexerConfig {
     database: {
       path: ':memory:',
     },
-    server: {
+    api: {
       port: 3000,
       host: 'localhost',
+      trustProxy: false,
+      trustedProxyCount: 0,
+      rateLimit: { windowMs: 60000, maxRequests: 100 },
     },
+    logging: { level: 'silent', pretty: false },
   } as unknown as IndexerConfig;
 }
 
@@ -260,5 +266,86 @@ describe('IndexerService.fetchWithRetry', () => {
     // attempt=1 -> delay(2^1*1000=2000), attempt=2 -> delay(2^2*1000=4000)
     expect(service.delay).toHaveBeenNthCalledWith(1, 2000);
     expect(service.delay).toHaveBeenNthCalledWith(2, 4000);
+  });
+
+  // -------------------------------------------------------------------------
+  it('redacts api_key query parameters in retry logs', async () => {
+    const warn = jest.fn();
+    service.logger = { warn };
+
+    global.fetch = jest
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
+      } as Response);
+
+    await service.fetchWithRetry(
+      'https://example.com/test?api_key=secret-token&seqno=1',
+      2,
+      10000
+    );
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    const meta = warn.mock.calls[0][0] as { url?: string };
+    expect(meta.url).toContain('api_key=REDACTED');
+    expect(meta.url).not.toContain('secret-token');
+  });
+
+  // -------------------------------------------------------------------------
+  it('fetches block lookup/header through fetchWithRetry with X-API-Key header', async () => {
+    service = new IndexerService(
+      makeConfig('secret-token'),
+      stubDb,
+      silentLogger
+    ) as any;
+
+    const fetchSpy = jest
+      .spyOn(service, 'fetchWithRetry')
+      .mockImplementation(async (...args: unknown[]) => {
+        const url = args[0] as string;
+        const options = args[1] as { init?: { headers?: Record<string, string> } };
+
+        expect(url).not.toContain('api_key=');
+        expect(options.init?.headers?.['X-API-Key']).toBe('secret-token');
+
+        if (url.includes('/lookupBlock')) {
+          return {
+            ok: true,
+            result: {
+              workchain: -1,
+              shard: '-9223372036854775808',
+              seqno: 42,
+              root_hash: 'lookup-root',
+            },
+          };
+        }
+
+        if (url.includes('/getBlockHeader')) {
+          return {
+            ok: true,
+            result: {
+              id: { root_hash: 'header-root' },
+              prev_blocks: [{ root_hash: 'prev-root' }],
+              gen_utime: 123456,
+            },
+          };
+        }
+
+        throw new Error(`Unexpected URL: ${url}`);
+      });
+
+    const block = await service.getBlockByNumber(42);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(block).toEqual({
+      seqno: 42,
+      id: {
+        root_hash: 'header-root',
+        prev_root_hash: 'prev-root',
+      },
+      now: 123456,
+    });
   });
 });

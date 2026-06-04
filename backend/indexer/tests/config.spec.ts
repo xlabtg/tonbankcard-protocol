@@ -142,6 +142,32 @@ describe('loadConfig — numeric validation (INDEXER-M6)', () => {
     });
   });
 
+  describe('API_TRUSTED_PROXY_COUNT', () => {
+    it('defaults to zero when proxy headers are not trusted', () => {
+      withEnv({ API_TRUST_PROXY: 'false' }, () => {
+        expect(loadConfig().api.trustedProxyCount).toBe(0);
+      });
+    });
+
+    it('defaults to one trusted hop when API_TRUST_PROXY=true', () => {
+      withEnv({ API_TRUST_PROXY: 'true' }, () => {
+        expect(loadConfig().api.trustedProxyCount).toBe(1);
+      });
+    });
+
+    it('accepts an explicit trusted proxy count', () => {
+      withEnv({ API_TRUST_PROXY: 'true', API_TRUSTED_PROXY_COUNT: '2' }, () => {
+        expect(loadConfig().api.trustedProxyCount).toBe(2);
+      });
+    });
+
+    it('rejects a negative trusted proxy count', () => {
+      withEnv({ API_TRUSTED_PROXY_COUNT: '-1' }, () => {
+        expect(() => loadConfig()).toThrow(/API_TRUSTED_PROXY_COUNT/);
+      });
+    });
+  });
+
   describe('defaults (no env overrides)', () => {
     it('loads successfully with only required env variables set', () => {
       withEnv({}, () => {

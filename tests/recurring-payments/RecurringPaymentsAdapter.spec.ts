@@ -17,6 +17,7 @@ import {
   createRecurringPaymentsAdapter,
 } from '../../backend/adapters/recurring';
 import type {
+  ProviderError,
   RecurringPaymentMandate,
 } from '../../backend/adapters/types';
 
@@ -84,6 +85,17 @@ describe('Recurring Payments Adapter', () => {
       expect(() => {
         adapter.createMandate(PAYER, MERCHANT, AMOUNT, PERIOD, -1);
       }).toThrow();
+    });
+
+    test('validation errors identify the recurring payments adapter', () => {
+      try {
+        adapter.createMandate(PAYER, MERCHANT, '0', PERIOD);
+        throw new Error('expected createMandate to throw');
+      } catch (error) {
+        const providerError = error as ProviderError;
+        expect(providerError.code).toBe('INVALID_AMOUNT');
+        expect(providerError.provider).toBe('RecurringPayments');
+      }
     });
 
     test('should generate unique mandate IDs', () => {

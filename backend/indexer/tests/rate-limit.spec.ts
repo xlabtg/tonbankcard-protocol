@@ -8,6 +8,7 @@ import {
   RateLimiterAbstract,
   RateLimiterRes,
 } from 'rate-limiter-flexible';
+import { getClientIp } from '../src/api/server';
 
 // Helper to make an HTTP request
 function makeRequest(
@@ -57,28 +58,14 @@ function buildApp(
   rateLimiter: RateLimiterAbstract,
   maxRequests: number,
   windowMs: number,
-  trustProxy = false
+  trustProxy = false,
+  trustedProxyCount = trustProxy ? 1 : 0
 ): express.Application {
   const app = express();
   app.use(express.json());
 
-  function getClientIp(req: express.Request): string {
-    if (trustProxy) {
-      const cf = req.headers['cf-connecting-ip'];
-      if (typeof cf === 'string' && cf.trim()) return cf.trim();
-
-      const forwarded = req.headers['x-forwarded-for'];
-      if (forwarded) {
-        const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-        const first = raw.split(',')[0].trim();
-        if (first) return first;
-      }
-    }
-    return req.socket?.remoteAddress || 'unknown';
-  }
-
   app.use(async (req, res, next) => {
-    const ip = getClientIp(req);
+    const ip = getClientIp(req, { trustProxy, trustedProxyCount });
     try {
       const rlRes: RateLimiterRes = await rateLimiter.consume(ip);
       const remaining = Math.max(0, rlRes.remainingPoints);
@@ -115,6 +102,16 @@ function startServer(app: express.Application): Promise<http.Server> {
   return new Promise((resolve) => {
     const server = app.listen(0, '127.0.0.1', () => resolve(server));
   });
+}
+
+function mockRequest(
+  headers: Record<string, string>,
+  remoteAddress: string
+): express.Request {
+  return {
+    headers,
+    socket: { remoteAddress },
+  } as unknown as express.Request;
 }
 
 describe('Rate Limiter Middleware (new implementation)', () => {
@@ -214,6 +211,31 @@ describe('Rate Limiter Middleware (new implementation)', () => {
   });
 
   describe('Proxy IP extraction (trustProxy=true)', () => {
+    it('uses the rightmost untrusted X-Forwarded-For hop', () => {
+      const req = mockRequest(
+        {
+          'x-forwarded-for': '198.51.100.10, 203.0.113.20',
+          'cf-connecting-ip': '192.0.2.200',
+        },
+        '10.0.0.5'
+      );
+
+      expect(
+        getClientIp(req, { trustProxy: true, trustedProxyCount: 1 })
+      ).toBe('203.0.113.20');
+    });
+
+    it('does not let CF-Connecting-IP spoof the limiter key without a hop chain', () => {
+      const req = mockRequest(
+        { 'cf-connecting-ip': '192.0.2.200' },
+        '10.0.0.5'
+      );
+
+      expect(
+        getClientIp(req, { trustProxy: true, trustedProxyCount: 1 })
+      ).toBe('10.0.0.5');
+    });
+
     it('reads real IP from X-Forwarded-For', async () => {
       const rl = new RateLimiterMemory({ points: 1, duration: 60 });
       server = await startServer(buildApp(rl, 1, 60000, true));
