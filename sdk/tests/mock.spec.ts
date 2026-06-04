@@ -27,6 +27,12 @@ describe('MockTonbankcardSDK', () => {
   const testMerchantNft = Address.parse(
     'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le'
   );
+  const testPaymentHub = Address.parse(
+    'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7'
+  );
+  const testPayerNft = Address.parseRaw(
+    '0:1111111111111111111111111111111111111111111111111111111111111111'
+  );
 
   beforeEach(() => {
     sdk = createMockSDK();
@@ -137,9 +143,11 @@ describe('MockTonbankcardSDK', () => {
         description: 'Test',
       });
 
-      const link = sdk.generateWalletLink({ invoice });
+      const link = sdk.generateWalletLink({ invoice, payerNft: testPayerNft });
       expect(link).toContain('ton://transfer/');
-      expect(link).toContain('amount=10500000000');
+      expect(link).toContain(testPaymentHub.toString());
+      expect(link).toContain('amount=50000000');
+      expect(link).toContain('bin=');
     });
   });
 

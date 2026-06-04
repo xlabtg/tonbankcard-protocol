@@ -9,6 +9,27 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [2.0.0] — 2026-06-04
+
+### Security — `generateWalletLink` separates native TON value from TBC amount (Issue #294, SDK-M4)
+
+- `generateWalletLink()` now targets the configured Payment Hub and sets the
+  deep link's native `amount` query parameter to the TON message value
+  (`50_000_000` nanotons by default), not to `invoice.amountTbc`.
+- The TBC amount is encoded inside a binary Tact `MerchantPaymentRequest`
+  payload in the `bin` query parameter, alongside the payer NFT, merchant NFT,
+  and invoice metadata payload.
+- `WalletLinkParams` now requires `payerNft` so the SDK can build a valid
+  Payment Hub request body. This is a breaking API change for integrations that
+  previously called `generateWalletLink({ invoice })`.
+- `MockTonbankcardSDK.generateWalletLink()` uses the same builder as the real
+  SDK, keeping tests aligned with production link generation.
+- Added regression coverage that decodes the generated BOC and asserts the
+  native TON amount is not the raw TBC amount while the payload carries the TBC
+  amount.
+
+---
+
 ## [1.3.3] — 2026-06-04
 
 ### Fixed — `createInvoice` enforces the on-chain amount upper bound (Issue #293, SDK-M3)

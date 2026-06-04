@@ -96,7 +96,10 @@ All SDK methods are **read-only** with respect to funds:
 const invoice = sdk.createInvoice({...});
 
 // ✓ Safe: Generates link (user must approve in wallet)
-const link = sdk.generateWalletLink({invoice});
+const link = sdk.generateWalletLink({
+  invoice,
+  payerNft,
+});
 
 // ✓ Safe: Queries blockchain (read-only)
 const status = await sdk.getInvoiceStatus(invoiceId);

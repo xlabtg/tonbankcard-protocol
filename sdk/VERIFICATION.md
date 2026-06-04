@@ -151,7 +151,8 @@ class TonbankcardSDK {
 // generateWalletLink() creates TON Connect link
 // User wallet displays:
 // - Recipient address
-// - Amount
+// - Native TON message value
+// - Binary MerchantPaymentRequest payload carrying the TBC amount
 // - Description
 // User must explicitly approve ✓
 ```
