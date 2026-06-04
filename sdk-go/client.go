@@ -66,14 +66,18 @@ func NewClient(cfg Config) (*Client, error) {
 // CreateInvoice creates a new invoice. Returns an error wrapping ErrInvalidRequest
 // for 4xx validation failures, ErrAuthentication for 401/403, and so on.
 func (c *Client) CreateInvoice(ctx context.Context, params CreateInvoiceParams) (*Invoice, error) {
-	if err := ValidateMerchantNFT(params.MerchantNFT); err != nil {
+	merchantNFT := strings.TrimSpace(params.MerchantNFT)
+	amountTBC := strings.TrimSpace(params.AmountTBC)
+	expiresAt := strings.TrimSpace(params.ExpiresAt)
+
+	if err := ValidateMerchantNFT(merchantNFT); err != nil {
 		return nil, err
 	}
-	if err := ValidateAmount(params.AmountTBC); err != nil {
+	if err := ValidateAmount(amountTBC); err != nil {
 		return nil, err
 	}
 
-	metadata := params.Metadata
+	metadata := copyMetadata(params.Metadata)
 	if params.CallbackURL != "" {
 		if metadata == nil {
 			metadata = map[string]any{}
@@ -89,15 +93,15 @@ func (c *Client) CreateInvoice(ctx context.Context, params CreateInvoiceParams) 
 	}
 
 	payload := map[string]any{
-		"merchant_nft": params.MerchantNFT,
-		"amount_tbc":   params.AmountTBC,
+		"merchant_nft": merchantNFT,
+		"amount_tbc":   amountTBC,
 		"currency":     "TBC",
 	}
 	if metadata != nil {
 		payload["metadata"] = metadata
 	}
-	if params.ExpiresAt != "" {
-		payload["expires_at"] = params.ExpiresAt
+	if expiresAt != "" {
+		payload["expires_at"] = expiresAt
 	}
 
 	var invoice Invoice
@@ -105,6 +109,17 @@ func (c *Client) CreateInvoice(ctx context.Context, params CreateInvoiceParams) 
 		return nil, err
 	}
 	return &invoice, nil
+}
+
+func copyMetadata(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return nil
+	}
+	copied := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		copied[key] = value
+	}
+	return copied
 }
 
 // GetInvoice retrieves an invoice by id.

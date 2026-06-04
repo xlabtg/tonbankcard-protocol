@@ -24,7 +24,6 @@ export enum AccountState {
 export enum PaymentStatus {
   PENDING = 'pending',      // Invoice created, awaiting payment
   SETTLED = 'settled',      // Payment confirmed on-chain
-  FAILED = 'failed',        // Payment failed or reverted
   EXPIRED = 'expired',      // Invoice expired (optional)
 }
 

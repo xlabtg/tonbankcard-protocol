@@ -13,6 +13,12 @@ import {
 import { Address, beginCell, Cell } from '@ton/core';
 import { TonbankcardSDK } from '../src/sdk';
 import { parseTBC } from '../src/utils';
+import {
+  TonbankcardApiError,
+  TonbankcardConfigurationError,
+  TonbankcardInvoiceNotFoundError,
+  TonbankcardValidationError,
+} from '../src/errors';
 
 /**
  * Tact op code for the `MerchantPayment` event emitted by the Payment Hub.
@@ -115,7 +121,7 @@ describe('TonbankcardSDK', () => {
           merchantNft: testMerchantNft,
           amountTbc: BigInt(0),
         })
-      ).toThrow('Invoice amount must be positive');
+      ).toThrow(TonbankcardValidationError);
     });
 
     it('should throw on negative amount', () => {
@@ -188,6 +194,16 @@ describe('TonbankcardSDK', () => {
       expect(invoice.expiresAt!).toBe(invoice.createdAt + 3600);
     });
 
+    it('should allow zero-second expiration as an explicit immediate expiry', () => {
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC('10'),
+        expirationSeconds: 0,
+      });
+
+      expect(invoice.expiresAt).toBe(invoice.createdAt);
+    });
+
     it('should handle metadata', () => {
       const metadata = {
         productId: 'PROD-123',
@@ -201,6 +217,79 @@ describe('TonbankcardSDK', () => {
       });
 
       expect(invoice.metadata).toEqual(metadata);
+    });
+
+    it('should snapshot metadata instead of sharing caller references', () => {
+      const metadata = {
+        product: {
+          id: 'PROD-123',
+          tags: ['starter', 'digital'],
+        },
+      };
+
+      const invoice = sdk.createInvoice({
+        merchantNft: testMerchantNft,
+        amountTbc: parseTBC('10'),
+        metadata,
+      });
+
+      metadata.product.id = 'PROD-999';
+      metadata.product.tags.push('mutated');
+
+      expect(invoice.metadata).toEqual({
+        product: {
+          id: 'PROD-123',
+          tags: ['starter', 'digital'],
+        },
+      });
+    });
+  });
+
+  describe('getInvoice', () => {
+    it('should expose a catchable configuration error when API endpoint is absent', async () => {
+      await expect(sdk.getInvoice('inv_missing')).rejects.toThrow(
+        TonbankcardConfigurationError
+      );
+    });
+
+    it('should expose catchable API errors for non-404 API failures', async () => {
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Server Error',
+      } as Response);
+      const apiSdk = new TonbankcardSDK({
+        network: 'testnet',
+        paymentHubAddress: testPaymentHub,
+        apiEndpoint: 'https://api.test.tonbankcard.local',
+      });
+
+      await expect(apiSdk.getInvoice('inv_500')).rejects.toThrow(
+        TonbankcardApiError
+      );
+
+      fetchMock.mockRestore();
+    });
+  });
+
+  describe('getInvoiceStatus', () => {
+    it('should expose a catchable not-found error when API returns 404', async () => {
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      } as Response);
+      const apiSdk = new TonbankcardSDK({
+        network: 'testnet',
+        paymentHubAddress: testPaymentHub,
+        apiEndpoint: 'https://api.test.tonbankcard.local',
+      });
+
+      await expect(apiSdk.getInvoiceStatus('inv_missing')).rejects.toThrow(
+        TonbankcardInvoiceNotFoundError
+      );
+
+      fetchMock.mockRestore();
     });
   });
 

@@ -176,7 +176,7 @@ TBC amount inside the binary `MerchantPaymentRequest` payload.
 const status = await sdk.getInvoiceStatus(invoiceId);
 ```
 
-**Returns:** `'pending' | 'settled' | 'failed' | 'expired'`
+**Returns:** `'pending' | 'settled' | 'expired'`
 
 **Security:** Queries blockchain for authoritative settlement status.
 
@@ -282,6 +282,33 @@ const pollForPayment = async (invoiceId) => {
   }
   return false;
 };
+```
+
+### Webhook Verification
+
+TONBANKCARD webhook deliveries use:
+
+```text
+X-Tonbankcard-Signature: t=<unix-timestamp>,v1=<hex-hmac-sha256>
+```
+
+The `v1` value is `HMAC-SHA256(secret, "${timestamp}.${rawBody}")`. Always
+verify against the exact raw request body bytes before JSON parsing:
+
+```typescript
+import { verifyWebhook } from '@tonbankcard/merchant-sdk';
+
+const rawBody = await request.text();
+const signature = request.headers.get('X-Tonbankcard-Signature') ?? '';
+const result = verifyWebhook(
+  process.env.TONBANKCARD_WEBHOOK_SECRET!,
+  rawBody,
+  signature
+);
+
+if (!result.valid) {
+  throw new Error(result.reason);
+}
 ```
 
 ---
@@ -437,44 +464,41 @@ console.log(`SDK Version: ${VERSION}`);
 
 ## ⚠️ Error Handling
 
-This SDK is a **thin wrapper** and propagates errors from underlying sources with minimal transformation.
+The SDK exposes catchable error classes from `@tonbankcard/merchant-sdk`.
 
 ### Error Types
 
-| Source | Error Handling | SDK Behavior |
-|--------|----------------|--------------|
-| Network errors | Raw propagation | Wraps in `Error` with context |
-| API errors | Raw propagation | Passes HTTP status + message |
-| Blockchain errors | Raw propagation | Passes TON client errors |
-| Validation errors | SDK-generated | Throws with descriptive message |
+| Class | Meaning |
+|-------|---------|
+| `TonbankcardValidationError` | Invalid SDK input, such as malformed addresses or amounts |
+| `TonbankcardConfigurationError` | Required SDK configuration is missing |
+| `TonbankcardApiError` | Merchant API/network response failure; `status` is populated when available |
+| `TonbankcardInvoiceNotFoundError` | Invoice lookup returned 404 |
+| `TonbankcardBlockchainError` | TON client / blockchain query failed |
 
 ### Error Handling Best Practices
 
 ```typescript
+import {
+  TonbankcardApiError,
+  TonbankcardInvoiceNotFoundError,
+  TonbankcardValidationError,
+} from '@tonbankcard/merchant-sdk';
+
 try {
   const status = await sdk.getInvoiceStatus(invoiceId);
 } catch (error) {
-  if (error.message.includes('API error')) {
-    // API endpoint issue - verify on-chain directly
-    console.log('API unavailable, checking blockchain directly');
-  } else if (error.message.includes('not found')) {
-    // Invoice doesn't exist
+  if (error instanceof TonbankcardInvoiceNotFoundError) {
     console.log('Invoice not found');
+  } else if (error instanceof TonbankcardValidationError) {
+    console.log('Invalid SDK input:', error.message);
+  } else if (error instanceof TonbankcardApiError) {
+    console.log('API unavailable, checking blockchain directly');
   } else {
-    // Network or other error
-    console.error('Error:', error.message);
+    throw error;
   }
 }
 ```
-
-### Why Thin Wrapper?
-
-The SDK intentionally does NOT normalize or abstract errors because:
-
-1. **Transparency**: Developers see the actual error source
-2. **No hidden behavior**: Errors are not silently swallowed
-3. **Debugging**: Stack traces point to actual failure points
-4. **Non-custodial**: SDK makes no assumptions about error handling strategy
 
 **Remember**: Always verify payment status on-chain, regardless of SDK errors.
 

@@ -2,10 +2,11 @@
  * Unit tests for SDK utilities
  */
 
-import { describe, it, expect } from '@jest/globals';
+import { afterEach, describe, it, expect, jest } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Address } from '@ton/core';
+import { PaymentStatus } from '../src/types';
 import {
   canonicalInvoiceIdPayload,
   canonicalJson,
@@ -42,6 +43,15 @@ const sdkM5Fixture = JSON.parse(
     canonical: string;
     hash_hex: string;
   };
+};
+
+const sdkLowStatusFixture = JSON.parse(
+  readFileSync(
+    join(__dirname, '../../tests/fixtures/sdk-low-invoice-statuses.json'),
+    'utf8'
+  )
+) as {
+  statuses: string[];
 };
 
 function hashToHex(hash: bigint): string {
@@ -286,6 +296,14 @@ describe('Utils', () => {
       ).toRawString();
       expect(isValidTonAddress(raw)).toBe(true);
     });
+
+    it('should trim surrounding whitespace before validation', () => {
+      expect(
+        isValidTonAddress(
+          '  EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le\n'
+        )
+      ).toBe(true);
+    });
   });
 
   describe('shortAddress', () => {
@@ -317,6 +335,10 @@ describe('Utils', () => {
   });
 
   describe('isExpired', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('should detect expired timestamps', () => {
       const past = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
       expect(isExpired(past)).toBe(true);
@@ -329,6 +351,30 @@ describe('Utils', () => {
 
     it('should handle undefined', () => {
       expect(isExpired(undefined)).toBe(false);
+    });
+
+    it('should treat an explicit epoch-zero expiry as expired', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+      expect(isExpired(0)).toBe(true);
+    });
+
+    it('should treat the exact expiry second as expired', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      expect(isExpired(nowSeconds)).toBe(true);
+      expect(isExpired(nowSeconds + 1)).toBe(false);
+    });
+  });
+
+  describe('PaymentStatus', () => {
+    it('should match the shared server invoice status fixture', () => {
+      expect(Object.values(PaymentStatus).sort()).toEqual(
+        [...sdkLowStatusFixture.statuses].sort()
+      );
     });
   });
 

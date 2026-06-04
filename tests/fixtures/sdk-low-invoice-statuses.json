@@ -1,0 +1,5 @@
+{
+  "version": "sdk-low-invoice-statuses-v1",
+  "source": "api/src/types/invoice.ts and docs/openapi.yaml",
+  "statuses": ["pending", "settled", "expired"]
+}

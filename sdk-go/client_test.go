@@ -120,6 +120,45 @@ func TestCreateInvoicePropagatesCallbackURL(t *testing.T) {
 	}
 }
 
+func TestCreateInvoiceNormalizesTrimmedInputsInPayload(t *testing.T) {
+	t.Parallel()
+	metadata := map[string]any{"order_id": "ORDER-1"}
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		_ = json.Unmarshal(body, &req)
+		if req["merchant_nft"] != validNFT {
+			t.Errorf("merchant_nft was not normalized: %q", req["merchant_nft"])
+		}
+		if req["amount_tbc"] != "1000000000" {
+			t.Errorf("amount_tbc was not normalized: %q", req["amount_tbc"])
+		}
+		if _, exists := metadata["callback_url"]; exists {
+			t.Errorf("CreateInvoice mutated caller metadata: %+v", metadata)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"invoice_id":   "inv_trimmed",
+			"merchant_nft": validNFT,
+			"amount_tbc":   "1000000000",
+			"currency":     "TBC",
+			"status":       "pending",
+			"created_at":   "2026-05-17T10:00:00Z",
+			"expires_at":   "2026-05-18T10:00:00Z",
+			"payment_url":  "https://wallet.tonbankcard.io/pay/inv_trimmed",
+		})
+	})
+	_, err := client.CreateInvoice(context.Background(), CreateInvoiceParams{
+		MerchantNFT: " \n" + validNFT + "\t",
+		AmountTBC:   " 1000000000 ",
+		Metadata:    metadata,
+		CallbackURL: "https://merchant.example.com/wh",
+	})
+	if err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+}
+
 func TestGetInvoiceStatusSettled(t *testing.T) {
 	t.Parallel()
 	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {

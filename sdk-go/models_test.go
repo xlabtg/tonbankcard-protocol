@@ -1,7 +1,9 @@
 package tonbankcard
 
 import (
+	"encoding/json"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
 )
@@ -15,7 +17,7 @@ const (
 
 func TestValidateMerchantNFT(t *testing.T) {
 	t.Parallel()
-	for _, addr := range []string{validNFT, validNFTStandardBase64, validNFTRaw} {
+	for _, addr := range []string{validNFT, validNFTStandardBase64, validNFTRaw, " \n" + validNFT + "\t"} {
 		if err := ValidateMerchantNFT(addr); err != nil {
 			t.Fatalf("expected valid NFT address %q to pass, got %v", addr, err)
 		}
@@ -35,7 +37,7 @@ func TestValidateMerchantNFT(t *testing.T) {
 
 func TestValidateAmount(t *testing.T) {
 	t.Parallel()
-	ok := []string{"1", "1000000000", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 120), big.NewInt(1)).String()}
+	ok := []string{"1", " 1 ", "\n1000000000\t", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 120), big.NewInt(1)).String()}
 	for _, a := range ok {
 		if err := ValidateAmount(a); err != nil {
 			t.Fatalf("expected %q to be valid: %v", a, err)
@@ -46,6 +48,29 @@ func TestValidateAmount(t *testing.T) {
 		if err := ValidateAmount(a); err == nil {
 			t.Fatalf("expected error for amount %q", a)
 		}
+	}
+}
+
+func TestInvoiceStatusMatchesCanonicalFixture(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../tests/fixtures/sdk-low-invoice-statuses.json")
+	if err != nil {
+		t.Fatalf("read status fixture: %v", err)
+	}
+	var fixture struct {
+		Statuses []string `json:"statuses"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("parse status fixture: %v", err)
+	}
+
+	got := []string{
+		string(InvoiceStatusPending),
+		string(InvoiceStatusSettled),
+		string(InvoiceStatusExpired),
+	}
+	if strings.Join(got, ",") != strings.Join(fixture.Statuses, ",") {
+		t.Fatalf("invoice status drift: got %v want %v", got, fixture.Statuses)
 	}
 }
 
