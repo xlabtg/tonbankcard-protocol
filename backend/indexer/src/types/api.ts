@@ -12,7 +12,6 @@ export interface PaymentStatusResponse {
   merchantNft: string | null;
   amountTbc: string; // String representation of bigint
   createdAt: number | null; // Unix timestamp
-  confirmedAt: number | null; // Unix timestamp
   blockNumber: number | null;
   transactionHash: string | null;
   confirmationBlocks: number; // Number of blocks since transaction

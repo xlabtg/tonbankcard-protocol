@@ -78,6 +78,17 @@ const DEFAULT_LOGGER = {
 
 const MIGRATION_DIR_RE = /^(\d{3,})_([A-Za-z0-9][A-Za-z0-9_-]*)$/;
 
+export function compareMigrationVersions(
+  a: { version: string },
+  b: { version: string }
+): number {
+  const aVersion = BigInt(a.version);
+  const bVersion = BigInt(b.version);
+  if (aVersion < bVersion) return -1;
+  if (aVersion > bVersion) return 1;
+  return a.version.localeCompare(b.version, 'en');
+}
+
 export class Migrator {
   private readonly driver: MigrationDriver;
   private readonly migrationsDir: string;
@@ -113,7 +124,7 @@ export class Migrator {
         dir: path.join(this.migrationsDir, entry.name),
       });
     }
-    migrations.sort((a, b) => a.version.localeCompare(b.version, 'en'));
+    migrations.sort(compareMigrationVersions);
 
     // Reject duplicate version numbers — they would cause non-deterministic ordering.
     const seen = new Set<string>();
@@ -176,12 +187,14 @@ export class Migrator {
       applied_at: number | string;
       checksum: string;
     }>('SELECT version, name, applied_at, checksum FROM schema_migrations ORDER BY version ASC');
-    return rows.map((row) => ({
-      version: row.version,
-      name: row.name,
-      appliedAt: Number(row.applied_at),
-      checksum: row.checksum,
-    }));
+    return rows
+      .map((row) => ({
+        version: row.version,
+        name: row.name,
+        appliedAt: Number(row.applied_at),
+        checksum: row.checksum,
+      }))
+      .sort(compareMigrationVersions);
   }
 
   /** Apply every migration that has not been recorded yet. */

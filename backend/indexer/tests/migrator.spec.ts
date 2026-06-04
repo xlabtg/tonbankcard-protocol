@@ -6,8 +6,10 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import Database from 'better-sqlite3';
 import { Migrator } from '../src/db/migrator';
 import { SqliteDriver } from '../src/db/drivers';
+import { applySqliteMigrationsSync } from '../src/db/sync-migrate';
 
 const PROJECT_MIGRATIONS = path.join(__dirname, '..', 'src', 'db', 'migrations');
 
@@ -156,6 +158,64 @@ describe('Migrator (SQLite)', () => {
       const migrator = new Migrator({ driver, migrationsDir: dir });
       const applied = await migrator.up();
       expect(applied.map((m) => m.version)).toEqual(['001', '002', '003']);
+    });
+
+    it('orders migration versions numerically beyond three digits', async () => {
+      const dir = path.join(workDir, 'migrations');
+      writeMigration(
+        dir,
+        '999',
+        'create_log',
+        'CREATE TABLE order_log (version INTEGER); INSERT INTO order_log (version) VALUES (999);',
+        'DROP TABLE order_log;'
+      );
+      writeMigration(
+        dir,
+        '1000',
+        'append_log',
+        'INSERT INTO order_log (version) VALUES (1000);',
+        'DELETE FROM order_log WHERE version = 1000;'
+      );
+
+      const migrator = new Migrator({ driver, migrationsDir: dir });
+      const applied = await migrator.up();
+      expect(applied.map((m) => m.version)).toEqual(['999', '1000']);
+
+      const rows = await driver.query<{ version: number }>(
+        'SELECT version FROM order_log ORDER BY rowid ASC'
+      );
+      expect(rows.map((row) => row.version)).toEqual([999, 1000]);
+    });
+
+    it('orders sync SQLite startup migrations numerically beyond three digits', () => {
+      const dir = path.join(workDir, 'sync-migrations');
+      writeMigration(
+        dir,
+        '999',
+        'create_log',
+        'CREATE TABLE order_log (version INTEGER); INSERT INTO order_log (version) VALUES (999);',
+        'DROP TABLE order_log;'
+      );
+      writeMigration(
+        dir,
+        '1000',
+        'append_log',
+        'INSERT INTO order_log (version) VALUES (1000);',
+        'DELETE FROM order_log WHERE version = 1000;'
+      );
+
+      const db = new Database(path.join(workDir, 'sync-test.db'));
+      try {
+        const result = applySqliteMigrationsSync(db, dir);
+        expect(result.applied).toEqual(['999_create_log', '1000_append_log']);
+
+        const rows = db
+          .prepare('SELECT version FROM order_log ORDER BY rowid ASC')
+          .all() as Array<{ version: number }>;
+        expect(rows.map((row) => row.version)).toEqual([999, 1000]);
+      } finally {
+        db.close();
+      }
     });
 
     it('rolls back multiple migrations in reverse order', async () => {

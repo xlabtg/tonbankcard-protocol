@@ -57,6 +57,7 @@ function makeConfig(): IndexerConfig {
       port: 3000,
       host: 'localhost',
       trustProxy: false,
+      trustedProxyCount: 0,
       rateLimit: { windowMs: 60000, maxRequests: 100 },
     },
     logging: { level: 'silent', pretty: false },
@@ -206,11 +207,11 @@ describe('IndexerService + API agree on confirmation depth (INDEXER-H1)', () => 
     // 10 - 7 = 3, matching the indexer's confirmed flag. The old API formula
     // (latestBlockIndexed - block = 7 - 7 = 0) wrongly reported it pending.
     expect(confirmed.confirmationBlocks).toBe(CONFIRMATION_BLOCKS);
-    expect(confirmed.confirmedAt).not.toBeNull();
+    expect(confirmed).not.toHaveProperty('confirmedAt');
 
     const pending = await getJson(server, '/payments/inv-pending');
     expect(pending.status).toBe('pending');
     expect(pending.confirmationBlocks).toBe(CHAIN_HEAD - 9); // depth 1
-    expect(pending.confirmedAt).toBeNull();
+    expect(pending).not.toHaveProperty('confirmedAt');
   });
 });

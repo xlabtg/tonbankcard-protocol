@@ -13,6 +13,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type Database from 'better-sqlite3';
+import { compareMigrationVersions } from './migrator';
 
 const MIGRATION_DIR_RE = /^(\d{3,})_([A-Za-z0-9][A-Za-z0-9_-]*)$/;
 
@@ -49,7 +50,7 @@ function discoverSqliteMigrations(migrationsDir: string): DiscoveredMigration[] 
     }
     result.push({ version: match[1], name: match[2], upSqlPath });
   }
-  result.sort((a, b) => a.version.localeCompare(b.version, 'en'));
+  result.sort(compareMigrationVersions);
   const seen = new Set<string>();
   for (const m of result) {
     if (seen.has(m.version)) {

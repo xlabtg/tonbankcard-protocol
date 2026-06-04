@@ -23,6 +23,24 @@ const BLOCK_TX_PAGE_SIZE = 256;
 /** Safety cap on `getBlockTransactions` pages per shard block (anti-runaway). */
 const MAX_BLOCK_TX_PAGES = 1000;
 
+interface FetchWithRetryOptions {
+  maxRetries?: number;
+  timeoutMs?: number;
+  init?: RequestInit;
+}
+
+function redactUrlForLog(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.has('api_key')) {
+      parsed.searchParams.set('api_key', 'REDACTED');
+    }
+    return parsed.toString();
+  } catch {
+    return url.replace(/([?&]api_key=)[^&]*/gi, '$1REDACTED');
+  }
+}
+
 /**
  * Extract the latest masterchain seqno from a `getMasterchainInfo()` response.
  *
@@ -432,9 +450,15 @@ export class IndexerService {
    */
   private async fetchWithRetry(
     url: string,
-    maxRetries: number = 3,
-    timeoutMs: number = 10000
+    maxRetriesOrOptions: number | FetchWithRetryOptions = 3,
+    timeoutMsArg: number = 10000
   ): Promise<any> {
+    const options =
+      typeof maxRetriesOrOptions === 'number'
+        ? { maxRetries: maxRetriesOrOptions, timeoutMs: timeoutMsArg }
+        : maxRetriesOrOptions;
+    const maxRetries = options.maxRetries ?? 3;
+    const timeoutMs = options.timeoutMs ?? 10000;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -443,7 +467,10 @@ export class IndexerService {
 
       let resp: Response;
       try {
-        resp = await fetch(url, { signal: controller.signal });
+        resp = await fetch(url, {
+          ...(options.init ?? {}),
+          signal: controller.signal,
+        });
         clearTimeout(timeoutId);
       } catch (error) {
         clearTimeout(timeoutId);
@@ -454,7 +481,7 @@ export class IndexerService {
         }
 
         this.logger.warn(
-          { url, attempt, error },
+          { url: redactUrlForLog(url), attempt, error },
           'Fetch failed, retrying...'
         );
         await this.delay(2 ** attempt * 1000);
@@ -475,7 +502,7 @@ export class IndexerService {
         }
 
         this.logger.warn(
-          { url, attempt, status: resp.status },
+          { url: redactUrlForLog(url), attempt, status: resp.status },
           'Fetch failed with 5xx, retrying...'
         );
         await this.delay(2 ** attempt * 1000);
@@ -486,6 +513,39 @@ export class IndexerService {
     }
 
     throw lastError;
+  }
+
+  private buildTonApiUrl(
+    method: string,
+    params: Record<string, string | number>
+  ): string {
+    const baseUrl = this.config.tonApiEndpoint.replace(/\/+$/, '');
+    const url = new URL(`${baseUrl}/${method.replace(/^\/+/, '')}`);
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, String(value));
+    }
+    return url.toString();
+  }
+
+  private tonApiRequestInit(): RequestInit | undefined {
+    if (!this.config.tonApiKey) {
+      return undefined;
+    }
+
+    return {
+      headers: {
+        'X-API-Key': this.config.tonApiKey,
+      },
+    };
+  }
+
+  private async fetchTonApi(
+    method: string,
+    params: Record<string, string | number>
+  ): Promise<any> {
+    const url = this.buildTonApiUrl(method, params);
+    const init = this.tonApiRequestInit();
+    return init ? this.fetchWithRetry(url, { init }) : this.fetchWithRetry(url);
   }
 
   /**
@@ -580,15 +640,10 @@ export class IndexerService {
   private async getBlockShards(
     blockNumber: number
   ): Promise<Array<{ workchain: number; shard: string; seqno: number }>> {
-    const baseUrl = this.config.tonApiEndpoint;
-    const apiKeyParam = this.config.tonApiKey
-      ? `&api_key=${this.config.tonApiKey}`
-      : '';
-
-    const url = `${baseUrl}/shards?seqno=${blockNumber}${apiKeyParam}`;
-
     try {
-      const data = (await this.fetchWithRetry(url)) as {
+      const data = (await this.fetchTonApi('shards', {
+        seqno: blockNumber,
+      })) as {
         ok?: boolean;
         result?: {
           shards?: Array<{ workchain: number; shard: string; seqno: number }>;
@@ -625,23 +680,20 @@ export class IndexerService {
     shard: string;
     seqno: number;
   }): Promise<Array<{ account: string; lt: string; hash: string }>> {
-    const baseUrl = this.config.tonApiEndpoint;
-    const apiKeyParam = this.config.tonApiKey
-      ? `&api_key=${this.config.tonApiKey}`
-      : '';
-
     const descriptors: Array<{ account: string; lt: string; hash: string }> = [];
     let afterLt: string | undefined;
     let afterHash: string | undefined;
 
     for (let page = 0; page < MAX_BLOCK_TX_PAGES; page++) {
-      let url =
-        `${baseUrl}/getBlockTransactions?workchain=${shard.workchain}` +
-        `&shard=${encodeURIComponent(shard.shard)}&seqno=${shard.seqno}` +
-        `&count=${BLOCK_TX_PAGE_SIZE}${apiKeyParam}`;
+      const params: Record<string, string | number> = {
+        workchain: shard.workchain,
+        shard: shard.shard,
+        seqno: shard.seqno,
+        count: BLOCK_TX_PAGE_SIZE,
+      };
       if (afterLt && afterHash) {
-        url +=
-          `&after_lt=${afterLt}&after_hash=${encodeURIComponent(afterHash)}`;
+        params.after_lt = afterLt;
+        params.after_hash = afterHash;
       }
 
       let data: {
@@ -652,7 +704,7 @@ export class IndexerService {
         };
       };
       try {
-        data = await this.fetchWithRetry(url);
+        data = await this.fetchTonApi('getBlockTransactions', params);
       } catch (error) {
         this.logger.warn(
           {
@@ -699,17 +751,13 @@ export class IndexerService {
     lt: string,
     hash: string
   ): Promise<any | null> {
-    const baseUrl = this.config.tonApiEndpoint;
-    const apiKeyParam = this.config.tonApiKey
-      ? `&api_key=${this.config.tonApiKey}`
-      : '';
-
-    const url =
-      `${baseUrl}/getTransactions?address=${encodeURIComponent(address)}` +
-      `&lt=${lt}&hash=${encodeURIComponent(hash)}&limit=1${apiKeyParam}`;
-
     try {
-      const data = (await this.fetchWithRetry(url)) as {
+      const data = (await this.fetchTonApi('getTransactions', {
+        address,
+        lt,
+        hash,
+        limit: 1,
+      })) as {
         ok?: boolean;
         result?: any[];
       };
@@ -975,30 +1023,17 @@ export class IndexerService {
    *
    * TON's masterchain blocks are identified by seqno. We fetch block
    * header data via the HTTP API v2 /lookupBlock + /getBlockHeader endpoints.
-   * If the TON API key is configured, it is sent as a query parameter.
+   * If the TON API key is configured, it is sent via X-API-Key.
    */
   private async getBlockByNumber(blockNumber: number): Promise<any> {
     try {
-      const baseUrl = this.config.tonApiEndpoint;
-      const apiKeyParam = this.config.tonApiKey
-        ? `&api_key=${this.config.tonApiKey}`
-        : '';
-
       // Step 1: Lookup block ID by masterchain seqno
       // workchain -1 = masterchain, shard = -9223372036854775808 (full shard)
-      const lookupUrl =
-        `${baseUrl}/lookupBlock?workchain=-1&shard=-9223372036854775808&seqno=${blockNumber}${apiKeyParam}`;
-
-      const lookupResp = await fetch(lookupUrl);
-      if (!lookupResp.ok) {
-        this.logger.warn(
-          { blockNumber, status: lookupResp.status },
-          'Block lookup failed'
-        );
-        return null;
-      }
-
-      const lookupData = (await lookupResp.json()) as { ok?: boolean; result?: any };
+      const lookupData = (await this.fetchTonApi('lookupBlock', {
+        workchain: -1,
+        shard: '-9223372036854775808',
+        seqno: blockNumber,
+      })) as { ok?: boolean; result?: any };
       if (!lookupData.ok || !lookupData.result) {
         return null;
       }
@@ -1006,15 +1041,11 @@ export class IndexerService {
       const blockId = lookupData.result;
 
       // Step 2: Get block header for hash and timestamp
-      const headerUrl =
-        `${baseUrl}/getBlockHeader?workchain=${blockId.workchain}&shard=${blockId.shard}&seqno=${blockId.seqno}${apiKeyParam}`;
-
-      const headerResp = await fetch(headerUrl);
-      if (!headerResp.ok) {
-        return null;
-      }
-
-      const headerData = (await headerResp.json()) as { ok?: boolean; result?: any };
+      const headerData = (await this.fetchTonApi('getBlockHeader', {
+        workchain: blockId.workchain,
+        shard: blockId.shard,
+        seqno: blockId.seqno,
+      })) as { ok?: boolean; result?: any };
       if (!headerData.ok || !headerData.result) {
         return null;
       }
@@ -1028,7 +1059,6 @@ export class IndexerService {
           prev_root_hash: header.prev_blocks?.[0]?.root_hash || '',
         },
         now: header.gen_utime || 0,
-        transactions: [], // Transactions are fetched per-account, not per-block
       };
     } catch (error) {
       this.logger.error(

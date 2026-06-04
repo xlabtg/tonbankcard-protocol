@@ -280,7 +280,7 @@ export class RecurringPaymentsAdapter {
     return {
       message,
       code,
-      provider: 'ChangeNOW', // Using ChangeNOW as default provider type
+      provider: 'RecurringPayments',
     };
   }
 }
