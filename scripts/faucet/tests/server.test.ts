@@ -43,6 +43,24 @@ describe('TBC faucet HTTP server', () => {
     expect(res.body.rateLimit).toEqual({ windowSeconds: 3600, maxPerWindow: 1 });
   });
 
+  it('GET /faucet/status reports the configured rate-limit policy', async () => {
+    const rateLimiter = new FaucetRateLimiter({
+      windowMs: 15 * 60 * 1000,
+      maxPerWindow: 2,
+      now: () => clock,
+    });
+    const app = createFaucetServer({
+      dispenser: new DryRunDispenser('ton-testnet'),
+      rateLimiter,
+      network: 'ton-testnet',
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    });
+
+    const res = await request(app).get('/faucet/status');
+    expect(res.status).toBe(200);
+    expect(res.body.rateLimit).toEqual({ windowSeconds: 900, maxPerWindow: 2 });
+  });
+
   it('GET /faucet/status?address=… reports allowed=true for fresh address', async () => {
     const res = await request(server.app).get('/faucet/status').query({ address: VALID_ADDRESS });
     expect(res.status).toBe(200);

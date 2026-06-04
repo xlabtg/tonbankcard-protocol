@@ -25,6 +25,7 @@ spec:
         prometheus.io/path: /health
     spec:
       serviceAccountName: {{ include "indexer.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

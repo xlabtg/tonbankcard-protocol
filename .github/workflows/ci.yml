@@ -35,6 +35,10 @@ jobs:
       - name: Verify sandbox API key secret hardening
         run: scripts/tooling/check-sandbox-api-key-secret.sh
 
+      # DEVOPS-LOW: keep the low-severity DevOps hardening backlog closed.
+      - name: Verify DEVOPS-LOW hardening backlog
+        run: scripts/tooling/check-devops-low-hardening.sh
+
   build-runtime:
     name: Build (Runtime)
     runs-on: ubuntu-latest

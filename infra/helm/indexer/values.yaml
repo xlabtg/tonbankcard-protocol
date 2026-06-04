@@ -19,6 +19,7 @@ serviceAccount:
   create: true
   name: ""
   annotations: {}
+  automountServiceAccountToken: false
 
 podSecurityContext:
   runAsNonRoot: true

@@ -25,6 +25,13 @@ export interface RateLimiterOptions {
   now?: () => number;
 }
 
+export interface RateLimitConfig {
+  /** Window length in milliseconds. */
+  windowMs: number;
+  /** Maximum allowed dispenses per address inside the window. */
+  maxPerWindow: number;
+}
+
 export const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
 export const DEFAULT_MAX_PER_WINDOW = 1;
 
@@ -98,6 +105,14 @@ export class FaucetRateLimiter {
   /** Active address count, primarily for `/metrics` exporters. */
   size(): number {
     return this.hits.size;
+  }
+
+  /** Current policy values for status endpoints and config audits. */
+  getConfig(): RateLimitConfig {
+    return {
+      windowMs: this.windowMs,
+      maxPerWindow: this.maxPerWindow,
+    };
   }
 
   private activeTimestamps(key: string, now: number): number[] {

@@ -42,8 +42,6 @@ on:
 
 permissions:
   contents: read
-  # Required for OIDC-based authentication to npm and for provenance attestation.
-  id-token: write
 
 jobs:
   guard:
@@ -77,6 +75,10 @@ jobs:
     name: Build, verify and publish
     runs-on: ubuntu-latest
     needs: [guard]
+    # Required only here for npm OIDC Trusted Publishing and provenance.
+    permissions:
+      contents: read
+      id-token: write
     # Run on workflow_dispatch unconditionally; on release only after guard passes.
     if: |
       always() && (
