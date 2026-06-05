@@ -2,7 +2,7 @@
 
 Этот каталог — результат полного аудита логики и безопасности всего кода репозитория, выполненного в рамках [issue #241 «We need to check all the logic»](https://github.com/xlabtg/tonbankcard-protocol/issues/241). Каждая находка оформлена как отдельный профессиональный issue с метками (`labels`) и этапом внедрения (`stage`), чтобы команда могла устранять их пошагово и компетентно.
 
-> 📋 Сводный план устранения (epic): [#302](https://github.com/xlabtg/tonbankcard-protocol/issues/302). Все опубликованные находки: issues #243–#301.
+> 📋 Сводный план устранения (epic): [#302](https://github.com/xlabtg/tonbankcard-protocol/issues/302). Все опубликованные находки: issues #243–#301. Итоговый статус устранения зафиксирован в [`audit/REMEDIATION_STATUS.md`](../REMEDIATION_STATUS.md).
 
 ## Как это устроено
 
@@ -116,4 +116,3 @@
 | DEVOPS-LOW | Low | DevOps / CI / Инфраструктура | DevOps hardening backlog | [`DEVOPS-LOW-hardening-backlog.md`](./DEVOPS-LOW-hardening-backlog.md) | [#299](https://github.com/xlabtg/tonbankcard-protocol/issues/299) |
 | FRONTEND-LOW | Low | Frontend | Hardening backlog (Low findings) | [`FRONTEND-LOW-hardening-backlog.md`](./FRONTEND-LOW-hardening-backlog.md) | [#300](https://github.com/xlabtg/tonbankcard-protocol/issues/300) |
 | SDK-LOW | Low | SDK | SDK hardening backlog (Low / Info findings) | [`SDK-LOW-hardening-backlog.md`](./SDK-LOW-hardening-backlog.md) | [#301](https://github.com/xlabtg/tonbankcard-protocol/issues/301) |
-
