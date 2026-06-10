@@ -96,7 +96,7 @@ No assumption in this document relies on "trust" alone.
 
 **Purpose:** Core payment routing for TBC transfers between NFT accounts.
 **Lines:** 372
-**Status:** Implemented, not yet deployed to mainnet
+**Status:** **Non-deployable audit reference stub.** `recv_internal` throws `DEPLOY_BLOCKER_NOT_PRODUCTION_READY` (0xDEAD) as its first statement, so the contract can never be deployed. The production payment hub is `PaymentHub.tact` (CONTRACTS-H3 / #260). The blocker is retained as defence-in-depth even though the reference now models the correct logic.
 
 **Entry points:**
 | Op Code | Name | Handler | Lines | Access |
@@ -109,7 +109,14 @@ No assumption in this document relies on "trust" alone.
 
 **State variables:** `admin_address`, `paused` flag, `nft_collection_addresses` dictionary, `blocked_accounts` dictionary, `tbc_jetton_master` address.
 
-**Access control:** `verify_nft_account()` (lines 96–112) validates collection whitelist membership, blocked status, and NFT ownership via `get_nft_owner()`. Admin functions check `equal_slices(sender_address, admin_address)`.
+**Access control:** `verify_nft_account()` validates collection whitelist membership, blocked status, and NFT ownership via `get_nft_owner()`. Admin functions check `equal_slices(sender_address, admin_address)`.
+
+**Update (Issue #367) — ownership, Account Locks, and balance mutations integrated at the reference level.** Synchronous cross-contract reads are impossible on TON, so the reference now models the same message-driven patterns used by the deployable contracts:
+- **Ownership (C-PHF-C1):** the `get_nft_data_raw` placeholder is removed. Ownership comes from a resolver-gated, write-once `nft_owners` registry; bindings are accepted only via `op::resolve_nft_owner` from the immutable `nft_resolver`, and `verify_nft_account()` rejects empty/`addr_none` owners with `owner.slice_bits() >= 267` (mirrors `nft_account_resolver.fc`, #320).
+- **Account Locks (C-PHF-C2):** the hub stores an immutable `account_locks_contract` and mirrors lock state pushed only by it via `op::apply_account_lock` (the ApplyAccountLock pattern, #363). `can_send()` gates `handle_internal_transfer()` and `handle_merchant_payment()`; `handle_payment_received()` stays unguarded so a locked account can always still RECEIVE (invariant I6).
+- **Balance mutations (C-PHF-H1):** both transfer handlers atomically debit the sender and credit the recipient against an internal TBC ledger and check `insufficient_balance` before sending (invariant I4/I1), instead of only emitting an event.
+
+These changes harden the reference; the 0xDEAD blocker is **deliberately retained** and a CI gate (`contracts/payment-hub/non-production-stubs.spec.ts`) ensures it cannot be removed without the C-PHF-C1/C2/H1 integration coverage (`contracts/payments/tests/payment-hub.spec.fc`) being present.
 
 #### 2.1.2 Payment Hub (Tact) — `contracts/payments/PaymentHub.tact`
 
@@ -655,22 +662,24 @@ This section defines the adversary classes the protocol must defend against. Eac
 
 **Applicable to:** Payment Hub (FunC), Account Locks.
 
-**Critical finding:** The FunC Payment Hub (`payment-hub.fc`) does NOT call `account-locks.fc::can_send()` before processing transfers in `handle_internal_transfer()` (line 135) or `handle_merchant_payment()` (line 174). These functions verify NFT ownership but skip lock checks.
+**Critical finding (original):** The FunC Payment Hub (`payment-hub.fc`) did NOT call a lock check before processing transfers in `handle_internal_transfer()` or `handle_merchant_payment()`. These functions verified NFT ownership but skipped lock checks.
 
-**Impact:** A locked account could execute transfers through the FunC Payment Hub, violating invariant I6.
+**✅ Update (Issue #367) — resolved at the reference level.** `payment-hub.fc` now mirrors lock state via the gated `op::apply_account_lock` push (accepted only from the immutable `account_locks_contract`; synchronous reads of `account-locks.fc` are impossible on TON) and calls `can_send()` before moving funds in both `handle_internal_transfer()` and `handle_merchant_payment()`, throwing `account_locked` (107) when the sender is locked. `handle_payment_received()` stays unguarded so a locked account can always still RECEIVE (invariant I6, Lock ≠ Confiscation). The file remains a non-deployable reference (0xDEAD blocker retained); production lock enforcement lives in the Tact hubs.
+
+**Impact (if the reference were ever deployed without the fix):** A locked account could execute transfers through the FunC Payment Hub, violating invariant I6. The reference now prevents this; the contract is non-deployable regardless.
 
 **Note:** The Tact Merchant Payment Hub (`MerchantPaymentHub.tact`) DOES check locks at line 116–119 via `canSendWithLocks(payer_locks)`.
 
-**Remediation required:** The FunC Payment Hub must integrate Account Locks checking before mainnet deployment:
+**Remediation (implemented at the reference level, Issue #367):** the FunC Payment Hub now checks the locally mirrored lock state after `verify_nft_account()`:
 ```func
-// Required addition after verify_nft_account() call:
-int sender_can_send = account_locks.can_send(from_nft);
-throw_unless(error::account_locked, sender_can_send);
+// After verify_nft_account(), before moving funds:
+throw_unless(error::account_locked, can_send(from_nft));
 ```
+The lock mirror is fed only by `op::apply_account_lock` from the trusted `account_locks_contract`. Production lock enforcement remains the responsibility of the deployable Tact hubs.
 
 **Additional bypass vector:** TBC jetton transfers sent DIRECTLY via the jetton wallet (not through Payment Hub) bypass all protocol controls. The TBC jetton contract is immutable and has no knowledge of Account Locks. This is a fundamental architectural limitation.
 
-**Residual risk:** HIGH (FunC Payment Hub missing lock check). MEDIUM (direct jetton transfer bypass — accepted architectural limitation, documented as advisory locks).
+**Residual risk:** LOW for the FunC Payment Hub — the lock check is now present at the reference level and the contract is non-deployable (0xDEAD blocker). MEDIUM (direct jetton transfer bypass — accepted architectural limitation, documented as advisory locks).
 
 #### 4.3.3 Partial Execution Scenarios
 
@@ -967,7 +976,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
 | **Invalid transitions** (4.3.1) | Account State Machine | Explicit transition rules enforced in contract logic | LOW |
-| **Locked account bypass** (4.3.2) | FunC Payment Hub | **NOT MITIGATED** — `handle_internal_transfer()` and `handle_merchant_payment()` do not check Account Locks | **HIGH** — Must be fixed before deployment |
+| **Locked account bypass** (4.3.2) | FunC Payment Hub | Mitigated at reference level (Issue #367) — `handle_internal_transfer()` and `handle_merchant_payment()` call `can_send()` against the `op::apply_account_lock` mirror; contract is non-deployable (0xDEAD blocker) | LOW — lock check present; production hub is `PaymentHub.tact` |
 | **Locked account bypass** (4.3.2) | Tact Merchant Payment Hub | Mitigated — checks `canSendWithLocks(payer_locks)` at line 116–119 | LOW |
 | **Locked account bypass** (4.3.2) | Direct TBC jetton transfer | **Architectural limitation** — TBC jetton contract is immutable, does not know about Account Locks | **MEDIUM** — Locks are advisory for direct transfers; documented limitation |
 | **Partial execution** (4.3.3) | Multi-step external flows | Each on-chain operation is atomic; off-chain partial execution is inherent to cross-service flows | MEDIUM — Users accept risk of external service failures |
@@ -1284,7 +1293,7 @@ This section maps each threat to the seven protocol invariants defined in [docs/
 | Invalid transitions (4.1.4) | - | - | - | - | - | Preserved | - |
 | Access control bypass (4.1.5) | **At risk** | **At risk** | **At risk** | - | **At risk** | - | - |
 | NFT race / front-running | Preserved | Preserved | - | Preserved | - | - | - |
-| Locked account bypass (4.3.2) | - | - | - | - | - | **At risk** | - |
+| Locked account bypass (4.3.2) | - | - | - | - | - | Preserved | - |
 | Webhook forgery (4.4.1) | - | - | - | - | - | - | Preserved |
 | Callback replay (4.4.2) | - | - | - | - | - | - | - |
 | Governance attacks (4.5) | - | - | - | - | - | - | - |
@@ -1304,7 +1313,7 @@ This section maps each threat to the seven protocol invariants defined in [docs/
 | I1 | ~~Test-only functions in MerchantPaymentHub.tact allow anyone to set account state/balance~~ | `SetAccountState`, `SetAccountBalance` messages with no access control | RESOLVED ✅ (Issue #363) — handlers removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); CI regression guard blocks reintroduction |
 | I3 | ~~Test-only functions allow balance modification without NFT owner signature~~ | `SetAccountBalance` message in MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production; merchant payments debit/credit only via NFT-owner-authorised `MerchantPaymentRequest` |
 | I5 | ~~`SetAccountBalance` can create/destroy funds~~ | MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production contract before mainnet |
-| I6 | FunC Payment Hub does not check Account Locks | payment-hub.fc missing `can_send()` call | Add lock checking integration |
+| I6 | ~~FunC Payment Hub does not check Account Locks~~ | `payment-hub.fc` missing `can_send()` call | RESOLVED ✅ (Issue #367, reference level) — `handle_internal_transfer()`/`handle_merchant_payment()` now gate on `can_send()` fed by the `op::apply_account_lock` mirror; `handle_payment_received()` stays open (locked accounts still RECEIVE). Contract is non-deployable (0xDEAD blocker retained); production hub is `PaymentHub.tact` |
 
 ---
 
@@ -1316,15 +1325,16 @@ This checklist enables an external auditor to systematically verify the protocol
 
 #### Payment Hub (FunC: `payment-hub.fc`)
 
-- [ ] Verify `verify_nft_account()` (lines 96–112) correctly validates NFT ownership
-- [ ] Verify `get_nft_owner()` (lines 73–80) returns actual on-chain NFT owner (currently placeholder)
-- [ ] Confirm `handle_internal_transfer()` (lines 127–163) checks Account Locks before transfer — **EXPECTED TO FAIL: lock check is missing**
-- [ ] Confirm `handle_merchant_payment()` (lines 166–197) checks Account Locks before transfer — **EXPECTED TO FAIL: lock check is missing**
-- [ ] Verify `handle_set_paused()` (lines 233–239) only sets flag, cannot move funds
-- [ ] Verify `handle_flag_account()` (lines 242–263) only sets flag, cannot move funds
+- [x] Verify `verify_nft_account()` correctly validates NFT ownership — **resolved at reference level (Issue #367):** rejects empty/`addr_none` owners via `owner.slice_bits() >= 267` and matches against the registered owner
+- [x] Verify `get_nft_owner()` returns the actual NFT owner — **resolved at reference level (Issue #367):** the placeholder is removed; ownership comes from a resolver-gated, write-once `nft_owners` registry (`op::resolve_nft_owner`)
+- [x] Confirm `handle_internal_transfer()` checks Account Locks before transfer — **resolved at reference level (Issue #367):** `can_send(from_nft)` gate, fed by the `op::apply_account_lock` mirror
+- [x] Confirm `handle_merchant_payment()` checks Account Locks before transfer — **resolved at reference level (Issue #367):** `can_send(payer_nft)` gate
+- [x] Confirm transfers mutate balances atomically — **resolved at reference level (Issue #367):** both handlers debit the sender and credit the recipient against the internal TBC ledger and check `insufficient_balance` before sending (C-PHF-H1)
+- [ ] Verify `handle_set_paused()` only sets flag, cannot move funds
+- [ ] Verify `handle_flag_account()` only sets flag, cannot move funds
 - [ ] Confirm no admin withdrawal, drain, or privileged transfer functions exist
-- [ ] Verify events emitted after state changes, not before (lines 115–124)
-- [ ] Check `recv_internal()` (lines 266–332) handles unknown opcodes safely
+- [ ] Verify events emitted after state changes, not before
+- [x] Confirm the contract is non-deployable — `recv_internal()` throws `DEPLOY_BLOCKER_NOT_PRODUCTION_READY` (0xDEAD) as its first statement; the deploy blocker is retained as defence-in-depth and a CI gate (`non-production-stubs.spec.ts`) couples its removal to the C-PHF-C1/C2/H1 coverage (Issue #367)
 
 #### Payment Hub (Tact: `PaymentHub.tact`)
 
