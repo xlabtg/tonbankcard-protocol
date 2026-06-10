@@ -260,7 +260,7 @@ on-chain NFT Account Resolver:
 **Lines:** 414
 **Status:** Implemented, not yet deployed to mainnet
 
-**Messages:** `SubmitProposal`, `CastVote`, `FinalizeProposal`.
+**Messages:** `SubmitProposal`, `CastVote`, `FinalizeProposal`; ownership-resolution protocol (`ResolveOwnership` / `OwnershipResolved`, `EligibilityCheckRequest` / `EligibilityCheckResponse`); governance multi-sig configuration (`ConfigureGovernance`, `ProposeConfigChange`, `ApproveConfigChange`, `ExecuteConfigChange`, `CancelConfigChange`).
 
 **Categories:** `ROADMAP_SIGNAL(0)` through `ECOSYSTEM_GRANT_SIGNAL(5)`.
 
@@ -270,7 +270,9 @@ on-chain NFT Account Resolver:
 
 **Critical design property:** Governance proposals are non-executable. They record community sentiment but do not trigger on-chain actions. This limits the blast radius of governance attacks.
 
-**Known pre-production issue:** NFT ownership verification is not implemented. Line comment: "In production, we would verify the sender owns the Diamond NFT." Currently, anyone can submit proposals and cast votes.
+**NFT ownership verification (Issue #248 — RESOLVED ✅):** Neither `SubmitProposal` nor `CastVote` trusts a caller-supplied NFT ID. The registry asks a trusted on-chain resolver "who owns Diamond NFT N?" and only materialises the vote/proposal in the `OwnershipResolved` callback, and only when the resolved owner equals the original sender. Until the resolver is configured, voting and proposal submission **fail closed**.
+
+**Resolver/verifier configuration security (Issue #366 — RESOLVED ✅):** Because the resolver is the sole source of truth for ownership, whoever controls it controls who can vote. The resolver and snapshot-verifier addresses can therefore no longer be set by a single key. After a one-time deployer bootstrap (`ConfigureGovernance`) installs an M-of-N signer set (threshold ≥ 2, signers ≥ 2 — no single point of failure), every change to either address requires (a) M independent signer approvals, (b) a 7-day two-phase timelock, and (c) code-hash verification — the executor must supply the target's `StateInit{code, data}` such that `contractAddress(StateInit) == target` **and** `code.hash() == approved_hash`, so a malicious resolver with different code can never be installed. A misconfigured resolver is recoverable through the same multi-sig + timelock path. Covered by `contracts/governance/ProposalRegistry.spec.ts` (multi-sig requirement, non-signer rejection, timelock enforcement, code-hash + address verification, fail-closed-until-configured, malicious-resolver rejection, recovery path).
 
 #### 2.1.11 Governance — Snapshot Verifier (Tact) — `contracts/governance/SnapshotVerifier.tact`
 
@@ -576,10 +578,14 @@ This section defines the adversary classes the protocol must defend against. Eac
 | TransparencyRegistry.tact | `RecordLockActivity` | `report_writer` (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
 | TransparencyRegistry.tact | `RecordParameterChange` | `report_writer` (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
 | TransparencyRegistry.tact | `SetProposalRegistry` / `SetSnapshotVerifier` / `SetReportWriter` | `deployer` (governance multi-sig) | Yes ✅ (Issue #365) |
-| ProposalRegistry.tact | `SubmitProposal` | Diamond NFT owner (not verified) | **No** |
-| ProposalRegistry.tact | `CastVote` | Diamond NFT owner (not verified) | **No** |
+| ProposalRegistry.tact | `SubmitProposal` | Diamond NFT owner (resolver-verified, async) | Yes ✅ (Issue #248) |
+| ProposalRegistry.tact | `CastVote` | Diamond NFT owner (resolver-verified, async) | Yes ✅ (Issue #248) |
+| ProposalRegistry.tact | `ConfigureGovernance` | `deployer` (one-time M-of-N bootstrap) | Yes ✅ (Issue #366) |
+| ProposalRegistry.tact | `ProposeConfigChange` / `ApproveConfigChange` / `ExecuteConfigChange` / `CancelConfigChange` | governance signer set (M-of-N + 7-day timelock + code-hash) | Yes ✅ (Issue #366) |
 
 **Pre-production remediation required:** All "No" entries must either have access control added or the functions must be removed before mainnet deployment.
+
+**ProposalRegistry ownership & resolver-configuration security (Issues #248 + #366 — RESOLVED ✅):** `SubmitProposal` and `CastVote` never trust a caller-supplied NFT ID; ownership is confirmed asynchronously by a trusted on-chain resolver before any vote/proposal is recorded (Issue #248). The resolver/verifier addresses — the root of that trust — are themselves protected: after a one-time deployer bootstrap (`ConfigureGovernance`), changing either address requires an M-of-N signer quorum (threshold ≥ 2), a 7-day two-phase timelock, and code-hash verification of the target (`contractAddress(StateInit) == target` ∧ `code.hash() == approved_hash`). This defeats the second-order attack in which a compromised deployer key silently swaps in a malicious resolver, and provides a recovery path if the resolver is misconfigured (Issue #366). Covered by `contracts/governance/ProposalRegistry.spec.ts`.
 
 **TransparencyRegistry sender authentication (Issue #365 — RESOLVED ✅):** Each of the six data-ingestion handlers now verifies `sender()` against a dedicated authorized-writer address held in contract state (`proposal_registry` → `RecordProposal`/`RecordVotingResult`; `snapshot_verifier` → `RecordSnapshot`; `report_writer` → the three E4 aggregate handlers). The writer slots start `null` and the handlers **fail closed** until the deployer (the governance multi-sig in production) configures them via the deployer-only `SetProposalRegistry` / `SetSnapshotVerifier` / `SetReportWriter` messages, so fake records cannot be injected even in the window between deployment and writer configuration. Writer reassignment is updatable (expected to be timelocked at the multi-sig layer). Covered by `contracts/governance/TransparencyRegistry.spec.ts` (unauthorized rejection, fail-closed, deployer-only configuration, cross-domain isolation, authorized writes).
 
@@ -951,7 +957,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`) removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `ApplyAccountLock`, accepted ONLY from `account_locks_contract` (Issue #363) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | CollateralSignal.tact | Test-only `RegisterNFTOwner` removed from the production contract; ownership is registered ONLY via `ResolveNFTOwner`, accepted from the immutable `nft_resolver` (on-chain NFT Account Resolver), and remains write-once (CONTRACTS-M1) (Issue #364) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | TransparencyRegistry.tact | All six record handlers verify `sender()` against a deployer-configured per-domain authorized writer (`proposal_registry` / `snapshot_verifier` / `report_writer`); slots start `null` and fail closed; deployer-only `Set*` configuration messages (Issue #365) | RESOLVED ✅ (pre-mainnet) — covered by `TransparencyRegistry.spec.ts` |
-| **Access control bypass** (4.1.5) | ProposalRegistry.tact | NFT ownership verification must be implemented for `SubmitProposal` and `CastVote` | HIGH (pre-production) — Anyone can submit/vote |
+| **Access control bypass** (4.1.5) | ProposalRegistry.tact | `SubmitProposal`/`CastVote` confirm ownership asynchronously via a trusted on-chain resolver before recording, failing closed until configured (Issue #248); the resolver/verifier addresses are governed by an M-of-N multi-sig + 7-day timelock + code-hash verification, with a recovery path for misconfiguration (Issue #366) | RESOLVED ✅ (pre-mainnet) — covered by `ProposalRegistry.spec.ts` |
 
 ### 6.2 Economic Threat Mitigations
 

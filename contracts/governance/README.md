@@ -93,14 +93,20 @@ Security properties:
   rejected) **and** `resolved_owner == claimant`.
 - A caller-supplied `voter_nft_id` / `author_nft_id` alone can never record
   anything — defeating the "iterate NFT IDs 1..222 from one wallet" attack.
-- The resolver is configured once by the deployer via `SetOwnerResolver`. Until
-  it is set, all voting and proposal submission is rejected.
+- The resolver and snapshot verifier are governed by an **M-of-N multi-sig with a
+  7-day timelock and code-hash verification** (Issue #366), not a single key.
+  Until a resolver is installed, all voting and proposal submission is rejected
+  (fail-closed). See "Resolver/verifier governance" below.
 
 **Public Functions:**
 
 | Function | Description |
 |----------|-------------|
-| `SetOwnerResolver` | One-time, deployer-only configuration of the NFT ownership resolver |
+| `ConfigureGovernance` | One-time, deployer-only bootstrap of the M-of-N governance signer set |
+| `ProposeConfigChange` | Signer proposes changing the resolver/verifier (proposer auto-approves) |
+| `ApproveConfigChange` | Signer approves the pending change; the timelock starts at threshold |
+| `ExecuteConfigChange` | Apply the change after threshold + timelock, with code-hash + address verification |
+| `CancelConfigChange` | Signer cancels the pending change (escape hatch) |
 | `SubmitProposal` | Request to register a new proposal (recorded only after ownership is confirmed) |
 | `CastVote` | Request to vote on an active proposal (recorded only after ownership is confirmed) |
 | `OwnershipResolved` | Resolver callback that confirms NFT ownership and finalizes the pending action |
@@ -117,7 +123,15 @@ Security properties:
 | `getVoteCounts(id)` | Get FOR/AGAINST/ABSTAIN counts |
 | `isVotingOpen(id)` | Check if voting is open |
 | `getOwnerResolver()` | Configured NFT ownership resolver (`null` until set) |
-| `getDeployer()` | Deployer address (resolver-configuration authority) |
+| `getSnapshotVerifier()` | Configured snapshot verifier (`null` until set) |
+| `getDeployer()` | Deployer address (governance bootstrap authority) |
+| `isGovernanceConfigured()` | Whether the M-of-N signer set has been installed |
+| `getGovernanceThreshold()` / `getGovernanceSignerCount()` | Multi-sig threshold and signer count |
+| `isGovernanceSigner(addr)` | Whether `addr` is an authorized governance signer |
+| `getConfigTimelockDelay()` | Timelock delay (seconds) for configuration changes |
+| `isConfigChangePending()` | Whether a resolver/verifier change is pending |
+| `getPendingConfigKind()` / `getPendingConfigTarget()` / `getPendingConfigCodeHash()` | Pending change details |
+| `getPendingConfigApprovals()` / `getPendingConfigExecutableAt()` | Approval tally and timelock expiry |
 
 ### SnapshotVerifier.tact
 
@@ -456,21 +470,73 @@ console.log(`Accepted: ${stats.proposals_accepted}`);
 > **Note:** `SubmitProposal` and `CastVote` are *requests*. The registry first
 > verifies NFT ownership with the configured resolver and only records the
 > proposal/vote once ownership is confirmed (see "On-chain NFT ownership
-> verification" above). The deployer must call `SetOwnerResolver` once before any
-> proposals or votes can be recorded.
+> verification" above). A resolver must be installed through the governance
+> multi-sig (below) before any proposals or votes can be recorded.
 
-### Configuring the ownership resolver (deployer, one-time)
+### Resolver/verifier governance (Issue #366)
 
-```typescript
-await registry.send(
-  deployerSender,
-  { value: toNano("0.05") },
-  {
-    $$type: "SetOwnerResolver",
-    resolver: ownerResolverAddress // on-chain NFT owner resolver (TEP-62)
-  }
-);
-```
+The resolver and snapshot verifier are the root of trust for ownership: whoever
+controls them controls who can vote. They are therefore **not** settable by a
+single key. Instead:
+
+1. **Bootstrap (deployer, one-time).** The deployer installs an M-of-N signer
+   set. The threshold and signer count must both be ≥ 2 — there is no single
+   point of failure.
+
+   ```typescript
+   const signers = Dictionary.empty(Dictionary.Keys.BigInt(257), Dictionary.Values.Address());
+   signers.set(0n, signer1Address);
+   signers.set(1n, signer2Address);
+   signers.set(2n, signer3Address);
+
+   await registry.send(deployerSender, { value: toNano("0.05") }, {
+     $$type: "ConfigureGovernance",
+     signers,
+     signer_count: 3n,
+     threshold: 2n,
+   });
+   ```
+
+2. **Propose → Approve → Execute (signers, with a 7-day timelock).** Any signer
+   proposes a resolver/verifier change (committing the target's expected code
+   hash); the proposer auto-approves. Once approvals reach the threshold the
+   7-day timelock starts. After it elapses, any signer executes the change,
+   supplying the target's `StateInit{code, data}`. The registry accepts it only
+   if `contractAddress(StateInit) == target` **and** `code.hash() == approved_hash`
+   — so a malicious resolver with different code can never be installed.
+
+   ```typescript
+   const CONFIG_KIND_RESOLVER = 0n; // 1n = snapshot verifier
+   const codeHash = BigInt("0x" + resolverInit.code.hash().toString("hex"));
+
+   // Propose (signer 1, auto-approves)
+   await registry.send(signer1Sender, { value: toNano("0.05") }, {
+     $$type: "ProposeConfigChange",
+     kind: CONFIG_KIND_RESOLVER,
+     target: resolverAddress,
+     code_hash: codeHash,
+   });
+
+   // Approve (signer 2) — reaches the 2-of-N threshold, arming the timelock
+   await registry.send(signer2Sender, { value: toNano("0.05") }, {
+     $$type: "ApproveConfigChange",
+     kind: CONFIG_KIND_RESOLVER,
+     target: resolverAddress,
+   });
+
+   // ...wait 7 days, then execute with the target's StateInit
+   await registry.send(signer1Sender, { value: toNano("0.05") }, {
+     $$type: "ExecuteConfigChange",
+     kind: CONFIG_KIND_RESOLVER,
+     target: resolverAddress,
+     code: resolverInit.code,
+     data: resolverInit.data,
+   });
+   ```
+
+A misconfigured resolver is recoverable: simply run the same propose → approve →
+timelock → execute flow again to re-point the resolver to a corrected address.
+`CancelConfigChange` (any signer) aborts a pending change before execution.
 
 ### Submitting a Proposal
 
