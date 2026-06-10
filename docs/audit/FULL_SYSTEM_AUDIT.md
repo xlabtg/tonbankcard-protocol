@@ -112,7 +112,7 @@ Contracts implement the specified behavior for all happy paths. The following kn
 | Gap | Contract | Severity | Status |
 |-----|----------|----------|--------|
 | Test-only functions have no access control | `MerchantPaymentHub.tact` | HIGH | Known, documented |
-| `RegisterNFTOwner` has no access control | `CollateralSignal.tact` | HIGH | Known, documented |
+| ~~`RegisterNFTOwner` has no access control~~ | `CollateralSignal.tact` | ~~HIGH~~ | **RESOLVED (Issue #364)** — handler removed; ownership registered only via the `nft_resolver`-gated `ResolveNFTOwner`, write-once (CONTRACTS-M1) |
 | TransparencyRegistry record messages unprotected | `TransparencyRegistry.tact` | HIGH | Known, documented |
 | Governance proposal/vote NFT ownership unverified | `ProposalRegistry.tact` | HIGH | Known, documented |
 | FunC Payment Hub missing Account Locks check | `payment-hub.fc` | HIGH | Known, documented |
@@ -395,7 +395,7 @@ Minor version discrepancies between individual doc timestamps are cosmetic.
 | ID | Layer | Finding | Contract | Action Required |
 |----|-------|---------|----------|----------------|
 | F-CRIT-1 | Smart Contract | Test-only functions without access control | `MerchantPaymentHub.tact` | Remove or gate before deployment |
-| F-CRIT-2 | Smart Contract | `RegisterNFTOwner` no access control | `CollateralSignal.tact` | Add NFT ownership verification |
+| F-CRIT-2 ✅ | Smart Contract | `RegisterNFTOwner` no access control — **RESOLVED (Issue #364)** | `CollateralSignal.tact` | ~~Add NFT ownership verification~~ — Done: handler removed; ownership registered only via the `nft_resolver`-gated `ResolveNFTOwner`, write-once (CONTRACTS-M1) |
 | F-CRIT-3 | Smart Contract | TransparencyRegistry messages unprotected | `TransparencyRegistry.tact` | Add authorization check |
 | F-CRIT-4 | Smart Contract | Governance proposals not NFT-gated | `ProposalRegistry.tact` | Add NFT ownership check |
 | F-CRIT-5 | Smart Contract | FunC Payment Hub missing lock check | `payment-hub.fc` | Add Account Locks call |
@@ -448,7 +448,7 @@ Risk scoring follows: **Severity × Likelihood**
 ### Immediate (Before Any Mainnet Deployment)
 
 1. Remove or properly gate test-only functions in `MerchantPaymentHub.tact`
-2. Add NFT ownership verification to `CollateralSignal.tact` → `RegisterNFTOwner`
+2. ~~Add NFT ownership verification to `CollateralSignal.tact` → `RegisterNFTOwner`~~ — **DONE (Issue #364):** `RegisterNFTOwner` removed; ownership registered only via the `nft_resolver`-gated `ResolveNFTOwner`, write-once (CONTRACTS-M1)
 3. Add authorization to `TransparencyRegistry.tact` record handlers
 4. Add NFT ownership check to `ProposalRegistry.tact` proposal submission
 5. Add Account Locks check to `payment-hub.fc` transfer path

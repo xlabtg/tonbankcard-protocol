@@ -273,6 +273,17 @@ The analytics layer is gated on B3 production-monitoring verdict READY
 for aggregator source landings; the codes themselves are stable
 independent of that gate.
 
+### Production NFT-ownership registration (resolver-gated)
+
+`CollateralSignal.tact` does **not** use a test-only deployer guard. Following
+Issue #364 its ownership map is populated only by the trusted on-chain NFT Account
+Resolver, so the registration path is a real production receiver:
+
+| Contract | Condition | User-facing message |
+|---|---|---|
+| `CollateralSignal.tact` | Only the NFT Account Resolver (`nft_resolver`) may register ownership via `ResolveNFTOwner` | `Unauthorized: only NFT resolver` |
+| `CollateralSignal.tact` | NFT owner is write-once (CONTRACTS-M1) | `NFT owner already registered` |
+
 ### Test-only seeding (deployer guards)
 
 Several contracts expose `Register*` receivers behind a `sender() == self.deployer`
@@ -281,7 +292,6 @@ adversarial tests and never reachable from real users:
 
 | Contract | Condition | User-facing message |
 |---|---|---|
-| `CollateralSignal.tact` | Only deployer can seed NFT ownership | `Unauthorized: only deployer (test-only)` |
 | `CrossChainBridge.tact` | Only deployer can register NFT ownership / relayer | `Unauthorized: only deployer (test-only)` |
 | `CrossChainBridge.tact` | NFT owner is write-once | `NFT owner already registered` |
 | `LendingProtocolCoordinator.tact` | Only deployer can seed NFT ownership | `Unauthorized: only deployer (test-only)` |
