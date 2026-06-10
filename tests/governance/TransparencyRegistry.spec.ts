@@ -9,6 +9,21 @@
  * 4. Immutability - Records cannot be modified
  * 5. Privacy - No individual voter data exposed
  * 6. No Write Paths - Read-only verification
+ *
+ * NOTE (Issue #365 — sender authentication):
+ *   This spec imports a hand-written `../../wrappers/TransparencyRegistry`
+ *   wrapper and is NOT wired into CI (there is no package.json under
+ *   tests/governance). The CANONICAL, CI-runnable tests — including the full
+ *   sender-authentication coverage (unauthorized rejection, fail-closed,
+ *   deployer-only configuration, authorized writers) — live in
+ *   contracts/governance/TransparencyRegistry.spec.ts and run against the
+ *   Tact-generated wrapper.
+ *
+ *   Since Issue #365 the six data-ingestion handlers reject every sender that
+ *   is not the configured writer for that data domain. To keep this functional
+ *   spec consistent with the deployed contract, the beforeEach below now
+ *   authorizes `proposalRecorder` as the writer for all domains before any
+ *   RecordProposal / RecordVotingResult / RecordSnapshot is sent.
  */
 
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
@@ -65,6 +80,26 @@ describe('TransparencyRegistry - Governance Transparency Layer', () => {
             deploy: true,
             success: true,
         });
+
+        // Sender authentication (Issue #365): authorize `proposalRecorder` as the
+        // writer for every data domain so the functional Record* sends below
+        // continue to exercise the archive logic. The deployer is the
+        // configuration authority captured at init().
+        await transparencyRegistry.send(
+            deployer.getSender(),
+            { value: toNano('0.05') },
+            { $$type: 'SetProposalRegistry', registry: proposalRecorder.address }
+        );
+        await transparencyRegistry.send(
+            deployer.getSender(),
+            { value: toNano('0.05') },
+            { $$type: 'SetSnapshotVerifier', verifier: proposalRecorder.address }
+        );
+        await transparencyRegistry.send(
+            deployer.getSender(),
+            { value: toNano('0.05') },
+            { $$type: 'SetReportWriter', writer: proposalRecorder.address }
+        );
     });
 
     // ========================================
