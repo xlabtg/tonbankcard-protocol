@@ -266,3 +266,86 @@ describe('CONTRACTS-H3: nft_account_resolver.fc rejects empty/dummy owners', () 
     expect(source).toMatch(/is_valid\s*=\s*is_initialized\s*&\s*is_whitelisted\s*&\s*owner_present/);
   });
 });
+
+describe('Issue #367: payment-hub.fc reference integrates ownership, Account Locks, and balance mutations', () => {
+  // Audit findings C-PHF-C1 / C-PHF-C2 / C-PHF-H1. Synchronous cross-contract
+  // reads are impossible on TON, so the reference is hardened with the SAME
+  // TON-feasible patterns the production Tact hubs use: a resolver-gated owner
+  // registry (#320), the ApplyAccountLock push mirror (#363), and an internal
+  // TBC ledger. The file stays a NON-DEPLOYABLE audit reference (the production
+  // hub is PaymentHub.tact, CONTRACTS-H3 / #260); these static assertions are
+  // the CI gate that couples removing the 0xDEAD blocker to the three fixes
+  // being present, since there is no FunC toolchain in CI to run the behavioural
+  // integration tests (those live in contracts/payments/tests/payment-hub.spec.fc).
+  const SOURCE = 'contracts/payments/payment-hub.fc';
+  const INTEGRATION_TEST = 'contracts/payments/tests/payment-hub.spec.fc';
+  const source = read(SOURCE);
+
+  describe('C-PHF-C1: ownership comes from a resolver-gated registry, not a placeholder', () => {
+    it('removes the get_nft_data_raw placeholder that returned empty slices', () => {
+      // The dummy that pretended to read NFT data synchronously must be gone.
+      expect(source).not.toContain('get_nft_data_raw');
+    });
+
+    it('rejects empty/dummy owners with a slice_bits() guard (mirrors #320)', () => {
+      expect(source).toContain('owner.slice_bits()');
+      expect(source).toMatch(/throw_unless\(error::invalid_nft,\s*owner\.slice_bits\(\)\s*>=\s*267\)/);
+    });
+
+    it('registers NFT ownership only through the trusted resolver, write-once', () => {
+      expect(source).toContain('op::resolve_nft_owner');
+      expect(source).toContain('equal_slices(sender_address, nft_resolver)');
+      // Write-once binding (CONTRACTS-M1 / #279): an existing owner cannot be overwritten.
+      expect(source).toMatch(/throw_if\(error::unauthorized,\s*exists\)/);
+      expect(source).toContain('nft_owners~udict_set');
+    });
+  });
+
+  describe('C-PHF-C2: Account Locks gate every send', () => {
+    it('stores the trusted Account Locks contract and accepts lock state only from it', () => {
+      expect(source).toContain('global slice account_locks_contract');
+      expect(source).toContain('op::apply_account_lock');
+      expect(source).toContain('equal_slices(sender_address, account_locks_contract)');
+    });
+
+    it('blocks a locked account from sending in BOTH transfer handlers', () => {
+      expect(source).toContain('throw_unless(error::account_locked, can_send(from_nft))');
+      expect(source).toContain('throw_unless(error::account_locked, can_send(payer_nft))');
+    });
+  });
+
+  describe('C-PHF-H1: transfers move balances, not just events', () => {
+    it('checks sufficient balance before sending in BOTH transfer handlers', () => {
+      expect(source).toContain('throw_unless(error::insufficient_balance, from_balance >= amount)');
+      expect(source).toContain('throw_unless(error::insufficient_balance, payer_balance >= amount)');
+    });
+
+    it('debits the sender and credits the recipient in BOTH transfer handlers', () => {
+      expect(source).toContain('set_balance(from_nft, from_balance - amount)');
+      expect(source).toContain('set_balance(to_nft, get_balance(to_nft) + amount)');
+      expect(source).toContain('set_balance(payer_nft, payer_balance - amount)');
+      expect(source).toContain('set_balance(merchant_nft, get_balance(merchant_nft) + amount)');
+    });
+  });
+
+  describe('CI gate: the 0xDEAD blocker cannot be removed without the C-PHF-C1/C2/H1 fixes', () => {
+    it('keeps the file in the non-production stub set while the blocker stands', () => {
+      const nonProduction = extractLiteral(read(MANIFEST), 'const NON_PRODUCTION_STUBS', '[', ']');
+      expect(nonProduction).toContain(SOURCE);
+      expect(source).toMatch(/NON-PRODUCTION REFERENCE STUB/i);
+      // The CONTRACTS-H3 suite above asserts the 0xDEAD blocker is still the first
+      // statement of recv_internal. Together with the C-PHF assertions in this
+      // block, that means the blocker can only be removed by a reviewed change
+      // that also keeps the three fixes — the coupling the reviewer requested.
+      expect(source).toMatch(/const\s+int\s+DEPLOY_BLOCKER_NOT_PRODUCTION_READY\s*=\s*0xDEAD\s*;/);
+    });
+
+    it('ships the C-PHF-C1/C2/H1 integration tests the blocker removal depends on', () => {
+      expect(fs.existsSync(path.join(REPO_ROOT, INTEGRATION_TEST))).toBe(true);
+      const tests = read(INTEGRATION_TEST);
+      expect(tests).toContain('C-PHF-C1');
+      expect(tests).toContain('C-PHF-C2');
+      expect(tests).toContain('C-PHF-H1');
+    });
+  });
+});
