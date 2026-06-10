@@ -73,6 +73,14 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
     async function deployVerifier() {
         const v = blockchain.openContract(await SnapshotVerifier.fromInit());
         await v.send(deployer.getSender(), { value: toNano('0.1') }, { $$type: 'Deploy', queryId: 0n });
+        // Issue #370: the verifier rejects RegisterSnapshot until the deployer
+        // designates the trusted indexer. These integration tests use the
+        // deployer treasury as the snapshot writer, so authorize it explicitly.
+        await v.send(
+            deployer.getSender(),
+            { value: GAS },
+            { $$type: 'SetTrustedIndexer', indexer: deployer.address }
+        );
         return v;
     }
 
