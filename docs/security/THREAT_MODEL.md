@@ -136,7 +136,22 @@ No assumption in this document relies on "trust" alone.
 8. Atomic debit/credit (I4/I5)
 9. Emit `MerchantPayment` event
 
-**Known pre-production issue:** `SetAccountState`, `SetAccountBalance`, `SetAccountLock` messages (lines 240–253) have no sender verification. These are marked "FOR TESTING ONLY" and must be removed before mainnet deployment.
+**Pre-production hardening (Issue #363 — RESOLVED):** the former test-only
+`SetAccountState`, `SetAccountBalance`, and `SetAccountLock` messages have been
+**removed from the deployable production contract**:
+- `SetAccountState` / `SetAccountBalance` (admin-mint / admin-register backdoors,
+  audit C-MPH-C1 / C-MPH-H1) now exist ONLY in the non-deployable test harness
+  `contracts/merchant-hub/test/MerchantPaymentHubHarness.tact`. In production,
+  account registration is performed by the NFT Account Resolver and balances are
+  funded by the on-chain TBC ledger/settlement flow.
+- `SetAccountLock` is replaced by `ApplyAccountLock`, which is accepted ONLY from
+  the dedicated Account Locks contract (`account_locks_contract`, immutable, set at
+  `init`). The admin cannot apply locks (invariant I3).
+- Collection whitelisting moved behind a two-phase admin + 7-day timelock
+  (`ProposeWhitelistCollection` → wait → `ExecuteWhitelistCollection`, with
+  `CancelWhitelistCollection`).
+A CI regression guard (`contracts/payment-hub/non-production-stubs.spec.ts`) fails
+the build if any of the removed handlers reappears in the production source.
 
 #### 2.1.4 Account Locks (FunC) — `contracts/payments/account-locks.fc`
 
@@ -535,9 +550,9 @@ This section defines the adversary classes the protocol must defend against. Eac
 | account-locks.fc | `clear_fraud_lock` | `risk_authority` | Yes (line 177) |
 | account-locks.fc | `set_collateral_lock` | `lending_adapter` | Yes (line 192) |
 | account-locks.fc | `clear_collateral_lock` | `lending_adapter` | Yes (line 207) |
-| MerchantPaymentHub.tact | `SetAccountState` | None (test-only) | **No** |
-| MerchantPaymentHub.tact | `SetAccountBalance` | None (test-only) | **No** |
-| MerchantPaymentHub.tact | `SetAccountLock` | None (test-only) | **No** |
+| MerchantPaymentHub.tact | `SetAccountState` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
+| MerchantPaymentHub.tact | `SetAccountBalance` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
+| MerchantPaymentHub.tact | `ApplyAccountLock` (replaces `SetAccountLock`, Issue #363) | `account_locks_contract` | Yes ✅ |
 | CollateralSignal.tact | `RegisterNFTOwner` | None | **No** |
 | TransparencyRegistry.tact | `RecordProposal` | None | **No** |
 | TransparencyRegistry.tact | `RecordVotingResult` | None | **No** |
@@ -912,7 +927,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Storage corruption** (4.1.2) | All contracts | TVM enforces cell structure integrity; corrupt cells cause exceptions, not silent corruption | LOW — TVM provides structural protection |
 | **Overflow/underflow** (4.1.3) | Payment Hub, Merchant Hub | TVM uses 257-bit integers; balance checks before debit (MerchantPaymentHub.tact:128); `load_coins()` uses VarUInteger16 | LOW — 257-bit arithmetic eliminates practical overflow |
 | **Invalid state transitions** (4.1.4) | Account State Machine | Explicit transition rules; `FROZEN` and `COLLATERAL_LOCKED` have no exit path (blocked by design until mechanism is built) | MEDIUM — Frozen accounts cannot be unfrozen until DAO mechanism is implemented |
-| **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`, `SetAccountLock`) must be removed before deployment | HIGH (pre-production) — Functions have no access control |
+| **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`) removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `ApplyAccountLock`, accepted ONLY from `account_locks_contract` (Issue #363) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | CollateralSignal.tact | `RegisterNFTOwner` must have access control added | HIGH (pre-production) — Anyone can register any NFT owner |
 | **Access control bypass** (4.1.5) | TransparencyRegistry.tact | `RecordProposal`, `RecordVotingResult`, `RecordSnapshot` must have access control added | HIGH (pre-production) — Anyone can inject false records |
 | **Access control bypass** (4.1.5) | ProposalRegistry.tact | NFT ownership verification must be implemented for `SubmitProposal` and `CastVote` | HIGH (pre-production) — Anyone can submit/vote |
@@ -1265,9 +1280,9 @@ This section maps each threat to the seven protocol invariants defined in [docs/
 
 | Invariant | Risk | Source | Remediation |
 |-----------|------|--------|-------------|
-| I1 | Test-only functions in MerchantPaymentHub.tact allow anyone to set account state/balance | `SetAccountState`, `SetAccountBalance` messages with no access control | Remove test-only functions or add access control |
-| I3 | Test-only functions allow balance modification without NFT owner signature | `SetAccountBalance` message in MerchantPaymentHub.tact | Remove before deployment |
-| I5 | `SetAccountBalance` can create/destroy funds | MerchantPaymentHub.tact lines 240–253 | Remove before deployment |
+| I1 | ~~Test-only functions in MerchantPaymentHub.tact allow anyone to set account state/balance~~ | `SetAccountState`, `SetAccountBalance` messages with no access control | RESOLVED ✅ (Issue #363) — handlers removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); CI regression guard blocks reintroduction |
+| I3 | ~~Test-only functions allow balance modification without NFT owner signature~~ | `SetAccountBalance` message in MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production; merchant payments debit/credit only via NFT-owner-authorised `MerchantPaymentRequest` |
+| I5 | ~~`SetAccountBalance` can create/destroy funds~~ | MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production contract before mainnet |
 | I6 | FunC Payment Hub does not check Account Locks | payment-hub.fc missing `can_send()` call | Add lock checking integration |
 
 ---
@@ -1300,7 +1315,7 @@ This checklist enables an external auditor to systematically verify the protocol
 
 - [ ] Verify `MerchantPaymentRequest` validation sequence (payer ownership, state, locks, balance)
 - [ ] Confirm `canSendWithLocks()` check is performed (lines 116–119)
-- [ ] **CRITICAL: Verify test-only functions are removed before deployment** — `SetAccountState` (line 240), `SetAccountBalance` (line 245), `SetAccountLock` (line 250)
+- [x] **CRITICAL: Test-only functions removed before deployment (Issue #363)** — `SetAccountState` / `SetAccountBalance` moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `account_locks_contract`-gated `ApplyAccountLock`; CI regression guard (`non-production-stubs.spec.ts`) blocks reintroduction
 - [ ] Verify atomic debit/credit (lines 134–135) preserves ledger conservation
 
 #### Account Locks (FunC: `account-locks.fc`)

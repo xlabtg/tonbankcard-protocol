@@ -202,10 +202,10 @@ This section is the **complete inventory** of every parameter that can be change
 | PP-14 | `accounts: map<Address, AccountState>` (admin-initialised entries only) | `payments/PaymentHub.tact:190` | state | empty | `InitializeAccount` (line 323) | sender = admin (multi-sig) | **G** (during setup) / **U** (post-init transfers via owner) |
 | PP-15 | `admin: Address` | `MerchantPaymentHub.tact:89` | state | initial deployer (B2 multi-sig) | `MerchantProposeAdminTransfer` + `MerchantExecuteAdminTransfer` (lines 339, 356) | sender = current admin / proposed admin, 7-day timelock | **T** (7 days) |
 | PP-16 | `MERCHANT_ADMIN_TRANSFER_DELAY` | `MerchantPaymentHub.tact:81` | `const Int` | 7 days | None — recompile | n/a (const) | **I** |
-| PP-17 | `whitelisted_collections` (merchant) | `MerchantPaymentHub.tact` | state | empty | `WhitelistMerchantCollection` (line 286) | sender = admin (multi-sig) | **G** |
-| PP-18 | `account_states` | `MerchantPaymentHub.tact` | state | empty | `SetAccountState` (line 303) | sender = admin (multi-sig) | **G** (during setup) |
-| PP-19 | `account_balances` (initial only) | `MerchantPaymentHub.tact` | state | empty | `SetAccountBalance` (line 320) | sender = admin (multi-sig); previous balance must be zero (audit C-MPH-C1 partial mitigation) | **G** (initial-only) |
-| PP-20 | `account_locks` | `MerchantPaymentHub.tact` | state | empty | `SetAccountLock` (line 327) | sender = admin (multi-sig) | **G** |
+| PP-17 | `whitelisted_collections` (merchant) | `MerchantPaymentHub.tact` | state | empty | two-phase `ProposeWhitelistCollection` → `ExecuteWhitelistCollection` (+ `CancelWhitelistCollection`), 7-day `MERCHANT_WHITELIST_TIMELOCK_DELAY` (Issue #363) | sender = admin (multi-sig) on both phases; execute requires timelock elapsed | **T** (7 days) |
+| PP-18 | `account_states` | `MerchantPaymentHub.tact` | state | empty | **No production setter** — `SetAccountState` removed before mainnet (Issue #363, audit C-MPH-C1). State seeding now lives only in the test-only `MerchantPaymentHubHarness`; production states change exclusively through the `MerchantPaymentRequest` flow | **U** (owner-driven via payments; no admin write path) |
+| PP-19 | `account_balances` | `MerchantPaymentHub.tact` | state | empty | **No production setter** — `SetAccountBalance` removed before mainnet (Issue #363, audit C-MPH-C1, admin-mint backdoor). Balance seeding now lives only in the test-only `MerchantPaymentHubHarness`; production balances change only via atomic debit/credit inside `MerchantPaymentRequest` | **U** (owner-authorised payments only; no admin write path) |
+| PP-20 | `account_locks` | `MerchantPaymentHub.tact` | state | empty | `ApplyAccountLock` (replaces admin `SetAccountLock`, Issue #363) | sender = `account_locks_contract` ONLY (admin cannot write locks — invariant I3) | **G** (Account-Locks-gated) |
 
 ### 8.4 Recurring payments, multi-sig cards, cross-chain bridge
 
@@ -257,10 +257,10 @@ For every parameter classified **G** in §8 the table below records the proposal
 | PP-8 — TransparencyRegistry snapshot pointer | `RISK_DISCLOSURE` (3) | default (23) | 48 h | Indexer multi-sig (`B2-mainnet/multisig.indexer.json`) |
 | PP-13 — PaymentHub whitelisted collections | `ROADMAP_SIGNAL` (0) | **44 (supermajority of voters needed; 20% of 222)** | 48 h | PaymentHub admin multi-sig |
 | PP-14 — PaymentHub account initialisation | `ROADMAP_SIGNAL` (0) | default (23) | 48 h | PaymentHub admin multi-sig |
-| PP-17 — MerchantPaymentHub whitelisted collections | `ROADMAP_SIGNAL` (0) | **44** | 48 h | MerchantPaymentHub admin multi-sig |
-| PP-18 — Merchant account state | `INTEGRATION_RECOMMENDATION` (1) | default (23) | 48 h | MerchantPaymentHub admin multi-sig |
-| PP-19 — Merchant account balance (initial) | `INTEGRATION_RECOMMENDATION` (1) | **44** | 48 h | MerchantPaymentHub admin multi-sig |
-| PP-20 — Merchant account lock | `RISK_DISCLOSURE` (3) | default (23) | **24 h** (incident response — see [`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §4) | MerchantPaymentHub admin multi-sig |
+| PP-17 — MerchantPaymentHub whitelisted collections | `ROADMAP_SIGNAL` (0) | **44** | 48 h + on-chain 7-day timelock (Issue #363) | MerchantPaymentHub admin multi-sig (two-phase propose/execute) |
+| ~~PP-18 — Merchant account state~~ | n/a | n/a | n/a | **Removed from production (Issue #363)** — no governance path; `SetAccountState` exists only in the test-only harness |
+| ~~PP-19 — Merchant account balance (initial)~~ | n/a | n/a | n/a | **Removed from production (Issue #363)** — no governance path; `SetAccountBalance` exists only in the test-only harness |
+| PP-20 — Merchant account lock | `RISK_DISCLOSURE` (3) | default (23) | **24 h** (incident response — see [`INCIDENT_RESPONSE.md`](./INCIDENT_RESPONSE.md) §4) | Account Locks contract via `ApplyAccountLock` (Issue #363 — admin multi-sig drives the risk authority, not a direct hub write) |
 | PP-26 — CrossChainBridge relayer set | `INTEGRATION_RECOMMENDATION` (1) | **44** | 48 h | Bridge admin multi-sig |
 | PP-32 — PublicCollateralLookup wiring | `INTEGRATION_RECOMMENDATION` (1) | default (23) | 48 h | Lookup admin (multi-sig) |
 | PP-34 — NFTAccountResolver wiring | `INTEGRATION_RECOMMENDATION` (1) | default (23) | 48 h | Resolver admin (multi-sig); blocked on [#41](https://github.com/xlabtg/tonbankcard-protocol/issues/41) |

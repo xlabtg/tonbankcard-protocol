@@ -159,6 +159,45 @@ describe('CONTRACTS-LOW I-1: deployable contracts exclude test-only deployer-gat
   });
 });
 
+describe('Issue #363: MerchantPaymentHub ships without test-only bootstrap handlers', () => {
+  const PRODUCTION = 'contracts/MerchantPaymentHub.tact';
+  const HARNESS = 'contracts/merchant-hub/test/MerchantPaymentHubHarness.tact';
+  // The handlers removed from the deployable production contract before mainnet.
+  // `SetAccountState` / `SetAccountBalance` were admin-mint / admin-register
+  // backdoors (audit C-MPH-C1 / C-MPH-H1); `SetAccountLock` was replaced by the
+  // Account-Locks-contract-gated `ApplyAccountLock`.
+  const TEST_ONLY_HANDLERS = [
+    'receive(msg: SetAccountState)',
+    'receive(msg: SetAccountBalance)',
+    'receive(msg: SetAccountLock)',
+  ];
+
+  it('keeps MerchantPaymentHub in the deployable map and the harness out of it', () => {
+    const manifest = read(MANIFEST);
+    const deployable = extractLiteral(manifest, 'const DEPLOYABLE_CONTRACTS', '{', '}');
+    expect(deployable).toContain(PRODUCTION);
+    expect(deployable).not.toContain(HARNESS);
+
+    const nonProduction = extractLiteral(manifest, 'const NON_PRODUCTION_STUBS', '[', ']');
+    expect(nonProduction).toContain(HARNESS);
+  });
+
+  it('removes every test-only bootstrap handler from the production contract', () => {
+    const source = read(PRODUCTION);
+    for (const handler of TEST_ONLY_HANDLERS) {
+      expect(source).not.toContain(handler);
+    }
+    // The deployer-gated test-only require message must not survive either.
+    expect(source).not.toContain('(test-only)');
+  });
+
+  it('keeps the bootstrap handlers exclusively in the non-deployable harness', () => {
+    const harness = read(HARNESS);
+    expect(harness).toContain('receive(msg: SetAccountState)');
+    expect(harness).toContain('receive(msg: SetAccountBalance)');
+  });
+});
+
 describe('CONTRACTS-H3: payment-hub.fc keeps the 0xDEAD deploy blocker', () => {
   const source = read('contracts/payments/payment-hub.fc');
 
