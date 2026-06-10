@@ -219,13 +219,28 @@ the build if any of the removed handlers reappears in the production source.
 **Lines:** 370
 **Status:** Implemented, not yet deployed to mainnet
 
-**Messages:** `SignalCollateralRequest`, `UpdateCollateralSignalRequest`, `ReleaseCollateralSignalRequest`.
+**Messages:** `SignalCollateralRequest`, `UpdateCollateralSignalRequest`, `ReleaseCollateralSignalRequest`; `ResolveNFTOwner` (resolver-only ownership registration, Issue #364).
 
 **Signal states:** `NONE(0)`, `ACTIVE(1)`, `WARNING(2)`, `RELEASED(3)`.
 
 **Design principle:** Pure signaling. This contract never custodies, locks, seizes, or liquidates any assets. It records signals that external lending protocols can query.
 
-**Known pre-production issue:** `RegisterNFTOwner` message (lines 355–358) has no access control. Anyone can register any NFT owner mapping. This must be restricted before deployment.
+**Pre-production hardening (Issue #364 — RESOLVED):** the former test-only
+`RegisterNFTOwner` message — gated only by the deployer recorded at `init()`
+(audit X-1 / cross-cutting test backdoor) — has been **removed from the deployable
+production contract**. NFT ownership is now bound exclusively by the trusted
+on-chain NFT Account Resolver:
+- The contract stores an immutable `nft_resolver` address, set once at
+  `init(nft_resolver)` and never mutated.
+- Ownership is registered only via `receive(msg: ResolveNFTOwner)`, which requires
+  `sender() == self.nft_resolver` (`"Unauthorized: only NFT resolver"`). The
+  deployer can no longer unilaterally register ownership (invariant I3 — No Admin
+  Control).
+- The binding stays write-once (CONTRACTS-M1 / #279):
+  `require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered")`.
+- A CI regression guard (`contracts/payment-hub/non-production-stubs.spec.ts`,
+  Issue #364) plus on-chain Sandbox tests (`contracts/collateral-signal/`) block
+  reintroduction of any deployer-gated ownership path.
 
 #### 2.1.9 Public Collateral Lookup — `contracts/collateral-lookup/`
 
@@ -553,7 +568,7 @@ This section defines the adversary classes the protocol must defend against. Eac
 | MerchantPaymentHub.tact | `SetAccountState` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
 | MerchantPaymentHub.tact | `SetAccountBalance` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
 | MerchantPaymentHub.tact | `ApplyAccountLock` (replaces `SetAccountLock`, Issue #363) | `account_locks_contract` | Yes ✅ |
-| CollateralSignal.tact | `RegisterNFTOwner` | None | **No** |
+| CollateralSignal.tact | `ResolveNFTOwner` (replaces `RegisterNFTOwner`, Issue #364) | `nft_resolver` (immutable on-chain NFT Account Resolver) | Yes ✅ |
 | TransparencyRegistry.tact | `RecordProposal` | None | **No** |
 | TransparencyRegistry.tact | `RecordVotingResult` | None | **No** |
 | TransparencyRegistry.tact | `RecordSnapshot` | None | **No** |
@@ -592,10 +607,10 @@ This section defines the adversary classes the protocol must defend against. Eac
 
 **Analysis:**
 - The Collateral Signal Contract is purely advisory. It records signals but does not custody or enforce collateral.
-- If an attacker registers false NFT ownership (via unprotected `RegisterNFTOwner`), they could create fake collateral signals.
+- An attacker can no longer register false NFT ownership: the ungated `RegisterNFTOwner` backdoor was removed (Issue #364). Ownership is bound only by the trusted on-chain NFT Account Resolver via the `nft_resolver`-gated `ResolveNFTOwner`, so only the genuine NFT owner can create a signal.
 - External lending protocols (CoinRabbit) must independently verify collateral on-chain. The protocol documentation states this requirement.
 
-**Residual risk:** MEDIUM. False collateral signals could mislead external lending protocols that do not perform independent verification.
+**Residual risk:** LOW. With ownership bound by the trusted resolver (Issue #364), only the genuine NFT owner can signal; external lending protocols are still expected to perform independent on-chain verification.
 
 #### 4.2.3 Fee Manipulation
 
@@ -928,7 +943,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Overflow/underflow** (4.1.3) | Payment Hub, Merchant Hub | TVM uses 257-bit integers; balance checks before debit (MerchantPaymentHub.tact:128); `load_coins()` uses VarUInteger16 | LOW — 257-bit arithmetic eliminates practical overflow |
 | **Invalid state transitions** (4.1.4) | Account State Machine | Explicit transition rules; `FROZEN` and `COLLATERAL_LOCKED` have no exit path (blocked by design until mechanism is built) | MEDIUM — Frozen accounts cannot be unfrozen until DAO mechanism is implemented |
 | **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`) removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `ApplyAccountLock`, accepted ONLY from `account_locks_contract` (Issue #363) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
-| **Access control bypass** (4.1.5) | CollateralSignal.tact | `RegisterNFTOwner` must have access control added | HIGH (pre-production) — Anyone can register any NFT owner |
+| **Access control bypass** (4.1.5) | CollateralSignal.tact | Test-only `RegisterNFTOwner` removed from the production contract; ownership is registered ONLY via `ResolveNFTOwner`, accepted from the immutable `nft_resolver` (on-chain NFT Account Resolver), and remains write-once (CONTRACTS-M1) (Issue #364) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | TransparencyRegistry.tact | `RecordProposal`, `RecordVotingResult`, `RecordSnapshot` must have access control added | HIGH (pre-production) — Anyone can inject false records |
 | **Access control bypass** (4.1.5) | ProposalRegistry.tact | NFT ownership verification must be implemented for `SubmitProposal` and `CastVote` | HIGH (pre-production) — Anyone can submit/vote |
 
@@ -937,7 +952,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
 | **Liquidity draining** (4.2.1) | TBC/TON DEX pool | Pool is external (TONCO DEX); protocol does not depend on pool for core operations | LOW — Pool liquidity affects price discovery, not protocol function |
-| **Collateral misrepresentation** (4.2.2) | Collateral Signal | Contract is advisory only; external lenders must independently verify; `RegisterNFTOwner` access control must be added | MEDIUM — False signals possible until access control is added |
+| **Collateral misrepresentation** (4.2.2) | Collateral Signal | Contract is advisory only; external lenders must independently verify; ownership is bound only by the trusted `nft_resolver` via `ResolveNFTOwner` (Issue #364), so only the genuine NFT owner can signal | LOW — Ungated ownership backdoor removed; external lenders still expected to verify independently |
 | **Fee manipulation** (4.2.3) | Internal transfers | Zero-fee design eliminates fee manipulation | NEGLIGIBLE |
 | **Incentive exploitation** (4.2.4) | Governance | Non-executable proposals limit impact; 10% quorum provides accessibility; gas costs rate-limit spam | LOW — Non-executable governance limits damage |
 
@@ -1335,7 +1350,7 @@ This checklist enables an external auditor to systematically verify the protocol
 
 #### Collateral Signal (Tact: `CollateralSignal.tact`)
 
-- [ ] **CRITICAL: Verify `RegisterNFTOwner` has access control** — currently unprotected (lines 355–358)
+- [x] **RESOLVED (Issue #364): `RegisterNFTOwner` removed** — ownership is registered ONLY via `ResolveNFTOwner`, gated by the immutable `nft_resolver` (on-chain NFT Account Resolver), write-once (CONTRACTS-M1); the deployer can no longer register ownership (invariant I3)
 - [ ] Verify signal operations are non-custodial (no balance movement)
 - [ ] Verify ownership validation in `validateOwnership()`
 

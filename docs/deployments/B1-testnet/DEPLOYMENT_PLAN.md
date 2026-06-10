@@ -36,7 +36,7 @@ Contracts are deployed in dependency order so that each downstream contract rece
 3. AccountStateMachine         (depends on AccountLocks)
 4. PaymentHub                  (depends on AccountLocks, NFTAccountResolver, AccountStateMachine)
 5. MerchantPaymentHub          (depends on PaymentHub)
-6. CollateralSignal            (no dependencies)
+6. CollateralSignal            (depends on NFTAccountResolver — Issue #364)
 7. PublicCollateralLookup      (depends on CollateralSignal)
 8. ProposalRegistry            (no dependencies — governance group)
 9. SnapshotVerifier            (no dependencies — governance group)
@@ -59,7 +59,7 @@ Contracts are deployed in dependency order so that each downstream contract rece
 | 4 | `PaymentHub` | `admin` | `ADMIN_ADDRESS` env var — strictly limited to allow-listing NFT collections (no fund authority — I3) |
 | 5 | `MerchantPaymentHub` | `payment_hub` | Address from step 4 |
 | 5 | `MerchantPaymentHub` | `admin` | `ADMIN_ADDRESS` env var |
-| 6 | `CollateralSignal` | `admin` | `ADMIN_ADDRESS` env var |
+| 6 | `CollateralSignal` | `nft_resolver` | Address from step 2 (`NFTAccountResolver`) | Issue #364 — ownership is pushed only by the trusted resolver via `ResolveNFTOwner`. There is no `admin`/`deployer` write path (I3). |
 | 7 | `PublicCollateralLookup` | `collateral_signal` | Address from step 6 |
 | 8 | `ProposalRegistry` | `admin` | `ADMIN_ADDRESS` env var |
 | 9 | `SnapshotVerifier` | `admin` | `ADMIN_ADDRESS` env var |

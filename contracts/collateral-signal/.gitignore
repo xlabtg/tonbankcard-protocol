@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Lock files
+package-lock.json
+yarn.lock
+
+# Tact compilation output / generated wrappers
+dist/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local

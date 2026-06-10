@@ -70,7 +70,7 @@ Contracts must be deployed in this order (dependencies first):
 3. AccountStateMachine (depends on AccountLocks)
 4. PaymentHub        (depends on AccountLocks, NFTAccountResolver, AccountStateMachine)
 5. MerchantPaymentHub (depends on PaymentHub)
-6. CollateralSignal  (no dependencies)
+6. CollateralSignal  (depends on NFTAccountResolver — its init() takes the resolver address; Issue #364)
 7. PublicCollateralLookup (depends on CollateralSignal)
 ```
 

@@ -92,7 +92,7 @@ The following issues are documented and must be resolved before mainnet deployme
 | Issue | Component | Risk | Reference |
 |-------|-----------|------|-----------|
 | Test-only functions have no access control | `MerchantPaymentHub.tact` | HIGH | [THREAT_MODEL.md §4.1.5](THREAT_MODEL.md#415-access-control-bypass) |
-| `RegisterNFTOwner` has no access control | `CollateralSignal.tact` | HIGH | [THREAT_MODEL.md §4.1.5](THREAT_MODEL.md#415-access-control-bypass) |
+| ~~`RegisterNFTOwner` has no access control~~ — **RESOLVED (Issue #364):** handler removed; ownership registered only via the `nft_resolver`-gated `ResolveNFTOwner` | `CollateralSignal.tact` | ~~HIGH~~ | [THREAT_MODEL.md §4.1.5](THREAT_MODEL.md#415-access-control-bypass) |
 | TransparencyRegistry record messages unprotected | `TransparencyRegistry.tact` | HIGH | [THREAT_MODEL.md §4.1.5](THREAT_MODEL.md#415-access-control-bypass) |
 | Governance proposal/vote NFT ownership unverified | `ProposalRegistry.tact` | HIGH | [THREAT_MODEL.md §4.1.5](THREAT_MODEL.md#415-access-control-bypass) |
 | FunC Payment Hub missing lock check | `payment-hub.fc` | HIGH | [THREAT_MODEL.md §4.3.2](THREAT_MODEL.md#432-locked-account-bypass) |

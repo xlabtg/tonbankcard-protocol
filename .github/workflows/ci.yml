@@ -516,6 +516,24 @@ jobs:
         working-directory: contracts/merchant-hub
         run: npm test
 
+      # Issue #364: build the deployable CollateralSignal STANDALONE (proving it
+      # carries no deployer-gated test-only RegisterNFTOwner handler), then run the
+      # on-chain hardening specs that register NFT ownership only through the
+      # trusted resolver-gated ResolveNFTOwner path.
+      - name: Install collateral-signal dependencies
+        working-directory: contracts/collateral-signal
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build collateral-signal contract
+        working-directory: contracts/collateral-signal
+        run: npm run build
+
+      - name: Test collateral-signal contract specs (Issue #364)
+        working-directory: contracts/collateral-signal
+        run: npm test
+
   test-invariants:
     name: Test (Protocol Invariants)
     runs-on: ubuntu-latest
