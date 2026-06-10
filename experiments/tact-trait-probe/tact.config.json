@@ -1,0 +1,5 @@
+{
+  "projects": [
+    { "name": "Probe", "path": "./probe.tact", "output": "./dist", "options": { "debug": true, "external": true } }
+  ]
+}
