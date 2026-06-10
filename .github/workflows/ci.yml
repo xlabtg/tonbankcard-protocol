@@ -499,6 +499,23 @@ jobs:
         working-directory: contracts/key-collision
         run: npm test
 
+      # Issue #363: build the deployable MerchantPaymentHub STANDALONE (proving it
+      # carries no test-only bootstrap handlers) plus the non-deployable test
+      # harness, then run the on-chain hardening specs against the harness.
+      - name: Install merchant-hub dependencies
+        working-directory: contracts/merchant-hub
+        env:
+          HUSKY: '0'
+        run: npm install --ignore-scripts
+
+      - name: Build merchant-hub contracts (production + harness)
+        working-directory: contracts/merchant-hub
+        run: npm run build
+
+      - name: Test merchant-hub contract specs (Issue #363)
+        working-directory: contracts/merchant-hub
+        run: npm test
+
   test-invariants:
     name: Test (Protocol Invariants)
     runs-on: ubuntu-latest
