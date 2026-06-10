@@ -176,7 +176,16 @@ const MERCHANT_WHITELIST_TIMELOCK_DELAY: Int = 7 * 24 * 60 * 60;
 // specifiers. Each contract that uses this trait re-declares the same fields WITH
 // their serialization specifiers (e.g. `Int as uint32`). Keep the field lists in
 // `MerchantPaymentHub` and the harness in sync with this trait.
-trait MerchantPaymentHubBase with IAccountStateMachine, IAccountLocks {
+// NOTE (Tact trait model): this trait declares the account-state-machine and
+// account-locks accessors (getAccountState / getBalance / getLockState / ...) as
+// plain concrete members rather than `override`s of IAccountStateMachine /
+// IAccountLocks. Tact forbids `override` outside a contract and rejects a trait
+// re-implementing an abstract supertrait method, so an intermediate trait cannot
+// conform to those interfaces while also providing the shared implementation. The
+// accessors are kept here (single source of truth for both the production contract
+// and the test harness); the interface shapes are documented in
+// contracts/interfaces/IAccountStateMachine.tact and IAccountLocks.tact.
+trait MerchantPaymentHubBase {
 
     // ---- Storage (see serialization-annotated copies in the contracts) ----
 
@@ -313,7 +322,7 @@ trait MerchantPaymentHubBase with IAccountStateMachine, IAccountLocks {
     // ACCOUNT STATE MACHINE IMPLEMENTATION
     // ============================================
 
-    override get fun getAccountState(nft_address: Address): Int {
+    get fun getAccountState(nft_address: Address): Int {
         let state: Int? = self.account_states.get(nft_address);
         if (state == null) {
             return ACCOUNT_STATE_ACTIVE; // Default to ACTIVE for new accounts
@@ -321,7 +330,7 @@ trait MerchantPaymentHubBase with IAccountStateMachine, IAccountLocks {
         return state!!;
     }
 
-    override get fun getBalance(nft_address: Address): Int {
+    get fun getBalance(nft_address: Address): Int {
         let balance: Int? = self.account_balances.get(nft_address);
         if (balance == null) {
             return 0;
@@ -329,17 +338,17 @@ trait MerchantPaymentHubBase with IAccountStateMachine, IAccountLocks {
         return balance!!;
     }
 
-    override get fun accountExists(nft_address: Address): Bool {
+    get fun accountExists(nft_address: Address): Bool {
         return self.account_states.get(nft_address) != null;
     }
 
-    override fun debitBalance(nft_address: Address, amount: Int) {
+    fun debitBalance(nft_address: Address, amount: Int) {
         let current_balance: Int = self.getBalance(nft_address);
         require(current_balance >= amount, "Insufficient balance");
         self.account_balances.set(nft_address, current_balance - amount);
     }
 
-    override fun creditBalance(nft_address: Address, amount: Int) {
+    fun creditBalance(nft_address: Address, amount: Int) {
         let current_balance: Int = self.getBalance(nft_address);
         self.account_balances.set(nft_address, current_balance + amount);
     }
@@ -348,7 +357,7 @@ trait MerchantPaymentHubBase with IAccountStateMachine, IAccountLocks {
     // ACCOUNT LOCKS IMPLEMENTATION
     // ============================================
 
-    override get fun getLockState(nft_address: Address): LockState {
+    get fun getLockState(nft_address: Address): LockState {
         let lock_state: LockState? = self.account_locks.get(nft_address);
         if (lock_state == null) {
             return defaultLockState();
@@ -356,17 +365,17 @@ trait MerchantPaymentHubBase with IAccountStateMachine, IAccountLocks {
         return lock_state!!;
     }
 
-    override get fun isAccountLocked(nft_address: Address): Bool {
+    get fun isAccountLocked(nft_address: Address): Bool {
         let lock_state: LockState = self.getLockState(nft_address);
         return isLocked(lock_state);
     }
 
-    override get fun hasFraudLock(nft_address: Address): Bool {
+    get fun hasFraudLock(nft_address: Address): Bool {
         let lock_state: LockState = self.getLockState(nft_address);
         return lock_state.fraud_locked;
     }
 
-    override get fun hasCollateralLock(nft_address: Address): Bool {
+    get fun hasCollateralLock(nft_address: Address): Bool {
         let lock_state: LockState = self.getLockState(nft_address);
         return lock_state.collateral_locked;
     }

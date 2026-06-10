@@ -51,12 +51,17 @@ export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
  *   empty/addr_none owners so a dummy owner can never pass an ownership check.
  * - `PublicCollateralLookup.*` is a non-production collateral lookup because it
  *   does not yet query Account Locks state.
+ * - `MerchantPaymentHubHarness.tact` (Issue #363) is a TEST-ONLY harness that
+ *   re-adds the `SetAccountState` / `SetAccountBalance` bootstrap handlers removed
+ *   from the deployable `MerchantPaymentHub`. It exists solely for the Jest suite
+ *   and MUST NEVER be deployed.
  */
 export const NON_PRODUCTION_STUBS: string[] = [
   'contracts/payments/payment-hub.fc',
   'contracts/nft-resolver/nft_account_resolver.fc',
   'contracts/collateral-lookup/PublicCollateralLookup.tact',
   'contracts/collateral-lookup/public-collateral-lookup.fc',
+  'contracts/merchant-hub/test/MerchantPaymentHubHarness.tact',
 ];
 
 /**

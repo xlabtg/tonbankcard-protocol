@@ -35,7 +35,10 @@ Goals (see [Issue #129 (D3)](https://github.com/xlabtg/tonbankcard-protocol/issu
 |---|---|---|
 | Sender must be authorized admin | `Unauthorized: only admin` | `MerchantPaymentHub.tact` |
 | Account balance must cover the requested amount | `Insufficient balance` | `MerchantPaymentHub.tact` |
-| `SetAccountBalance` may only seed a zero balance | `SetAccountBalance: initial-only (existing balance must be zero)` | `MerchantPaymentHub.tact` |
+| Account lock changes accepted only from the Account Locks contract (Issue #363, replaces `SetAccountLock`) | `Unauthorized: only Account Locks contract` | `MerchantPaymentHub.tact` |
+| Collection whitelist can only be proposed/executed/cancelled by admin (Issue #363 — timelocked) | `Unauthorized: only admin` | `MerchantPaymentHub.tact` |
+| Whitelist must already be proposed before execute/cancel | `No pending collection whitelist` | `MerchantPaymentHub.tact` |
+| Whitelist timelock must have elapsed before execute | `Timelock not expired: wait 7 days` | `MerchantPaymentHub.tact` |
 | Admin transfer must already be proposed before execute | `No pending admin transfer` | `MerchantPaymentHub.tact` |
 | Only the proposed admin can execute the transfer | `Unauthorized: only proposed admin` | `MerchantPaymentHub.tact` |
 | Timelock must have elapsed before admin transfer is executable | `Timelock not expired: wait 7 days` | `MerchantPaymentHub.tact` |
