@@ -1,5 +1,6 @@
 // Collateral Signal Contract
 // Implementation of Issue #30 - Collateral Signal Contract (TON-Based, Non-Custodial)
+// Issue #364: Add access control to NFT ownership registration before mainnet
 //
 // PROTOCOL INVARIANTS (see docs/invariants.md):
 // - I1 (Non-Custodial): This contract NEVER custodies funds or initiates transfers
@@ -19,10 +20,23 @@
 // - Lenders do NOT trust the protocol
 // - Collateral existence is verified on-chain
 // - Enforcement happens off-protocol
+//
+// PRODUCTION HARDENING (Issue #364):
+// The previous test-only `RegisterNFTOwner` handler was gated only behind the
+// deployer address recorded at init() (audit finding HIGH / cross-cutting X-1).
+// That let the deployer unilaterally seed the authorisation map, so it MUST NOT
+// ship to mainnet. It has been REMOVED. NFT ownership is now registered ONLY by
+// the trusted on-chain NFT Account Resolver contract (`nft_resolver`, set
+// immutably at init) via `receive(msg: ResolveNFTOwner)` — directly analogous to
+// how MerchantPaymentHub (Issue #363) replaced the admin `SetAccountLock` handler
+// with the Account-Locks-contract-gated `ApplyAccountLock`. The deployer can no
+// longer register ownership, and the one-time write-once binding (CONTRACTS-M1)
+// is preserved. A CI regression guard
+// (`contracts/payment-hub/non-production-stubs.spec.ts`, Issue #364 block) fails
+// the build if the deployer-gated `RegisterNFTOwner` handler ever reappears.
 
 import "./types/CollateralState.tact";
 import "./interfaces/ICollateralSignal.tact";
-import "./interfaces/INFTResolver.tact";
 
 // ============================================
 // MESSAGE DEFINITIONS
@@ -105,15 +119,20 @@ contract CollateralSignal with ICollateralSignal {
     // Storage: NFT address => owner address (for ownership verification)
     nft_owners: map<Address, Address>;
 
-    // Deployer address — gate for the test-only RegisterNFTOwner handler.
-    // Recorded once at init() and never mutated. INVARIANT I3: deployer cannot
-    // affect collateral signal state, only seed test ownership entries.
-    deployer: Address;
+    // The trusted on-chain NFT Account Resolver contract authorised to register
+    // NFT ownership via ResolveNFTOwner. Set ONCE at init() and never mutated.
+    // INVARIANT I3 (No Admin Control): this address cannot move funds or change
+    // collateral signal state — it can only bind an NFT to its resolved owner
+    // (write-once). The deployer has NO ownership-registration path (Issue #364).
+    nft_resolver: Address;
 
-    init() {
+    // @param nft_resolver  the on-chain NFT Account Resolver contract whose
+    //                      resolved-owner callbacks (ResolveNFTOwner) this contract
+    //                      trusts. Immutable for the lifetime of the contract.
+    init(nft_resolver: Address) {
         self.collateral_signals = emptyMap();
         self.nft_owners = emptyMap();
-        self.deployer = sender();
+        self.nft_resolver = nft_resolver;
     }
 
     // ============================================
@@ -293,7 +312,8 @@ contract CollateralSignal with ICollateralSignal {
     // ============================================
 
     // Get the full collateral signal information for an NFT account
-    get fun getCollateralSignalInfo(nft_address: Address): CollateralSignalInfo {
+    // `override`: implements the abstract getter declared in trait ICollateralSignal.
+    override get fun getCollateralSignalInfo(nft_address: Address): CollateralSignalInfo {
         let info: CollateralSignalInfo? = self.collateral_signals.get(nft_address);
         if (info == null) {
             return defaultCollateralSignalInfo();
@@ -302,21 +322,30 @@ contract CollateralSignal with ICollateralSignal {
     }
 
     // Get the current collateral signal state for an NFT account
-    get fun getCollateralSignalState(nft_address: Address): Int {
+    // `override`: implements the abstract getter declared in trait ICollateralSignal.
+    override get fun getCollateralSignalState(nft_address: Address): Int {
         let info: CollateralSignalInfo = self.getCollateralSignalInfo(nft_address);
         return info.signal_state;
     }
 
     // Get the signaled collateral amount for an NFT account
-    get fun getSignaledCollateralAmount(nft_address: Address): Int {
+    // `override`: implements the abstract getter declared in trait ICollateralSignal.
+    override get fun getSignaledCollateralAmount(nft_address: Address): Int {
         let info: CollateralSignalInfo = self.getCollateralSignalInfo(nft_address);
         return info.collateral_amount_ton;
     }
 
     // Check if an NFT account has active collateral signaled
-    get fun hasActiveCollateralSignal(nft_address: Address): Bool {
+    // `override`: implements the abstract getter declared in trait ICollateralSignal.
+    override get fun hasActiveCollateralSignal(nft_address: Address): Bool {
         let info: CollateralSignalInfo = self.getCollateralSignalInfo(nft_address);
         return hasActiveSignal(info.signal_state);
+    }
+
+    // Expose the immutable NFT Account Resolver address so deploy/verify tooling
+    // can confirm the only authorised ownership-registration authority (Issue #364).
+    get fun getNFTResolver(): Address {
+        return self.nft_resolver;
     }
 
     // ============================================
@@ -351,32 +380,48 @@ contract CollateralSignal with ICollateralSignal {
     }
 
     // ============================================
-    // ADMIN FUNCTIONS (FOR TESTING ONLY)
+    // NFT OWNERSHIP REGISTRATION (NFT Account Resolver only)
     // ============================================
 
-    // WARNING: These functions MUST be removed before production deployment
-    // INVARIANT I3: These functions cannot affect collateral or fund movement
-    // They only register NFT ownership for testing purposes.
+    // Register the resolved owner of an NFT account (Issue #364).
     //
-    // Mitigation for audit finding C-CS / cross-cutting X-1: gate the handler
-    // behind the deployer address recorded at init(), so an arbitrary sender
-    // cannot overwrite the authorisation map. The handler is still test-only
-    // and MUST be removed (or moved behind a build flag) before mainnet.
-
-    receive(msg: RegisterNFTOwner) {
-        // Gate: only the deployer can seed test ownership.
-        require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
+    // INVARIANT I2 (NFT Authority) & I3 (No Admin Control): ownership is bound by
+    // the trusted on-chain NFT Account Resolver ONLY — never by the deployer or an
+    // arbitrary sender. The resolver verifies real NFT ownership outside this
+    // contract (synchronous cross-contract owner resolution is impossible on TON;
+    // see audit CONTRACTS-H3 / #260) and pushes the result here. This handler
+    // neither moves funds nor changes any collateral signal state.
+    //
+    // The binding is write-once (CONTRACTS-M1 / #279): once an NFT is bound to an
+    // owner it cannot be silently re-pointed, so even a buggy resolver cannot
+    // hijack an existing collateral signal.
+    receive(msg: ResolveNFTOwner) {
+        require(sender() == self.nft_resolver, "Unauthorized: only NFT resolver");
         require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
         self.nft_owners.set(msg.nft_address, msg.owner);
+
+        emit(NFTOwnerRegistered{
+            nft_address: msg.nft_address,
+            owner: msg.owner,
+            timestamp: now()
+        }.toCell());
     }
 }
 
 // ============================================
-// ADMIN MESSAGES (FOR TESTING)
+// NFT OWNERSHIP RESOLUTION MESSAGES
 // ============================================
 
-// Test-only: Register an NFT owner (for testing ownership validation)
-message RegisterNFTOwner {
+// Sent by the trusted NFT Account Resolver to bind an NFT account to its
+// resolved owner (Issue #364). Accepted ONLY from `nft_resolver`; write-once.
+message ResolveNFTOwner {
     nft_address: Address;
     owner: Address;
+}
+
+// Emitted (for indexers) when an NFT account is bound to its resolved owner.
+message NFTOwnerRegistered {
+    nft_address: Address;
+    owner: Address;
+    timestamp: Int as uint32;
 }
