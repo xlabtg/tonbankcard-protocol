@@ -286,7 +286,7 @@ on-chain NFT Account Resolver:
 **Lines:** 365
 **Status:** Implemented, not yet deployed to mainnet
 
-**Known pre-production issue:** No access control on `RecordProposal`, `RecordVotingResult`, `RecordSnapshot` messages. Anyone can inject false governance records. This must be restricted before deployment.
+**Sender authentication (Issue #365 — RESOLVED ✅):** All six data-ingestion handlers (`RecordProposal`, `RecordVotingResult`, `RecordSnapshot`, `RecordProtocolMetrics`, `RecordLockActivity`, `RecordParameterChange`) verify `sender()` against a dedicated authorized-writer address stored in contract state and **fail closed** until the deployer (governance multi-sig) configures the trusted writer for that data domain. Fake governance records can no longer be injected. See §4.1.5 and §4.5.4; regression coverage in `contracts/governance/TransparencyRegistry.spec.ts`.
 
 #### 2.1.13 Governance — Diamond Resolver (FunC) — `contracts/governance/diamond_resolver.fc`
 
@@ -479,7 +479,7 @@ This section defines the adversary classes the protocol must defend against. Eac
 - Submitting high volume of proposals to overwhelm governance participants (4.5.1).
 - Colluding to pass proposals that benefit a minority (4.5.2).
 - Manipulating snapshot timing to include/exclude specific voters (4.5.3).
-- Injecting false records into TransparencyRegistry (4.5.4) — currently possible due to missing access control.
+- Injecting false records into TransparencyRegistry (4.5.4) — mitigated by sender authentication (Issue #365 — RESOLVED ✅); only the configured per-domain writers may append records.
 
 **Structural defense:** Governance proposals are non-executable. Even if an attacker passes a malicious proposal, it has no on-chain effect. The proposal is advisory only.
 
@@ -569,13 +569,19 @@ This section defines the adversary classes the protocol must defend against. Eac
 | MerchantPaymentHub.tact | `SetAccountBalance` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
 | MerchantPaymentHub.tact | `ApplyAccountLock` (replaces `SetAccountLock`, Issue #363) | `account_locks_contract` | Yes ✅ |
 | CollateralSignal.tact | `ResolveNFTOwner` (replaces `RegisterNFTOwner`, Issue #364) | `nft_resolver` (immutable on-chain NFT Account Resolver) | Yes ✅ |
-| TransparencyRegistry.tact | `RecordProposal` | None | **No** |
-| TransparencyRegistry.tact | `RecordVotingResult` | None | **No** |
-| TransparencyRegistry.tact | `RecordSnapshot` | None | **No** |
+| TransparencyRegistry.tact | `RecordProposal` | `proposal_registry` writer (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
+| TransparencyRegistry.tact | `RecordVotingResult` | `proposal_registry` writer (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
+| TransparencyRegistry.tact | `RecordSnapshot` | `snapshot_verifier` writer (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
+| TransparencyRegistry.tact | `RecordProtocolMetrics` | `report_writer` (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
+| TransparencyRegistry.tact | `RecordLockActivity` | `report_writer` (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
+| TransparencyRegistry.tact | `RecordParameterChange` | `report_writer` (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
+| TransparencyRegistry.tact | `SetProposalRegistry` / `SetSnapshotVerifier` / `SetReportWriter` | `deployer` (governance multi-sig) | Yes ✅ (Issue #365) |
 | ProposalRegistry.tact | `SubmitProposal` | Diamond NFT owner (not verified) | **No** |
 | ProposalRegistry.tact | `CastVote` | Diamond NFT owner (not verified) | **No** |
 
 **Pre-production remediation required:** All "No" entries must either have access control added or the functions must be removed before mainnet deployment.
+
+**TransparencyRegistry sender authentication (Issue #365 — RESOLVED ✅):** Each of the six data-ingestion handlers now verifies `sender()` against a dedicated authorized-writer address held in contract state (`proposal_registry` → `RecordProposal`/`RecordVotingResult`; `snapshot_verifier` → `RecordSnapshot`; `report_writer` → the three E4 aggregate handlers). The writer slots start `null` and the handlers **fail closed** until the deployer (the governance multi-sig in production) configures them via the deployer-only `SetProposalRegistry` / `SetSnapshotVerifier` / `SetReportWriter` messages, so fake records cannot be injected even in the window between deployment and writer configuration. Writer reassignment is updatable (expected to be timelocked at the multi-sig layer). Covered by `contracts/governance/TransparencyRegistry.spec.ts` (unauthorized rejection, fail-closed, deployer-only configuration, cross-domain isolation, authorized writes).
 
 #### 4.1.6 Signature Validation Errors
 
@@ -746,9 +752,9 @@ throw_unless(error::account_locked, sender_can_send);
 **Analysis:**
 - The SnapshotVerifier has a permissive fallback: if no snapshot exists, ALL NFTs 1–222 are eligible.
 - An attacker could time a governance action to occur when no snapshot exists, ensuring all NFTs are eligible regardless of actual ownership at the relevant time.
-- Snapshot recording in TransparencyRegistry has no access control, meaning an attacker could record false snapshots.
+- Snapshot recording in TransparencyRegistry is now access-controlled (Issue #365): `RecordSnapshot` is accepted only from the configured `snapshot_verifier` writer and fails closed until that writer is set, so false snapshots can no longer be injected into the transparency layer.
 
-**Residual risk:** MEDIUM. The permissive fallback is a documented design choice. False snapshot injection must be prevented before deployment.
+**Residual risk:** MEDIUM. The permissive fallback is a documented design choice. False snapshot injection into TransparencyRegistry is RESOLVED ✅ (Issue #365).
 
 #### 4.5.3 Off-Chain Misinformation
 
@@ -766,11 +772,11 @@ throw_unless(error::account_locked, sender_can_send);
 **Applicable to:** TransparencyRegistry.
 
 **Analysis:**
-- `RecordProposal`, `RecordVotingResult`, and `RecordSnapshot` messages have no access control.
-- Anyone can inject false governance records into the TransparencyRegistry.
-- External observers relying on the TransparencyRegistry for governance data could be misled.
+- Issue #365 (RESOLVED ✅): all six data-ingestion handlers (`RecordProposal`, `RecordVotingResult`, `RecordSnapshot`, `RecordProtocolMetrics`, `RecordLockActivity`, `RecordParameterChange`) now verify `sender()` against a dedicated authorized-writer address stored in contract state.
+- The writer slots start `null` and the handlers **fail closed** — no record is accepted from any sender until the deployer (governance multi-sig) configures the trusted writer for that data domain, so false records cannot be injected even before the writers are wired up.
+- An attacker can therefore no longer inject false governance records; only the designated `proposal_registry` / `snapshot_verifier` / `report_writer` contracts can append data, each restricted to its own data domain.
 
-**Residual risk:** HIGH until access control is added. The authoritative governance data is in the ProposalRegistry, not the TransparencyRegistry, which limits the impact.
+**Residual risk:** LOW (RESOLVED ✅, Issue #365). Sender authentication is enforced on every record handler and is covered by regression tests in `contracts/governance/TransparencyRegistry.spec.ts`. The authoritative governance data remains in the ProposalRegistry; the TransparencyRegistry is an observation-only mirror.
 
 ### 4.6 Off-Chain Infrastructure Attacks
 
@@ -944,7 +950,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Invalid state transitions** (4.1.4) | Account State Machine | Explicit transition rules; `FROZEN` and `COLLATERAL_LOCKED` have no exit path (blocked by design until mechanism is built) | MEDIUM — Frozen accounts cannot be unfrozen until DAO mechanism is implemented |
 | **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`) removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `ApplyAccountLock`, accepted ONLY from `account_locks_contract` (Issue #363) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | CollateralSignal.tact | Test-only `RegisterNFTOwner` removed from the production contract; ownership is registered ONLY via `ResolveNFTOwner`, accepted from the immutable `nft_resolver` (on-chain NFT Account Resolver), and remains write-once (CONTRACTS-M1) (Issue #364) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
-| **Access control bypass** (4.1.5) | TransparencyRegistry.tact | `RecordProposal`, `RecordVotingResult`, `RecordSnapshot` must have access control added | HIGH (pre-production) — Anyone can inject false records |
+| **Access control bypass** (4.1.5) | TransparencyRegistry.tact | All six record handlers verify `sender()` against a deployer-configured per-domain authorized writer (`proposal_registry` / `snapshot_verifier` / `report_writer`); slots start `null` and fail closed; deployer-only `Set*` configuration messages (Issue #365) | RESOLVED ✅ (pre-mainnet) — covered by `TransparencyRegistry.spec.ts` |
 | **Access control bypass** (4.1.5) | ProposalRegistry.tact | NFT ownership verification must be implemented for `SubmitProposal` and `CastVote` | HIGH (pre-production) — Anyone can submit/vote |
 
 ### 6.2 Economic Threat Mitigations
@@ -980,9 +986,9 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
 | **Proposal flooding** (4.5.1) | ProposalRegistry | Gas costs provide economic rate limiting; non-executable proposals limit impact | LOW |
-| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | Permissive fallback is documented design choice; TransparencyRegistry access control must be added | MEDIUM — False snapshot injection possible |
+| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | Permissive fallback is documented design choice; TransparencyRegistry `RecordSnapshot` now restricted to the configured `snapshot_verifier` writer (Issue #365) | MEDIUM — Permissive fallback remains; false snapshot injection into TransparencyRegistry RESOLVED ✅ |
 | **Off-chain misinformation** (4.5.3) | Governance communication | On-chain proposal data is authoritative record | LOW for protocol; MEDIUM for social context |
-| **False record injection** (4.5.4) | TransparencyRegistry | **NOT MITIGATED** — No access control on record messages | **HIGH** (pre-production) — Must add access control |
+| **False record injection** (4.5.4) | TransparencyRegistry | **RESOLVED ✅ (Issue #365)** — every record handler authenticates `sender()` against a deployer-configured per-domain writer and fails closed until configured | LOW — Only the designated writers can append records; regression-tested |
 
 ### 6.6 Off-Chain Infrastructure Threat Mitigations
 
@@ -1357,7 +1363,7 @@ This checklist enables an external auditor to systematically verify the protocol
 #### Governance Contracts
 
 - [ ] **CRITICAL: Verify `SubmitProposal` and `CastVote` verify Diamond NFT ownership** — currently unverified
-- [ ] **CRITICAL: Verify TransparencyRegistry record messages have access control** — currently unprotected
+- [x] **CRITICAL: Verify TransparencyRegistry record messages have access control** — RESOLVED ✅ (Issue #365): all six record handlers authenticate `sender()` against deployer-configured per-domain writers and fail closed; covered by `contracts/governance/TransparencyRegistry.spec.ts`
 - [ ] Verify ProposalRegistry double-vote prevention (composite key `proposal_id * 1000 + nft_id`)
 - [ ] Verify SnapshotVerifier permissive fallback behavior is acceptable
 - [ ] Confirm governance proposals are non-executable
