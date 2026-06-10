@@ -343,9 +343,19 @@ describe('Issue #367: payment-hub.fc reference integrates ownership, Account Loc
     it('ships the C-PHF-C1/C2/H1 integration tests the blocker removal depends on', () => {
       expect(fs.existsSync(path.join(REPO_ROOT, INTEGRATION_TEST))).toBe(true);
       const tests = read(INTEGRATION_TEST);
+      // The suite must reference all three findings...
       expect(tests).toContain('C-PHF-C1');
       expect(tests).toContain('C-PHF-C2');
       expect(tests).toContain('C-PHF-H1');
+      // ...and actually exercise the three hardened code paths, so the file
+      // cannot be gutted to comment-only stubs while still passing this gate.
+      expect(tests).toContain('#include "../payment-hub.fc";');
+      expect(tests).toContain('verify_nft_account(');       // C-PHF-C1 path
+      expect(tests).toContain('handle_apply_account_lock(');// C-PHF-C2 path
+      expect(tests).toContain('can_send(');                 // C-PHF-C2 gate
+      expect(tests).toContain('handle_internal_transfer('); // C-PHF-H1 path
+      expect(tests).toContain('get_balance(');              // C-PHF-H1 ledger
+      expect(tests).toContain('run_tests(');                // a runner ties them together
     });
   });
 });
