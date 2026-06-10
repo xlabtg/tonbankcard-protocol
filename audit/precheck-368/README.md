@@ -15,17 +15,17 @@ Each finding has a dedicated spec file under
 [`findings/`](./findings/) and a corresponding tracking issue with labels and a
 remediation stage so the team can implement step by step.
 
-| ID | Severity | Stage | Area | Title |
-|----|----------|-------|------|-------|
-| [PC-01](./findings/PC-01-snapshotverifier-unauthenticated-snapshot.md) | High | 1-critical | contracts/governance | SnapshotVerifier accepts unauthenticated `RegisterSnapshot` (forge eligibility roll) |
-| [PC-02](./findings/PC-02-paymenthub-initializeaccount-overwrite.md) | High | 1-critical | contracts/payments | `PaymentHub.InitializeAccount` overwrites owner/balance → fund drain |
-| [PC-03](./findings/PC-03-nowpayments-hmac-placeholder.md) | High | 1-critical | backend/adapters | NOWPayments adapter verifies callbacks with a placeholder HMAC (forgeable IPN) |
-| [PC-04](./findings/PC-04-idempotency-key-nested-metadata-collision.md) | Medium | 3-medium | api | `generateIdempotencyKey` ignores nested `metadata` → key collisions |
-| [PC-05](./findings/PC-05-paymentwidget-query-injection.md) | Medium | 3-medium | sdk | `PaymentWidget` deep link built from raw, unencoded inputs (query injection) |
-| [PC-06](./findings/PC-06-canonical-json-cross-sdk-divergence.md) | Medium | 3-medium | sdk | Cross-SDK canonical JSON diverges on U+2028/U+2029 & float formatting |
-| [PC-07](./findings/PC-07-redis-exposed-without-auth.md) | Medium | 3-medium | devops | Redis published on all interfaces without auth (prod & sandbox compose) |
-| [PC-08](./findings/PC-08-dockerfile-npm-install-ignores-lockfile.md) | Medium | 3-medium | devops | API & indexer Dockerfiles `npm install` ignore the committed lockfile |
-| [PC-09](./findings/PC-09-mobile-client-hardening.md) | Low | 4-low | frontend/mobile | Mobile client hardening (URL encoding, HTTPS check, Android `autoVerify`) |
+| ID | Issue | Severity | Stage | Area | Title |
+|----|-------|----------|-------|------|-------|
+| [PC-01](./findings/PC-01-snapshotverifier-unauthenticated-snapshot.md) | #370 | High | 1-critical | contracts/governance | SnapshotVerifier accepts unauthenticated `RegisterSnapshot` (forge eligibility roll) |
+| [PC-02](./findings/PC-02-paymenthub-initializeaccount-overwrite.md) | #371 | High | 1-critical | contracts/payments | `PaymentHub.InitializeAccount` overwrites owner/balance → fund drain |
+| [PC-03](./findings/PC-03-nowpayments-hmac-placeholder.md) | #372 | High | 1-critical | backend/adapters | NOWPayments adapter verifies callbacks with a placeholder HMAC (forgeable IPN) |
+| [PC-04](./findings/PC-04-idempotency-key-nested-metadata-collision.md) | #373 | Medium | 3-medium | api | `generateIdempotencyKey` ignores nested `metadata` → key collisions |
+| [PC-05](./findings/PC-05-paymentwidget-query-injection.md) | #374 | Medium | 3-medium | sdk | `PaymentWidget` deep link built from raw, unencoded inputs (query injection) |
+| [PC-06](./findings/PC-06-canonical-json-cross-sdk-divergence.md) | #375 | Medium | 3-medium | sdk | Cross-SDK canonical JSON diverges on U+2028/U+2029 & float formatting |
+| [PC-07](./findings/PC-07-redis-exposed-without-auth.md) | #376 | Medium | 3-medium | devops | Redis published on all interfaces without auth (prod & sandbox compose) |
+| [PC-08](./findings/PC-08-dockerfile-npm-install-ignores-lockfile.md) | #377 | Medium | 3-medium | devops | API & indexer Dockerfiles `npm install` ignore the committed lockfile |
+| [PC-09](./findings/PC-09-mobile-client-hardening.md) | #378 | Low | 4-low | frontend/mobile | Mobile client hardening (URL encoding, HTTPS check, Android `autoVerify`) |
 
 Severity legend follows the existing audit taxonomy; stages map to the
 `stage:1-critical` … `stage:4-low` labels.
