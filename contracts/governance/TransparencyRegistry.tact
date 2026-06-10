@@ -22,15 +22,43 @@
 // - All data is historical/archival only
 // - No mechanism exists to execute governance outcomes
 // - Transparency layer cannot gate any protocol operations
+//
+// SENDER AUTHENTICATION (Issue #365 - HIGH, blocks mainnet):
+// - The data-ingestion handlers (RecordProposal, RecordVotingResult,
+//   RecordSnapshot, RecordProtocolMetrics, RecordLockActivity,
+//   RecordParameterChange) accept records ONLY from the authorized writer
+//   contract designated for each data domain. Until a writer is configured,
+//   the matching handler fails closed (rejects every record), so fake
+//   transparency data can never be injected — not even before the real
+//   writers are wired up.
+// - The `deployer` is a CONFIGURATION authority only: it designates which
+//   on-chain contracts may append records. It CANNOT write records itself,
+//   cannot mutate or delete archived data, and cannot gate any protocol
+//   operation. Granting it the ability to name the trusted writers does not
+//   give it protocol authority — the "observation, not control" invariant
+//   above is preserved. In production the deployer MUST be the governance
+//   multi-sig and any writer reassignment is expected to be timelocked at
+//   that multi-sig layer (see docs/governance/TRANSPARENCY_REPORTING.md SR-1).
 
+import "@stdlib/deploy";
 import "./types/TransparencyTypes.tact";
 import "./interfaces/ITransparencyRegistry.tact";
+
+// ============================================
+// AUTHORIZED-WRITER ROLE IDS
+// (used only in the AuthorizedWriterUpdated event so off-chain indexers
+//  can tell which writer slot was (re)assigned)
+// ============================================
+
+const WRITER_ROLE_PROPOSAL_REGISTRY: Int = 0;
+const WRITER_ROLE_SNAPSHOT_VERIFIER: Int = 1;
+const WRITER_ROLE_REPORT_WRITER: Int = 2;
 
 // ============================================
 // TRANSPARENCY REGISTRY CONTRACT
 // ============================================
 
-contract TransparencyRegistry with ITransparencyRegistry {
+contract TransparencyRegistry with ITransparencyRegistry, Deployable {
 
     // ========================================
     // STORAGE
@@ -60,6 +88,27 @@ contract TransparencyRegistry with ITransparencyRegistry {
 
     // Quorum threshold (configurable at init)
     quorum_threshold: Int as uint16;
+
+    // ========================================
+    // SENDER AUTHENTICATION STATE (Issue #365)
+    //
+    // `deployer` is the configuration authority captured at init() (the
+    // address that deployed the contract). It can ONLY (re)assign the
+    // authorized writer addresses below — it can never write records or
+    // alter archived data. In production it is the governance multi-sig.
+    //
+    // Each authorized-writer slot starts null so that the matching
+    // record handler fails closed until a real writer is configured:
+    //   - proposal_registry -> RecordProposal, RecordVotingResult
+    //   - snapshot_verifier -> RecordSnapshot
+    //   - report_writer     -> RecordProtocolMetrics, RecordLockActivity,
+    //                          RecordParameterChange
+    // ========================================
+
+    deployer: Address;
+    proposal_registry: Address?;
+    snapshot_verifier: Address?;
+    report_writer: Address?;
 
     // ========================================
     // E4 AGGREGATE CHECKSUM STORAGE
@@ -118,6 +167,14 @@ contract TransparencyRegistry with ITransparencyRegistry {
         // Default quorum: >50% of 222 = 112 votes
         self.quorum_threshold = quorum_threshold;
 
+        // Sender authentication (Issue #365): record the deployer as the
+        // configuration authority and start every writer slot unset so all
+        // ingestion handlers fail closed until the trusted writers are wired up.
+        self.deployer = sender();
+        self.proposal_registry = null;
+        self.snapshot_verifier = null;
+        self.report_writer = null;
+
         // E4 aggregate checksums (zero-initialized until first record)
         self.latest_metrics_period_start = 0;
         self.latest_metrics_period_end = 0;
@@ -142,22 +199,95 @@ contract TransparencyRegistry with ITransparencyRegistry {
     }
 
     // ========================================
+    // SENDER AUTHENTICATION — CONFIGURATION (Issue #365)
+    //
+    // Deployer-only setters that designate which on-chain contract may
+    // append each class of record. They are intentionally UPDATABLE (no
+    // "already set" guard) so a writer can be rotated if a sibling contract
+    // is redeployed — the acceptance criteria require the deployer to be
+    // able to *update* authorized senders. In production the deployer is the
+    // governance multi-sig and any rotation is timelocked at that layer
+    // (docs/governance/TRANSPARENCY_REPORTING.md SR-1).
+    // ========================================
+
+    // Designate the contract allowed to append proposal/voting records
+    // (RecordProposal, RecordVotingResult). Mirrors the ProposalRegistry
+    // deployer-config pattern (ProposalRegistry.tact SetOwnerResolver).
+    receive(msg: SetProposalRegistry) {
+        require(sender() == self.deployer, "Unauthorized: only deployer can configure writers");
+        self.proposal_registry = msg.registry;
+        emit(AuthorizedWriterUpdated{
+            writer_role: WRITER_ROLE_PROPOSAL_REGISTRY,
+            writer: msg.registry,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // Designate the contract allowed to append snapshot records (RecordSnapshot)
+    receive(msg: SetSnapshotVerifier) {
+        require(sender() == self.deployer, "Unauthorized: only deployer can configure writers");
+        self.snapshot_verifier = msg.verifier;
+        emit(AuthorizedWriterUpdated{
+            writer_role: WRITER_ROLE_SNAPSHOT_VERIFIER,
+            writer: msg.verifier,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // Designate the contract allowed to append the E4 monthly aggregates
+    // (RecordProtocolMetrics, RecordLockActivity, RecordParameterChange)
+    receive(msg: SetReportWriter) {
+        require(sender() == self.deployer, "Unauthorized: only deployer can configure writers");
+        self.report_writer = msg.writer;
+        emit(AuthorizedWriterUpdated{
+            writer_role: WRITER_ROLE_REPORT_WRITER,
+            writer: msg.writer,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // ========================================
+    // SENDER AUTHENTICATION — GUARDS (Issue #365)
+    //
+    // Fail-closed: if the writer slot is still null (not yet configured)
+    // the record is rejected, so fake transparency data can never be
+    // injected — not even in the window between deployment and writer
+    // configuration. Once configured, only the exact authorized address
+    // may append records.
+    // ========================================
+
+    fun requireProposalRegistryWriter() {
+        require(self.proposal_registry != null, "Unauthorized: ProposalRegistry writer not configured");
+        require(sender() == self.proposal_registry!!, "Unauthorized: only ProposalRegistry");
+    }
+
+    fun requireSnapshotVerifierWriter() {
+        require(self.snapshot_verifier != null, "Unauthorized: SnapshotVerifier writer not configured");
+        require(sender() == self.snapshot_verifier!!, "Unauthorized: only SnapshotVerifier");
+    }
+
+    fun requireReportWriter() {
+        require(self.report_writer != null, "Unauthorized: report writer not configured");
+        require(sender() == self.report_writer!!, "Unauthorized: only report writer");
+    }
+
+    // ========================================
     // PROPOSAL ARCHIVE GETTERS
     // ========================================
 
     // Get proposal summary by ID
     // Returns null if proposal does not exist
-    get fun getProposalSummary(proposal_id: Int): ProposalSummary? {
+    override get fun getProposalSummary(proposal_id: Int): ProposalSummary? {
         return self.proposal_summaries.get(proposal_id);
     }
 
     // Get total number of proposals
-    get fun getProposalCount(): Int {
+    override get fun getProposalCount(): Int {
         return self.total_proposals;
     }
 
     // Get count of proposals in a specific category
-    get fun getProposalsByCategory(category: Int): Int {
+    override get fun getProposalsByCategory(category: Int): Int {
         let count: Int? = self.category_counts.get(category);
         if (count == null) {
             return 0;
@@ -169,7 +299,7 @@ contract TransparencyRegistry with ITransparencyRegistry {
     // Returns: OUTCOME_PENDING (0), OUTCOME_ACCEPTED (1),
     //          OUTCOME_REJECTED (2), OUTCOME_NO_QUORUM (3)
     // Returns -1 if proposal does not exist
-    get fun getProposalOutcome(proposal_id: Int): Int {
+    override get fun getProposalOutcome(proposal_id: Int): Int {
         let summary: ProposalSummary? = self.proposal_summaries.get(proposal_id);
         if (summary == null) {
             return -1;
@@ -183,17 +313,17 @@ contract TransparencyRegistry with ITransparencyRegistry {
 
     // Get voting summary for a proposal
     // Returns aggregated stats only - NO individual voter data
-    get fun getVotingSummary(proposal_id: Int): VotingSummary? {
+    override get fun getVotingSummary(proposal_id: Int): VotingSummary? {
         return self.voting_summaries.get(proposal_id);
     }
 
     // Get quorum threshold (minimum votes required)
-    get fun getQuorumThreshold(): Int {
+    override get fun getQuorumThreshold(): Int {
         return self.quorum_threshold;
     }
 
     // Get total votes cast for a proposal (aggregate only)
-    get fun getTotalVotesCast(proposal_id: Int): Int {
+    override get fun getTotalVotesCast(proposal_id: Int): Int {
         let summary: VotingSummary? = self.voting_summaries.get(proposal_id);
         if (summary == null) {
             return 0;
@@ -206,7 +336,7 @@ contract TransparencyRegistry with ITransparencyRegistry {
     // ========================================
 
     // Get current governance asset snapshot
-    get fun getGovernanceAssetSnapshot(): AssetSnapshot {
+    override get fun getGovernanceAssetSnapshot(): AssetSnapshot {
         return AssetSnapshot{
             total_supply: GOVERNANCE_ASSET_TOTAL_SUPPLY,
             snapshot_block_height: self.latest_snapshot_block,
@@ -215,17 +345,17 @@ contract TransparencyRegistry with ITransparencyRegistry {
     }
 
     // Get total governance supply (fixed: 222)
-    get fun getTotalGovernanceSupply(): Int {
+    override get fun getTotalGovernanceSupply(): Int {
         return GOVERNANCE_ASSET_TOTAL_SUPPLY;
     }
 
     // Get latest snapshot block height
-    get fun getLatestSnapshotBlock(): Int {
+    override get fun getLatestSnapshotBlock(): Int {
         return self.latest_snapshot_block;
     }
 
     // Get snapshot hash for external verification
-    get fun getSnapshotHash(): Int {
+    override get fun getSnapshotHash(): Int {
         return self.latest_snapshot_hash;
     }
 
@@ -234,7 +364,7 @@ contract TransparencyRegistry with ITransparencyRegistry {
     // ========================================
 
     // Get overall governance statistics
-    get fun getGovernanceStats(): GovernanceStats {
+    override get fun getGovernanceStats(): GovernanceStats {
         let pending: Int = self.total_proposals -
             self.proposals_accepted -
             self.proposals_rejected -
@@ -250,7 +380,7 @@ contract TransparencyRegistry with ITransparencyRegistry {
     }
 
     // Get statistics for a specific category
-    get fun getCategoryStats(category: Int): CategoryStats {
+    override get fun getCategoryStats(category: Int): CategoryStats {
         let count: Int = self.getProposalsByCategory(category);
         return CategoryStats{
             category: category,
@@ -266,6 +396,9 @@ contract TransparencyRegistry with ITransparencyRegistry {
     // This is the ONLY way data enters the transparency layer
     // Note: This is append-only - records cannot be modified after creation
     receive(msg: RecordProposal) {
+        // Sender authentication (Issue #365): only the configured ProposalRegistry
+        self.requireProposalRegistryWriter();
+
         // Validate category
         require(isValidCategory(msg.category), "Invalid category");
 
@@ -308,6 +441,9 @@ contract TransparencyRegistry with ITransparencyRegistry {
     // Receive voting result update
     // Updates aggregated voting data only - no individual votes stored
     receive(msg: RecordVotingResult) {
+        // Sender authentication (Issue #365): only the configured ProposalRegistry
+        self.requireProposalRegistryWriter();
+
         // Validate proposal exists
         let summary: ProposalSummary? = self.proposal_summaries.get(msg.proposal_id);
         require(summary != null, "Proposal not found");
@@ -357,6 +493,9 @@ contract TransparencyRegistry with ITransparencyRegistry {
 
     // Receive snapshot update
     receive(msg: RecordSnapshot) {
+        // Sender authentication (Issue #365): only the configured SnapshotVerifier
+        self.requireSnapshotVerifierWriter();
+
         self.latest_snapshot_block = msg.block_height;
         self.latest_snapshot_hash = msg.snapshot_hash;
 
@@ -380,6 +519,9 @@ contract TransparencyRegistry with ITransparencyRegistry {
     // ========================================
 
     receive(msg: RecordProtocolMetrics) {
+        // Sender authentication (Issue #365): only the configured report writer
+        self.requireReportWriter();
+
         // Period must be well-formed (end strictly after start) and
         // monotonically non-decreasing relative to the previous period
         // end (append-only timeline).
@@ -404,6 +546,9 @@ contract TransparencyRegistry with ITransparencyRegistry {
     }
 
     receive(msg: RecordLockActivity) {
+        // Sender authentication (Issue #365): only the configured report writer
+        self.requireReportWriter();
+
         require(msg.period_end > msg.period_start, "Invalid lock period");
         require(msg.period_end >= self.latest_lock_period_end, "Lock period regression");
         // Appeal book-keeping integrity: filed >= overturned + upheld
@@ -433,6 +578,9 @@ contract TransparencyRegistry with ITransparencyRegistry {
     }
 
     receive(msg: RecordParameterChange) {
+        // Sender authentication (Issue #365): only the configured report writer
+        self.requireReportWriter();
+
         // Effective block must be monotonic (append-only audit trail)
         require(msg.effective_block >= self.latest_parameter_effective_block, "Parameter effective block regression");
         // Hash must actually differ - rejecting no-op records prevents
@@ -456,7 +604,7 @@ contract TransparencyRegistry with ITransparencyRegistry {
     // E4 AGGREGATE GETTERS
     // ========================================
 
-    get fun getLatestProtocolMetrics(): ProtocolMetricsCheckpoint {
+    override get fun getLatestProtocolMetrics(): ProtocolMetricsCheckpoint {
         return ProtocolMetricsCheckpoint{
             period_start: self.latest_metrics_period_start,
             period_end: self.latest_metrics_period_end,
@@ -466,7 +614,7 @@ contract TransparencyRegistry with ITransparencyRegistry {
         };
     }
 
-    get fun getLatestLockActivity(): LockActivityCheckpoint {
+    override get fun getLatestLockActivity(): LockActivityCheckpoint {
         return LockActivityCheckpoint{
             period_start: self.latest_lock_period_start,
             period_end: self.latest_lock_period_end,
@@ -479,19 +627,47 @@ contract TransparencyRegistry with ITransparencyRegistry {
         };
     }
 
-    get fun getParameterChangeSummary(): ParameterChangeSummary {
+    override get fun getParameterChangeSummary(): ParameterChangeSummary {
         return ParameterChangeSummary{
             total_parameter_changes: self.total_parameter_changes,
             latest_effective_block: self.latest_parameter_effective_block
         };
     }
 
-    get fun getMetricPeriodsCount(): Int {
+    override get fun getMetricPeriodsCount(): Int {
         return self.total_metric_periods;
     }
 
-    get fun getLockPeriodsCount(): Int {
+    override get fun getLockPeriodsCount(): Int {
         return self.total_lock_periods;
+    }
+
+    // ========================================
+    // SENDER AUTHENTICATION GETTERS (Issue #365)
+    //
+    // Read-only visibility into the configuration authority and the
+    // currently-authorized writers. A null writer means that data domain
+    // still fails closed (no writer configured yet).
+    // ========================================
+
+    // Configuration authority captured at init (the deployer / governance multi-sig)
+    get fun getDeployer(): Address {
+        return self.deployer;
+    }
+
+    // Address allowed to append proposal/voting records (null until configured)
+    get fun getProposalRegistry(): Address? {
+        return self.proposal_registry;
+    }
+
+    // Address allowed to append snapshot records (null until configured)
+    get fun getSnapshotVerifier(): Address? {
+        return self.snapshot_verifier;
+    }
+
+    // Address allowed to append E4 monthly aggregates (null until configured)
+    get fun getReportWriter(): Address? {
+        return self.report_writer;
     }
 }
 
@@ -615,5 +791,44 @@ message ParameterChangeRecorded {
     old_value_hash: Int as uint256;
     new_value_hash: Int as uint256;
     effective_block: Int as uint64;
+    timestamp: Int as uint32;
+}
+
+// ============================================
+// SENDER AUTHENTICATION — CONFIGURATION MESSAGES (Issue #365)
+//
+// Deployer-only messages used to designate which on-chain contract is
+// authorized to append each class of record. These do NOT write any
+// transparency data themselves — they only (re)assign the trusted writer
+// slots (mirrors ProposalRegistry.SetOwnerResolver / SetSnapshotVerifier).
+// ============================================
+
+// Set/rotate the contract allowed to send RecordProposal & RecordVotingResult
+message SetProposalRegistry {
+    registry: Address;
+}
+
+// Set/rotate the contract allowed to send RecordSnapshot
+message SetSnapshotVerifier {
+    verifier: Address;
+}
+
+// Set/rotate the contract allowed to send the E4 monthly aggregates
+// (RecordProtocolMetrics, RecordLockActivity, RecordParameterChange)
+message SetReportWriter {
+    writer: Address;
+}
+
+// ============================================
+// SENDER AUTHENTICATION — EVENT (OUTBOUND, for indexing)
+//
+// Emitted whenever a writer slot is (re)assigned so off-chain indexers can
+// audit the authorization history. writer_role is one of the
+// WRITER_ROLE_* constants declared at the top of this file.
+// ============================================
+
+message AuthorizedWriterUpdated {
+    writer_role: Int as uint8;
+    writer: Address;
     timestamp: Int as uint32;
 }
