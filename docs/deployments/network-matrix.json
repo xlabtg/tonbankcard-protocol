@@ -162,7 +162,7 @@
       "status": "Implemented (Tact)",
       "sourceFilePaths": ["contracts/CollateralSignal.tact"],
       "deploymentStatus": "NOT DEPLOYED",
-      "notes": "Pure signaling layer, no custody or fund control"
+      "notes": "Pure signaling layer, no custody or fund control. init(nft_resolver) depends on NFTAccountResolver; ownership is registered only via the resolver-gated ResolveNFTOwner, write-once (Issue #364)."
     }
   ],
   "versionHistory": [

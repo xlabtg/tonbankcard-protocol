@@ -11,6 +11,20 @@ labels: ["bug","audit","type:contract","type:security","priority:medium","stage:
 
 `CollateralSignal.RegisterNFTOwner` writes the NFT-to-owner mapping directly without the write-once guard used by every other contract. This lets the deployer overwrite or re-bind an already-registered owner at any time.
 
+> **Resolution (Issue #364 — RESOLVED ✅):** the deployer-gated `RegisterNFTOwner`
+> handler was removed entirely as part of the pre-mainnet hardening for the
+> HIGH-severity backdoor (cross-cutting finding X-1). Ownership is now bound only
+> by the trusted on-chain NFT Account Resolver via `receive(msg: ResolveNFTOwner)`,
+> and the write-once guard this finding asked for is enforced there:
+> `require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered")`
+> (`contracts/CollateralSignal.tact`, immediately before the `set`). A second
+> registration for an already-bound NFT now reverts and the original binding is
+> preserved, so the owner mapping is one-time and immutable — consistent with the
+> rest of the protocol's write-once registration model. Covered by the on-chain
+> Sandbox suite (`contracts/collateral-signal/collateral-signal.spec.ts`) and the
+> CI regression guard (`contracts/payment-hub/non-production-stubs.spec.ts`,
+> Issue #364 block).
+
 ## Severity & Category
 
 - Severity: Medium
@@ -45,9 +59,9 @@ The owner mapping is intended to be a one-time, immutable binding. Without the g
 
 ## Acceptance Criteria
 
-- [ ] `RegisterNFTOwner` rejects any registration for an NFT address that already has an owner.
-- [ ] First-time registration still succeeds.
-- [ ] Regression test: a second `RegisterNFTOwner` for an already-registered NFT reverts with "Owner already registered" and the original binding is preserved.
+- [x] The owner-registration handler (now resolver-gated `ResolveNFTOwner`, Issue #364) rejects any registration for an NFT address that already has an owner.
+- [x] First-time registration still succeeds.
+- [x] Regression test: a second registration for an already-registered NFT reverts with "NFT owner already registered" and the original binding is preserved (`contracts/collateral-signal/collateral-signal.spec.ts`).
 
 ## References
 

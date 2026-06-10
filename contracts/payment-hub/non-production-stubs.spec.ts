@@ -198,6 +198,41 @@ describe('Issue #363: MerchantPaymentHub ships without test-only bootstrap handl
   });
 });
 
+describe('Issue #364: CollateralSignal binds NFT ownership only via the trusted resolver', () => {
+  const PRODUCTION = 'contracts/CollateralSignal.tact';
+
+  it('keeps the hardened CollateralSignal in the deployable map', () => {
+    // Unlike #363 (which moved test-only handlers into a non-deployable harness),
+    // #364 leaves NO test-only handler behind: ownership has a real production
+    // registration path, so the contract itself stays deployable.
+    const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
+    expect(deployable).toContain(PRODUCTION);
+  });
+
+  it('removes the deployer-gated test-only RegisterNFTOwner handler from production', () => {
+    const source = read(PRODUCTION);
+    // The test-only handler and ANY deployer-gated ownership path must never ship.
+    expect(source).not.toContain('receive(msg: RegisterNFTOwner)');
+    expect(source).not.toContain('self.deployer');
+    expect(source).not.toContain('(test-only)');
+  });
+
+  it('registers NFT ownership only through the resolver-gated ResolveNFTOwner handler', () => {
+    const source = read(PRODUCTION);
+    // Ownership is pushed by the immutable, trusted on-chain NFT Account Resolver.
+    expect(source).toContain('nft_resolver: Address');
+    expect(source).toContain('receive(msg: ResolveNFTOwner)');
+    expect(source).toContain('sender() == self.nft_resolver');
+    expect(source).toContain('Unauthorized: only NFT resolver');
+  });
+
+  it('keeps the write-once owner binding guard (CONTRACTS-M1 / #279)', () => {
+    const source = read(PRODUCTION);
+    expect(source).toContain('NFT owner already registered');
+    expect(source).toMatch(/self\.nft_owners\.get\(msg\.nft_address\)\s*==\s*null/);
+  });
+});
+
 describe('CONTRACTS-H3: payment-hub.fc keeps the 0xDEAD deploy blocker', () => {
   const source = read('contracts/payments/payment-hub.fc');
 
