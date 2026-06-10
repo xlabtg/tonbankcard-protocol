@@ -1,14 +1,37 @@
 // Merchant Payment Hub Contract
 // Implementation of Issue #8 - Merchant Payments (On-Chain Settlement in TBC)
 // Issue #96: Upgradeable admin system with timelock and two-phase ownership transfer
+// Issue #363: Remove test-only bootstrap handlers before mainnet
 //
 // PROTOCOL INVARIANTS (see docs/invariants.md):
-// - I1 (Non-Custodial): Validates payer is NFT owner before payment (lines 90-96)
-// - I2 (NFT Authority): NFT ownership stored and validated (lines 42, 90-96)
-// - I3 (No Admin Control): Admin cannot move funds; admin transfer uses 7-day timelock
-// - I4 (Atomic Transfers): Atomic debit/credit in single transaction (lines 134-135)
-// - I5 (Ledger Conservation): Direct debit/credit with no fees (lines 178-187)
-// - I6 (Lock ≠ Confiscation): Checks locks before send, allows receive (lines 116-119)
+// - I1 (Non-Custodial): Validates payer is NFT owner before payment (validateAndExecutePayment)
+// - I2 (NFT Authority): NFT ownership stored and validated (nft_owners + validateAndExecutePayment)
+// - I3 (No Admin Control): Admin cannot move funds; there is NO admin path that mints,
+//   moves or withdraws balances. Admin/whitelist/lock changes all go through delegated
+//   authorities and/or timelocks (see below).
+// - I4 (Atomic Transfers): Atomic debit/credit in single transaction (validateAndExecutePayment)
+// - I5 (Ledger Conservation): Direct debit/credit with no fees (debitBalance/creditBalance)
+// - I6 (Lock ≠ Confiscation): Checks locks before send, allows receive (validateAndExecutePayment)
+//
+// PRODUCTION HARDENING (Issue #363):
+// This production contract intentionally contains NO test-only bootstrap handlers.
+// The previous `SetAccountState` / `SetAccountBalance` / `SetAccountLock` admin
+// handlers (test-only, audit findings C-MPH-C1 / C-MPH-H1) have been removed:
+//   * Account registration (nft_owners / account_states) is performed by the NFT
+//     Account Resolver integration, NOT by an admin handler.
+//   * Balances are funded by the on-chain TBC ledger / settlement flow, NOT minted
+//     by an admin handler (removes the admin-mint backdoor C-MPH-C1).
+//   * Account locks are applied ONLY by the dedicated Account Locks contract
+//     (`account_locks_contract`), which enforces its own risk-authority + timelock
+//     rules. See `receive(msg: ApplyAccountLock)`.
+//   * Collection whitelisting is gated behind the admin (expected to be a 3-of-5
+//     multi-sig) PLUS a timelock (propose → wait → execute). See the
+//     ProposeWhitelistCollection / ExecuteWhitelistCollection / CancelWhitelistCollection
+//     handlers.
+// The test-only bootstrap handlers live exclusively in the non-deployable test
+// harness `contracts/merchant-hub/test/MerchantPaymentHubHarness.tact`. A CI
+// regression guard (`contracts/payment-hub/non-production-stubs.spec.ts`) fails the
+// build if any of those handlers reappear in this production source.
 
 import "./types/AccountState.tact";
 import "./types/LockState.tact";
@@ -77,22 +100,99 @@ message MerchantAdminTransferCancelled {
     timestamp: Int as uint32;
 }
 
+// Collection whitelist messages (Issue #363: multi-sig + timelock)
+//
+// Whitelisting an NFT collection is a governance action. The `admin` is expected
+// to be a 3-of-5 multi-sig in production (the contract only sees a single admin
+// address; the M-of-N approval happens inside that multi-sig). On top of the
+// multi-sig, a timelock gives the public time to react before a collection becomes
+// whitelisted: propose → wait MERCHANT_WHITELIST_TIMELOCK_DELAY → execute.
+
+// Phase 1: admin (multi-sig) proposes whitelisting a collection (starts timelock)
+message ProposeWhitelistCollection {
+    collection_address: Address;
+}
+
+// Phase 2: admin (multi-sig) executes the whitelist after the timelock expires
+message ExecuteWhitelistCollection {
+}
+
+// Cancel a pending collection-whitelist proposal (only admin)
+message CancelWhitelistCollection {
+}
+
+message MerchantCollectionWhitelistProposed {
+    collection_address: Address;
+    executable_at: Int as uint32;
+    timestamp: Int as uint32;
+}
+
+message MerchantCollectionWhitelistExecuted {
+    collection_address: Address;
+    timestamp: Int as uint32;
+}
+
+message MerchantCollectionWhitelistCancelled {
+    collection_address: Address;
+    timestamp: Int as uint32;
+}
+
+// Account Locks integration message (Issue #363: replaces admin SetAccountLock)
+//
+// Locks are NOT controlled by the admin. They are applied by the dedicated Account
+// Locks contract (`contracts/payments/account-locks.fc`), which enforces its own
+// risk-authority + lending-adapter roles and 7-day timelock. The MerchantPaymentHub
+// trusts that contract as the single source of lock truth and only accepts lock
+// updates that originate from it.
+message ApplyAccountLock {
+    nft_address: Address;
+    lock_state: LockState;
+}
+
+message MerchantAccountLockApplied {
+    nft_address: Address;
+    fraud_locked: Bool;
+    collateral_locked: Bool;
+    timestamp: Int as uint32;
+}
+
 // 7-day timelock delay for admin transfers (in seconds)
 const MERCHANT_ADMIN_TRANSFER_DELAY: Int = 7 * 24 * 60 * 60;
 
-// Merchant Payment Hub Contract
-contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
+// 7-day timelock delay for collection whitelisting (in seconds)
+const MERCHANT_WHITELIST_TIMELOCK_DELAY: Int = 7 * 24 * 60 * 60;
 
-    // Storage
-    // Current admin address (transferable via two-phase timelock, see MerchantProposeAdminTransfer)
-    // INVARIANT I3: Admin cannot move or withdraw user funds
+// ============================================================================
+// MerchantPaymentHubBase: shared production logic
+// ============================================================================
+//
+// All production payment logic lives in this trait so that the non-deployable
+// test harness (MerchantPaymentHubHarness) can reuse the EXACT same compiled
+// logic while adding test-only bootstrap handlers, without duplicating any of the
+// payment / admin / lock / whitelist code. The deployable production contract
+// `MerchantPaymentHub` adds nothing but storage declarations and `init`.
+//
+// NOTE (Tact storage model): trait fields are declared without serialization
+// specifiers. Each contract that uses this trait re-declares the same fields WITH
+// their serialization specifiers (e.g. `Int as uint32`). Keep the field lists in
+// `MerchantPaymentHub` and the harness in sync with this trait.
+trait MerchantPaymentHubBase with IAccountStateMachine, IAccountLocks {
+
+    // ---- Storage (see serialization-annotated copies in the contracts) ----
+
+    // Current admin address (transferable via two-phase timelock, see MerchantProposeAdminTransfer).
+    // Expected to be a 3-of-5 multi-sig in production.
+    // INVARIANT I3: Admin cannot move or withdraw user funds.
     admin: Address;
 
     // Pending admin transfer: proposed new admin address (null if no transfer pending)
-    pending_admin: Address?;
+    pending_admin: Address? = null;
 
     // Unix timestamp when the pending admin transfer becomes executable (after 7-day timelock)
-    pending_admin_executable_at: Int as uint32 = 0;
+    pending_admin_executable_at: Int = 0;
+
+    // The dedicated Account Locks contract authorised to apply locks (immutable, set at init).
+    account_locks_contract: Address;
 
     account_states: map<Address, Int>;      // nft_address => state
     account_balances: map<Address, Int>;    // nft_address => balance_tbc
@@ -100,17 +200,11 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     nft_owners: map<Address, Address>;      // nft_address => owner_address
     whitelisted_collections: map<Address, Bool>; // collection_address => whitelisted
 
-    init(deployer_address: Address) {
-        // The deployer becomes the initial admin. Admin rights can later be
-        // transferred to a DAO or multisig via MerchantProposeAdminTransfer + MerchantExecuteAdminTransfer.
-        self.admin = deployer_address;
-        self.pending_admin = null;
-        self.account_states = emptyMap();
-        self.account_balances = emptyMap();
-        self.account_locks = emptyMap();
-        self.nft_owners = emptyMap();
-        self.whitelisted_collections = emptyMap();
-    }
+    // Pending collection whitelist (timelock): proposed collection (null if none pending)
+    pending_whitelist_collection: Address? = null;
+
+    // Unix timestamp when the pending collection whitelist becomes executable
+    pending_whitelist_executable_at: Int = 0;
 
     // ============================================
     // MERCHANT PAYMENT FUNCTIONS
@@ -219,7 +313,7 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     // ACCOUNT STATE MACHINE IMPLEMENTATION
     // ============================================
 
-    get fun getAccountState(nft_address: Address): Int {
+    override get fun getAccountState(nft_address: Address): Int {
         let state: Int? = self.account_states.get(nft_address);
         if (state == null) {
             return ACCOUNT_STATE_ACTIVE; // Default to ACTIVE for new accounts
@@ -227,7 +321,7 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
         return state!!;
     }
 
-    get fun getBalance(nft_address: Address): Int {
+    override get fun getBalance(nft_address: Address): Int {
         let balance: Int? = self.account_balances.get(nft_address);
         if (balance == null) {
             return 0;
@@ -235,17 +329,17 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
         return balance!!;
     }
 
-    get fun accountExists(nft_address: Address): Bool {
+    override get fun accountExists(nft_address: Address): Bool {
         return self.account_states.get(nft_address) != null;
     }
 
-    virtual override fun debitBalance(nft_address: Address, amount: Int) {
+    override fun debitBalance(nft_address: Address, amount: Int) {
         let current_balance: Int = self.getBalance(nft_address);
         require(current_balance >= amount, "Insufficient balance");
         self.account_balances.set(nft_address, current_balance - amount);
     }
 
-    virtual override fun creditBalance(nft_address: Address, amount: Int) {
+    override fun creditBalance(nft_address: Address, amount: Int) {
         let current_balance: Int = self.getBalance(nft_address);
         self.account_balances.set(nft_address, current_balance + amount);
     }
@@ -254,7 +348,7 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     // ACCOUNT LOCKS IMPLEMENTATION
     // ============================================
 
-    get fun getLockState(nft_address: Address): LockState {
+    override get fun getLockState(nft_address: Address): LockState {
         let lock_state: LockState? = self.account_locks.get(nft_address);
         if (lock_state == null) {
             return defaultLockState();
@@ -262,71 +356,102 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
         return lock_state!!;
     }
 
-    get fun isAccountLocked(nft_address: Address): Bool {
+    override get fun isAccountLocked(nft_address: Address): Bool {
         let lock_state: LockState = self.getLockState(nft_address);
         return isLocked(lock_state);
     }
 
-    get fun hasFraudLock(nft_address: Address): Bool {
+    override get fun hasFraudLock(nft_address: Address): Bool {
         let lock_state: LockState = self.getLockState(nft_address);
         return lock_state.fraud_locked;
     }
 
-    get fun hasCollateralLock(nft_address: Address): Bool {
+    override get fun hasCollateralLock(nft_address: Address): Bool {
         let lock_state: LockState = self.getLockState(nft_address);
         return lock_state.collateral_locked;
     }
 
+    // Account Locks integration (Issue #363): the ONLY way a lock is applied.
+    // INVARIANT I3 & I6: the admin cannot lock/unlock accounts; only the dedicated
+    // Account Locks contract can, and a lock never moves funds (send is blocked,
+    // balances are untouched). Applying an unlocked LockState clears the lock.
+    receive(msg: ApplyAccountLock) {
+        require(sender() == self.account_locks_contract, "Unauthorized: only Account Locks contract");
+        self.account_locks.set(msg.nft_address, msg.lock_state);
+
+        emit(MerchantAccountLockApplied{
+            nft_address: msg.nft_address,
+            fraud_locked: msg.lock_state.fraud_locked,
+            collateral_locked: msg.lock_state.collateral_locked,
+            timestamp: now()
+        }.toCell());
+    }
+
     // ============================================
-    // COLLECTION MANAGEMENT
+    // COLLECTION MANAGEMENT (multi-sig + timelock, Issue #363)
     // ============================================
 
-    // Whitelist an NFT collection for account registration
+    // Phase 1: admin (multi-sig) proposes whitelisting a collection (starts timelock)
     // INVARIANT I3: This does not grant any fund control
-    receive(msg: WhitelistMerchantCollection) {
+    receive(msg: ProposeWhitelistCollection) {
         require(sender() == self.admin, "Unauthorized: only admin");
-        self.whitelisted_collections.set(msg.collection_address, true);
+
+        self.pending_whitelist_collection = msg.collection_address;
+        self.pending_whitelist_executable_at = now() + MERCHANT_WHITELIST_TIMELOCK_DELAY;
+
+        emit(MerchantCollectionWhitelistProposed{
+            collection_address: msg.collection_address,
+            executable_at: self.pending_whitelist_executable_at,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // Phase 2: admin (multi-sig) executes the whitelist after the timelock expires
+    receive(msg: ExecuteWhitelistCollection) {
+        require(sender() == self.admin, "Unauthorized: only admin");
+        require(self.pending_whitelist_collection != null, "No pending collection whitelist");
+        require(now() >= self.pending_whitelist_executable_at, "Timelock not expired: wait 7 days");
+
+        let collection: Address = self.pending_whitelist_collection!!;
+        self.whitelisted_collections.set(collection, true);
+        self.pending_whitelist_collection = null;
+        self.pending_whitelist_executable_at = 0;
+
+        emit(MerchantCollectionWhitelistExecuted{
+            collection_address: collection,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // Cancel a pending collection-whitelist proposal (only admin)
+    receive(msg: CancelWhitelistCollection) {
+        require(sender() == self.admin, "Unauthorized: only admin");
+        require(self.pending_whitelist_collection != null, "No pending collection whitelist");
+
+        let cancelled: Address = self.pending_whitelist_collection!!;
+        self.pending_whitelist_collection = null;
+        self.pending_whitelist_executable_at = 0;
+
+        emit(MerchantCollectionWhitelistCancelled{
+            collection_address: cancelled,
+            timestamp: now()
+        }.toCell());
     }
 
     get fun isCollectionWhitelisted(collection_address: Address): Bool {
         return self.whitelisted_collections.get(collection_address) != null;
     }
 
-    // ============================================
-    // ACCOUNT SETUP FUNCTIONS
-    // ============================================
-
-    // INVARIANT I3: Setup functions do NOT allow fund withdrawal
-    // These are used to register accounts and configure their initial state
-    // Only the deployer can register new accounts during the setup phase
-
-    receive(msg: SetAccountState) {
-        require(sender() == self.admin, "Unauthorized: only admin");
-        self.account_states.set(msg.nft_address, msg.state);
-        if (self.nft_owners.get(msg.nft_address) == null) {
-            self.nft_owners.set(msg.nft_address, msg.owner);
-        }
+    get fun getPendingWhitelistCollection(): Address? {
+        return self.pending_whitelist_collection;
     }
 
-    // AUDIT C-MPH-C1 partial mitigation: SetAccountBalance is restricted to
-    // the *initial* balance (i.e. the previous balance must be 0). This
-    // forbids the admin from arbitrarily mutating an existing balance — which
-    // the audit flags as economically equivalent to mint — while still
-    // permitting the test-only bootstrap pattern used in the spec suite.
-    // INVARIANT I3: admin still cannot WITHDRAW funds via this path; once a
-    // balance is non-zero, only NFT-owner-authorised payments can change it.
-    // The full remediation (remove this handler entirely or place it behind a
-    // multi-sig + timelock) is tracked in the audit follow-up plan.
-    receive(msg: SetAccountBalance) {
-        require(sender() == self.admin, "Unauthorized: only admin");
-        let existing: Int? = self.account_balances.get(msg.nft_address);
-        require(existing == null || existing!! == 0, "SetAccountBalance: initial-only (existing balance must be zero)");
-        self.account_balances.set(msg.nft_address, msg.balance);
+    get fun getPendingWhitelistExecutableAt(): Int {
+        return self.pending_whitelist_executable_at;
     }
 
-    receive(msg: SetAccountLock) {
-        require(sender() == self.admin, "Unauthorized: only admin");
-        self.account_locks.set(msg.nft_address, msg.lock_state);
+    get fun getAccountLocksContract(): Address {
+        return self.account_locks_contract;
     }
 
     // ============================================
@@ -405,6 +530,39 @@ contract MerchantPaymentHub with IAccountStateMachine, IAccountLocks {
     }
 }
 
+// ============================================================================
+// MerchantPaymentHub: deployable production contract
+// ============================================================================
+//
+// Adds ONLY storage declarations (with serialization specifiers) and `init`.
+// All behaviour comes from MerchantPaymentHubBase. There are deliberately NO
+// test-only bootstrap handlers here (Issue #363).
+contract MerchantPaymentHub with MerchantPaymentHubBase {
+
+    admin: Address;
+    pending_admin: Address? = null;
+    pending_admin_executable_at: Int as uint32 = 0;
+    account_locks_contract: Address;
+    account_states: map<Address, Int>;
+    account_balances: map<Address, Int>;
+    account_locks: map<Address, LockState>;
+    nft_owners: map<Address, Address>;
+    whitelisted_collections: map<Address, Bool>;
+    pending_whitelist_collection: Address? = null;
+    pending_whitelist_executable_at: Int as uint32 = 0;
+
+    // @param deployer_address    initial admin (expected to be handed to a 3-of-5
+    //                            multi-sig / DAO via MerchantProposeAdminTransfer)
+    // @param account_locks_contract  the dedicated Account Locks contract allowed to
+    //                            apply locks via ApplyAccountLock (immutable)
+    init(deployer_address: Address, account_locks_contract: Address) {
+        // The deployer becomes the initial admin. Admin rights can later be
+        // transferred to a DAO or multisig via MerchantProposeAdminTransfer + MerchantExecuteAdminTransfer.
+        self.admin = deployer_address;
+        self.account_locks_contract = account_locks_contract;
+    }
+}
+
 // ============================================
 // EVENTS
 // ============================================
@@ -416,29 +574,4 @@ message MerchantPayment {
     amount_tbc: Int as coins;
     payload_hash: Int;
     timestamp: Int as uint32;
-}
-
-// ============================================
-// SETUP MESSAGES
-// ============================================
-
-// Message to whitelist an NFT collection for merchant payments
-message WhitelistMerchantCollection {
-    collection_address: Address;
-}
-
-message SetAccountState {
-    nft_address: Address;
-    state: Int as uint8;
-    owner: Address;
-}
-
-message SetAccountBalance {
-    nft_address: Address;
-    balance: Int as coins;
-}
-
-message SetAccountLock {
-    nft_address: Address;
-    lock_state: LockState;
 }

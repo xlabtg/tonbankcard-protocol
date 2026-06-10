@@ -8,14 +8,14 @@ import "../types/LockState.tact";
 trait IAccountLocks {
 
     // Get the lock state of an NFT account
-    get fun getLockState(nft_address: Address): LockState;
+    abstract get fun getLockState(nft_address: Address): LockState;
 
     // Check if account is locked (any lock active)
-    get fun isAccountLocked(nft_address: Address): Bool;
+    abstract get fun isAccountLocked(nft_address: Address): Bool;
 
     // Check if account has fraud lock
-    get fun hasFraudLock(nft_address: Address): Bool;
+    abstract get fun hasFraudLock(nft_address: Address): Bool;
 
     // Check if account has collateral lock
-    get fun hasCollateralLock(nft_address: Address): Bool;
+    abstract get fun hasCollateralLock(nft_address: Address): Bool;
 }
