@@ -132,6 +132,7 @@ POSTGRES_USER=tonbankcard
 POSTGRES_PASSWORD=compose-policy-test-password-please-change
 POSTGRES_DB=tonbankcard
 DATABASE_URL=
+REDIS_PASSWORD=compose-policy-test-redis-password
 ENV
 
   if [ ! -e "${repo_env}" ]; then
