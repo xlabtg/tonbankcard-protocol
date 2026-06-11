@@ -10,8 +10,33 @@
  *   3. Run: ts-node experiments/adapters/test-nowpayments.ts
  */
 
+import { createHmac } from 'crypto';
+
 import { createNOWPaymentsAdapter } from '../../backend/adapters';
 import type { PaymentCallback } from '../../backend/adapters';
+
+/**
+ * Reproduce the signature NOWPayments places in the `x-nowpayments-sig` header:
+ * HMAC-SHA512 of the recursively key-sorted JSON body, keyed by the IPN secret.
+ * A production handler never signs callbacks itself — this only exists so the
+ * experiment can drive `verifyCallback()` with a genuine signature.
+ */
+function signLikeNowpayments(payload: PaymentCallback, ipnSecret: string): string {
+  const sortKeys = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(sortKeys);
+    if (value !== null && typeof value === 'object') {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = sortKeys((value as Record<string, unknown>)[key]);
+          return acc;
+        }, {});
+    }
+    return value;
+  };
+  const canonical = JSON.stringify(sortKeys(payload));
+  return createHmac('sha512', ipnSecret).update(canonical, 'utf8').digest('hex');
+}
 
 async function testGetAvailableCurrencies() {
   console.log('\n--- Testing getAvailableCurrencies() ---');
@@ -140,13 +165,15 @@ async function testVerifyCallback() {
     pay_currency: 'ton',
   };
 
-  const mockSignature = 'test-signature';
-
   try {
-    const isValid = adapter.verifyCallback(mockCallback, mockSignature);
-    console.log('✅ Callback verification executed');
-    console.log('   Valid:', isValid);
-    console.log('   Note: Signature validation is placeholder in this implementation');
+    // A genuine signature (HMAC-SHA512 of the canonical body) must be accepted.
+    const genuineSignature = signLikeNowpayments(mockCallback, ipnSecret);
+    const genuineAccepted = adapter.verifyCallback(mockCallback, genuineSignature);
+    console.log('   Genuine signature accepted:', genuineAccepted, genuineAccepted ? '✅' : '❌');
+
+    // A forged signature must be rejected — this is the PC-03 fix (issue #372).
+    const forgedRejected = !adapter.verifyCallback(mockCallback, 'forged-signature');
+    console.log('   Forged signature rejected:', forgedRejected, forgedRejected ? '✅' : '❌');
   } catch (error: any) {
     console.log('❌ Error:', error.message);
   }
@@ -210,7 +237,7 @@ async function main() {
   console.log('- Webhook verification requires NOWPAYMENTS_IPN_SECRET');
   console.log('- These tests do NOT create actual invoices or cost money');
   console.log('- Payment mapping is tested with mock data');
-  console.log('- HMAC verification is placeholder and needs crypto implementation');
+  console.log('- HMAC verification uses real HMAC-SHA512 (audit finding PC-03 / #372)');
 }
 
 if (require.main === module) {
