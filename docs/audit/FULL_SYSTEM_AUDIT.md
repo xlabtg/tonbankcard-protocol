@@ -326,6 +326,8 @@ Merchant payment flow is correctly designed: all payments require payer signatur
 
 The Merchant API correctly acts as an orchestration layer, not an authoritative one. However, the webhook validation specification for external providers (NOWPayments callbacks, ChangeNOW callbacks) lacks a formal test plan.
 
+**Update (Issue #372 / PC-03):** the NOWPayments IPN path is now closed — `verifyCallback()` performs real HMAC-SHA512 verification (was a length-only placeholder) and is locked by a CI regression suite (`tests/nowpayments-adapter/`, golden-vector pinned) plus a standalone before/after reproduction (`experiments/issue-372-nowpayments-hmac/`). The residual gap is the ChangeNOW callback test plan.
+
 **Recommendation:** Add formal webhook validation tests to the security testing strategy.
 
 ---

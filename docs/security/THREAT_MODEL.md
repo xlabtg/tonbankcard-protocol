@@ -387,9 +387,9 @@ These contracts are deployed, immutable, and outside protocol control:
 - Non-custodial orchestrator: user sends funds to ChangeNOW deposit address directly.
 - Protocol does not receive or hold funds during swap.
 
-**NOWPayments** (`backend/adapters/nowpayments.ts`, 397 lines):
+**NOWPayments** (`backend/adapters/nowpayments.ts`, 454 lines):
 - Payment processing API client.
-- Includes HMAC webhook verification interface (implementation is stubbed — `verifyWebhookSignature` method exists but is not fully implemented).
+- IPN webhook verification (`verifyCallback`) computes a **real HMAC-SHA512** over the recursively key-sorted JSON body keyed by the IPN secret and constant-time compares it (`crypto.timingSafeEqual`) against the `x-nowpayments-sig` header (Issue #372 / PC-03 — RESOLVED ✅; previously a length-only placeholder that accepted forged IPNs).
 
 **CoinRabbit** (`backend/adapters/coinrabbit.ts`, 577 lines):
 - Lending adapter. Identity resolution, collateral signal verification (read-only), loan intent creation.
@@ -719,13 +719,12 @@ The lock mirror is fed only by `op::apply_account_lock` from the trusted `accoun
 **Applicable to:** Merchant API (NOWPayments integration), external adapters.
 
 **Analysis:**
-- NOWPayments adapter includes `verifyWebhookSignature()` interface, but implementation is stubbed (nowpayments.ts).
-- If webhook verification is not implemented, an attacker could send fake "payment confirmed" webhooks to the Merchant API.
+- The NOWPayments adapter's `verifyCallback()` previously authenticated callbacks with a length-only placeholder digest, so an attacker who knew the (public) request shape could forge a "payment confirmed" IPN that passed verification (Issue #372 / PC-03).
 - If the Merchant API acts on unverified webhooks (e.g., marks invoice as paid, triggers fulfillment), the merchant suffers financial loss.
 
-**Mitigation status:** Webhook signature verification is structurally required but not fully implemented.
+**Mitigation status:** **RESOLVED ✅ (Issue #372 / PC-03).** `verifyCallback()` now computes a real HMAC-SHA512 over the recursively key-sorted JSON body keyed by the configured IPN secret and constant-time compares it (`crypto.timingSafeEqual`, with a length pre-check) against the `x-nowpayments-sig` header; a missing/empty signature or malformed body fails closed. A forged IPN no longer authenticates. Locked by a CI regression suite (`tests/nowpayments-adapter/`, golden-vector pinned) plus a standalone before/after reproduction (`experiments/issue-372-nowpayments-hmac/`).
 
-**Residual risk:** MEDIUM. The Merchant API must verify webhook signatures before acting on them. The protocol's on-chain verification (`verifySettlement()` in SDK) provides an independent confirmation path.
+**Residual risk:** LOW. The adapter verifies IPN signatures; the protocol's on-chain verification (`verifySettlement()` in SDK) remains an independent confirmation path.
 
 #### 4.4.2 Callback Replay
 
@@ -1007,7 +1006,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
-| **Webhook forgery** (4.4.1) | NOWPayments adapter | HMAC webhook verification interface exists but is stubbed; on-chain verification provides independent confirmation | MEDIUM — Webhook verification must be fully implemented |
+| **Webhook forgery** (4.4.1) | NOWPayments adapter | `verifyCallback()` computes a real HMAC-SHA512 over the key-sorted JSON body and constant-time compares the `x-nowpayments-sig` header; on-chain verification provides independent confirmation | RESOLVED ✅ (Issue #372 / PC-03) — real HMAC verification; CI regression suite `tests/nowpayments-adapter/` + repro `experiments/issue-372-nowpayments-hmac/` |
 | **Callback replay** (4.4.2) | Merchant API | Idempotency support for invoice creation; no on-chain duplicate invoice prevention | MEDIUM — On-chain replay protection not implemented |
 | **Order ID collision** (4.4.3) | Merchant API/SDK | Deterministic SHA-256 hashing for invoice IDs | NEGLIGIBLE — SHA-256 collision resistance |
 | **Cross-chain spoofing** (4.4.4) | ChangeNOW adapter | On-chain TON-side receipt verification; cross-chain verification is ChangeNOW's responsibility | MEDIUM — Users must verify on-chain receipt |
@@ -1424,7 +1423,7 @@ This checklist enables an external auditor to systematically verify the protocol
 
 ### C.4 Integration Security
 
-- [ ] Verify webhook signature verification is implemented before production use
+- [x] Verify webhook signature verification is implemented before production use — **RESOLVED ✅ (Issue #372 / PC-03):** the NOWPayments adapter's `verifyCallback()` computes a real HMAC-SHA512 over the key-sorted JSON body and constant-time compares the `x-nowpayments-sig` header (was a length-only placeholder); CI regression suite `tests/nowpayments-adapter/`, repro `experiments/issue-372-nowpayments-hmac/`
 - [ ] Confirm on-chain verification is the authoritative settlement check
 - [ ] Verify indexer reorg detection and rollback logic
 - [ ] Confirm API authentication and rate limiting in Merchant API
