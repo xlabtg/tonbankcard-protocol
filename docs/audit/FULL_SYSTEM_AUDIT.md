@@ -113,6 +113,7 @@ Contracts implement the specified behavior for all happy paths. The following kn
 |-----|----------|----------|--------|
 | Test-only functions have no access control | `MerchantPaymentHub.tact` | HIGH | Known, documented |
 | ~~`RegisterNFTOwner` has no access control~~ | `CollateralSignal.tact` | ~~HIGH~~ | **RESOLVED (Issue #364)** — handler removed; ownership registered only via the `nft_resolver`-gated `ResolveNFTOwner`, write-once (CONTRACTS-M1) |
+| ~~`InitializeAccount` overwrites an existing account's owner/balance~~ | `PaymentHub.tact` | ~~HIGH~~ | **RESOLVED (Issue #371 / PC-02)** — `InitializeAccount` is create-once (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`); a compromised admin can no longer re-initialize a funded slot to reassign `owner` and drain it (I1/I3). Account read path made side-effect free so a query cannot squat a slot |
 | TransparencyRegistry record messages unprotected | `TransparencyRegistry.tact` | HIGH | Known, documented |
 | Governance proposal/vote NFT ownership unverified | `ProposalRegistry.tact` | HIGH | Known, documented |
 | FunC Payment Hub missing Account Locks check | `payment-hub.fc` | HIGH | Known, documented |

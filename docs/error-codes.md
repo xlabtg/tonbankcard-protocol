@@ -48,6 +48,7 @@ Goals (see [Issue #129 (D3)](https://github.com/xlabtg/tonbankcard-protocol/issu
 | Condition | User-facing message | Source |
 |---|---|---|
 | Reentrancy guard (invariant I4) | `Reentrancy detected` | `payments/PaymentHub.tact` |
+| Account creation is write-once — re-`InitializeAccount` of a live slot is rejected so owner/balance cannot be reassigned (Issue #371 / PC-02, invariants I1/I3) | `Account already initialized` | `payments/PaymentHub.tact` |
 | Transfer amount must be positive | `Transfer amount must be positive` | `payments/PaymentHub.tact` |
 | `from_nft` must be a valid NFT account | `Invalid from_nft address` | `payments/PaymentHub.tact` |
 | `to_nft` must be a valid NFT account | `Invalid to_nft address` | `payments/PaymentHub.tact` |
