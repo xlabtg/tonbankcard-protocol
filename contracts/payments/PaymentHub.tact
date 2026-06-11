@@ -236,8 +236,8 @@ contract PaymentHub with Deployable {
         require(self.isValidAccountNFT(msg.to_nft), "Invalid to_nft address");
 
         // Get account states
-        let from_account: AccountState = self.getOrCreateAccount(msg.from_nft);
-        let to_account: AccountState = self.getOrCreateAccount(msg.to_nft);
+        let from_account: AccountState = self.getAccountOrDefault(msg.from_nft);
+        let to_account: AccountState = self.getAccountOrDefault(msg.to_nft);
 
         // INVARIANT I1 & I2: msg.sender must be owner of from_nft (non-custodial, NFT authority)
         require(sender() == from_account.owner, "Unauthorized: sender is not NFT owner");
@@ -342,6 +342,14 @@ contract PaymentHub with Deployable {
         // NOTE: This is a test-only function and does NOT allow moving existing funds
         require(sender() == self.admin, "Unauthorized: only admin");
 
+        // SECURITY (PC-02 / #371): account creation is WRITE-ONCE.
+        // Without this guard a malicious or compromised admin could re-initialize
+        // an already-funded account, reassign `owner` to an attacker-controlled
+        // address and then drain it via TransferInternalRequest (which authorizes
+        // on sender() == from_account.owner). That breaks I1 (Non-Custodial) and
+        // I3 (No Admin Control over user funds). Reject any write to a live slot.
+        require(self.accounts.get(msg.nft_address) == null, "Account already initialized");
+
         let account: AccountState = AccountState{
             balance: msg.initial_balance,
             state: msg.initial_state,
@@ -418,7 +426,7 @@ contract PaymentHub with Deployable {
 
     // Get account state (read-only query)
     receive(msg: GetAccountStateRequest) {
-        let account: AccountState = self.getOrCreateAccount(msg.nft_address);
+        let account: AccountState = self.getAccountOrDefault(msg.nft_address);
 
         send(SendParameters{
             to: sender(),
@@ -454,30 +462,31 @@ contract PaymentHub with Deployable {
         return self.whitelisted_collections.get(collection!!) != null;
     }
 
-    // Get account state or create new one if doesn't exist
-    // New accounts are initialized with zero balance in ACTIVE state
-    // Owner must be set via InitializeAccount before transfers can be made
-    fun getOrCreateAccount(nft_address: Address): AccountState {
+    // Return the stored account for an NFT, or a transient zero-balance default.
+    //
+    // SECURITY (PC-02 / #371): this helper is READ-ONLY — it must NOT persist a
+    // placeholder slot. Now that InitializeAccount is write-once
+    // (require accounts.get == null), any path that durably created an empty slot
+    // here (a free GetAccountStateRequest query, a validation lookup) would let
+    // anyone permanently squat an nft_address and block its legitimate first
+    // initialization — a denial-of-service. Real account state is persisted only
+    // by InitializeAccount and by the balance update in TransferInternalRequest.
+    fun getAccountOrDefault(nft_address: Address): AccountState {
         let existing: AccountState? = self.accounts.get(nft_address);
 
         if (existing != null) {
             return existing!!;
         }
 
-        // New account defaults: zero balance, ACTIVE state
-        // The owner is set to the NFT address as a placeholder
-        // Real ownership is established when InitializeAccount is called
-        // with the actual owner address from the NFT item contract
-        let account: AccountState = AccountState{
+        // Transient default for a not-yet-initialized account: zero balance,
+        // ACTIVE state, owner set to the NFT address as a placeholder. Real
+        // ownership is established when InitializeAccount is called with the
+        // actual owner from the NFT item contract. NOT written to storage.
+        return AccountState{
             balance: 0,
             state: ACCOUNT_STATE_ACTIVE,
             owner: nft_address
         };
-
-        // Persist the new account so it can be looked up later
-        self.accounts.set(nft_address, account);
-
-        return account;
     }
 
     // Emit transfer event with payload hash
@@ -505,31 +514,31 @@ contract PaymentHub with Deployable {
 
     // Get account balance
     get fun getBalance(nft_address: Address): Int {
-        let account: AccountState = self.getOrCreateAccount(nft_address);
+        let account: AccountState = self.getAccountOrDefault(nft_address);
         return account.balance;
     }
 
     // Get account state
     get fun getAccountState(nft_address: Address): Int {
-        let account: AccountState = self.getOrCreateAccount(nft_address);
+        let account: AccountState = self.getAccountOrDefault(nft_address);
         return account.state;
     }
 
     // Get account owner
     get fun getOwner(nft_address: Address): Address {
-        let account: AccountState = self.getOrCreateAccount(nft_address);
+        let account: AccountState = self.getAccountOrDefault(nft_address);
         return account.owner;
     }
 
     // Check if account can send (ACTIVE state)
     get fun canSend(nft_address: Address): Bool {
-        let account: AccountState = self.getOrCreateAccount(nft_address);
+        let account: AccountState = self.getAccountOrDefault(nft_address);
         return account.state == ACCOUNT_STATE_ACTIVE;
     }
 
     // Check if account can receive (not CLOSED)
     get fun canReceive(nft_address: Address): Bool {
-        let account: AccountState = self.getOrCreateAccount(nft_address);
+        let account: AccountState = self.getAccountOrDefault(nft_address);
         return account.state != ACCOUNT_STATE_CLOSED;
     }
 
