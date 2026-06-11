@@ -6,12 +6,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
 	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
 )
+
+// maxSafeInteger is the largest integer magnitude that survives an IEEE-754
+// double round-trip (2^53 - 1). Integers outside
+// [-maxSafeInteger, maxSafeInteger] cannot be represented identically by the
+// JavaScript SDK, so canonical JSON rejects them and asks callers for a decimal
+// string instead.
+const maxSafeInteger = 1<<53 - 1
 
 // InvoiceIDParams are the canonical inputs hashed by GenerateInvoiceID.
 type InvoiceIDParams struct {
@@ -83,19 +89,17 @@ func normalizeCanonicalJSON(value any) (any, error) {
 	case nil, string, bool:
 		return typed, nil
 	case int, int8, int16, int32, int64:
+		if n := reflect.ValueOf(typed).Int(); n < -maxSafeInteger || n > maxSafeInteger {
+			return nil, fmt.Errorf("tonbankcard: canonical JSON forbids integers outside the 53-bit safe range; use a decimal string")
+		}
 		return typed, nil
 	case uint, uint8, uint16, uint32, uint64:
-		return typed, nil
-	case float32:
-		if math.IsInf(float64(typed), 0) || math.IsNaN(float64(typed)) {
-			return nil, fmt.Errorf("tonbankcard: canonical JSON does not support non-finite numbers")
+		if n := reflect.ValueOf(typed).Uint(); n > maxSafeInteger {
+			return nil, fmt.Errorf("tonbankcard: canonical JSON forbids integers outside the 53-bit safe range; use a decimal string")
 		}
 		return typed, nil
-	case float64:
-		if math.IsInf(typed, 0) || math.IsNaN(typed) {
-			return nil, fmt.Errorf("tonbankcard: canonical JSON does not support non-finite numbers")
-		}
-		return typed, nil
+	case float32, float64:
+		return nil, fmt.Errorf("tonbankcard: canonical JSON forbids floating-point numbers; use integer minor units or a decimal string")
 	case big.Int:
 		return typed.String(), nil
 	case *big.Int:
