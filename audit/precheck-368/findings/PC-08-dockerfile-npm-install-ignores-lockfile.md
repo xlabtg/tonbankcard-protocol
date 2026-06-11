@@ -60,11 +60,49 @@ RUN npm ci --no-audit --no-fund
 - For the production stage, use `npm ci --omit=dev`.
 - Correct the comment in `api/Dockerfile` to reflect that the lockfile is tracked.
 
+## Resolution
+
+**RESOLVED ✅ (Issue #377 / PC-08)** — PR
+[#391](https://github.com/xlabtg/tonbankcard-protocol/pull/391), branch
+`issue-377-e0c3fdf0eaa2`.
+
+Both images are now built from the committed lockfile via `npm ci`, so the
+dependency tree in the image matches the exact, audited `package-lock.json`
+instead of a freshly re-resolved one:
+
+1. **Lockfile copied, `npm ci` everywhere.** `api/Dockerfile` and
+   `backend/indexer/Dockerfile` now `COPY package.json package-lock.json ./` and
+   install with `npm ci --no-audit --no-fund` in the builder stage. In
+   `api/Dockerfile` the production-only re-install switched from
+   `rm -rf node_modules && npm install --omit=dev` to
+   `npm ci --omit=dev --no-audit --no-fund` (npm ci already wipes
+   `node_modules`), so the runtime layer is reproducible too. The indexer keeps
+   its deterministic `npm prune --omit=dev` on top of the locked install. No bare
+   `npm install` remains for dependency installation in either file.
+2. **Misleading comment corrected.** The `api/Dockerfile` comment no longer
+   claims the lockfile is "intentionally excluded from version control"; both
+   Dockerfiles now state that `package-lock.json` is tracked in every workspace
+   precisely so `npm ci` yields a reproducible install.
+
+`scripts/faucet/Dockerfile` is unchanged — it ships no committed lockfile and is
+explicitly out of scope per the finding.
+
+**CI-enforced policy** — `scripts/tooling/check-dockerfile-npm-ci.sh` (job
+*infra-verify*, `.github/workflows/ci.yml`) scans every tracked Dockerfile,
+selects those whose build context ships a committed `package-lock.json` and that
+touch npm, and asserts each one: COPYs `package-lock.json`, installs with
+`npm ci`, runs no bare `npm install`/`npm i` (global installs excepted), and is
+not undercut by a `.dockerignore` that drops the lockfile. It sits alongside the
+sibling guard `scripts/tooling/check-ci-npm-ci.sh` (which enforces the same for
+CI workflows). A standalone before/after reproduction — showing `npm install`
+drifting to a newer in-range version while `npm ci` honours the locked one —
+lives in `experiments/issue-377-dockerfile-npm-install/`.
+
 ## Acceptance Criteria
 
-- [ ] `api/Dockerfile` and `backend/indexer/Dockerfile` copy the lockfile and use `npm ci`.
-- [ ] The misleading comment is corrected.
-- [ ] Image builds are reproducible against the committed lockfile.
+- [x] `api/Dockerfile` and `backend/indexer/Dockerfile` copy the lockfile and use `npm ci`.
+- [x] The misleading comment is corrected.
+- [x] Image builds are reproducible against the committed lockfile.
 
 ## References
 
