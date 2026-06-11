@@ -39,6 +39,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
+      # Redis enforces authentication (--requirepass); clients must present the
+      # same secret. Required so the stack cannot silently run unauthenticated.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     ports:
       - "${API_HOST_PORT:-3001}:3000"
     networks:
@@ -71,6 +74,9 @@ services:
       DB_PATH: /app/data/indexer.db
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
+      # Must match the redis service's --requirepass secret so the indexer's
+      # distributed rate limiter can authenticate (see backend/indexer).
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_PRETTY: ${LOG_PRETTY:-false}
     ports:
@@ -93,15 +99,28 @@ services:
     image: redis:7.2-alpine
     container_name: tonbankcard-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    # Authentication is mandatory. Redis backs idempotency keys and rate-limit
+    # counters, so an unauthenticated instance lets anyone tamper with those
+    # controls (or FLUSHALL the store). Set a generated REDIS_PASSWORD in .env
+    # first (`openssl rand -hex 32`); like Postgres below, the stack refuses to
+    # start without it (audit finding PC-07).
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"]
+    environment:
+      # Lets the healthcheck's redis-cli AUTH without putting the password on
+      # the command line (and without the interactive -a warning).
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
+      # Bind to loopback so the data store is not reachable from non-loopback
+      # interfaces by default, matching the postgres binding below (PC-07).
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     networks:
       - tonbankcard
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # Require an authenticated PONG: a bare `redis-cli ping` exits 0 even on a
+      # NOAUTH error, so grep the reply to fail closed if auth is misconfigured.
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5

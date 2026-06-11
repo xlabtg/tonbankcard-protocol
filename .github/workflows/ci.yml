@@ -35,6 +35,12 @@ jobs:
       - name: Verify sandbox API key secret hardening
         run: scripts/tooling/check-sandbox-api-key-secret.sh
 
+      # PC-07: Redis backs idempotency keys and rate-limit counters, so both
+      # compose files must run it with mandatory --requirepass authentication
+      # and publish it only on the loopback interface.
+      - name: Verify compose Redis hardening
+        run: scripts/tooling/check-compose-redis-hardening.sh
+
       # DEVOPS-LOW: keep the low-severity DevOps hardening backlog closed.
       - name: Verify DEVOPS-LOW hardening backlog
         run: scripts/tooling/check-devops-low-hardening.sh

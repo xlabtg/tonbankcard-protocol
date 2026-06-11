@@ -152,6 +152,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 SANDBOX_API_KEY_SECRET=compose-policy-test-secret-please-change
 FAUCET_RATE_LIMIT_WINDOW_MS=120000
 FAUCET_RATE_LIMIT_MAX=3
+REDIS_PASSWORD=compose-policy-test-redis-password
 ENV
 
   if docker compose --env-file "${tmp_env}" -f "${compose_sandbox}" config > "${tmp_config}"; then
