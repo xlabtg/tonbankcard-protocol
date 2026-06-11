@@ -51,6 +51,32 @@ const ERROR_SNAPSHOT_VERIFIER_NOT_SET: Int = 113;
 const REQUEST_KIND_VOTE: Int = 0;
 const REQUEST_KIND_PROPOSAL: Int = 1;
 
+// ---- Governance multi-sig configuration (Issue #366) ----
+//
+// The resolver and snapshot verifier addresses are protocol-critical: whoever
+// controls them controls who can vote. They MUST NOT be settable by a single
+// key. After a one-time deployer bootstrap that installs an M-of-N signer set,
+// every change to either address requires (a) M independent signer approvals
+// and (b) a two-phase timelock, plus (c) verification that the target address
+// actually runs the approved contract code (code-hash binding). This defeats
+// the second-order attack in which a compromised deployer key silently swaps in
+// a malicious resolver.
+
+// Configuration-change targets (route the multi-sig proposal).
+const CONFIG_KIND_RESOLVER: Int = 0;
+const CONFIG_KIND_VERIFIER: Int = 1;
+
+// Genuine multi-sig bounds: at least two signers must exist and at least two
+// must agree, so no single compromised key can reconfigure governance.
+const MIN_GOV_SIGNERS: Int = 2;
+const MAX_GOV_SIGNERS: Int = 7;
+const MIN_GOV_THRESHOLD: Int = 2;
+
+// Timelock delay before an approved configuration change becomes executable
+// (7 days, matching the protocol-wide two-phase timelock for privileged roles —
+// see docs/invariants.md §I3 and contracts/payments/PaymentHub.tact).
+const CONFIG_TIMELOCK_DELAY: Int = 7 * 24 * 60 * 60;
+
 // Default voting window (7 days in seconds)
 const DEFAULT_VOTING_DURATION: Int = 604800;
 
@@ -119,19 +145,53 @@ message FinalizeProposal {
     proposal_id: Int as uint64;           // Proposal to finalize
 }
 
-// One-time configuration message: set the NFT ownership resolver address.
-// Only the deployer can call this, and only once (the resolver is immutable
-// afterwards). The resolver is the on-chain authority that maps a Diamond NFT
-// ID to its current owner (TEP-62 owner resolution / NFT Account Resolver).
-message SetOwnerResolver {
-    resolver: Address;                    // Address of the NFT ownership resolver
+// ---- Governance multi-sig configuration messages (Issue #366) ----
+
+// One-time bootstrap: install the M-of-N governance signer set. Callable only
+// by the deployer and only once. After this, the deployer key alone can no
+// longer change the resolver or verifier — every change needs M signer
+// approvals plus a timelock. `signers` is a 0-based contiguous map (indices
+// 0..signer_count-1) of distinct, non-zero addresses.
+message ConfigureGovernance {
+    signers: map<Int, Address>;           // index -> signer address (0..signer_count-1)
+    signer_count: Int as uint8;           // number of signers (2..MAX_GOV_SIGNERS)
+    threshold: Int as uint8;              // approvals required (2..signer_count)
 }
 
-// One-time configuration message: set the snapshot verifier address.
-// Voting is rejected until this verifier is configured because eligibility must
-// fail closed when no proposal snapshot exists.
-message SetSnapshotVerifier {
-    verifier: Address;                    // Address of the SnapshotVerifier
+// Propose changing the resolver or verifier to `target`. Callable by any
+// governance signer when no other change is pending. `code_hash` is the
+// expected code hash of `target`; it is enforced at execution time. The
+// proposer implicitly casts the first approval.
+message ProposeConfigChange {
+    kind: Int as uint8;                   // CONFIG_KIND_RESOLVER | CONFIG_KIND_VERIFIER
+    target: Address;                      // proposed resolver/verifier address
+    code_hash: Int as uint256;            // expected code.hash() of `target`
+}
+
+// Approve the currently pending configuration change. Callable by any
+// governance signer; each signer may approve at most once. When approvals first
+// reach the threshold the timelock starts.
+message ApproveConfigChange {
+    kind: Int as uint8;                   // must match the pending change
+    target: Address;                      // must match the pending change
+}
+
+// Execute the pending configuration change after the threshold is met and the
+// timelock has elapsed. The caller supplies the target's StateInit so the
+// registry can prove `target` actually runs the approved code:
+//   contractAddress(StateInit{code, data}) == target  AND  code.hash() == code_hash.
+message ExecuteConfigChange {
+    kind: Int as uint8;                   // must match the pending change
+    target: Address;                      // must match the pending change
+    code: Cell;                           // target contract code
+    data: Cell;                           // target contract initial data
+}
+
+// Cancel the pending configuration change (escape hatch). Callable by any
+// governance signer; must match the pending change to avoid stale cancels.
+message CancelConfigChange {
+    kind: Int as uint8;                   // must match the pending change
+    target: Address;                      // must match the pending change
 }
 
 // ==================== OWNERSHIP-VERIFICATION PROTOCOL ====================
@@ -205,6 +265,44 @@ message ProposalFinalized {
     votes_abstain: Int as uint64;
 }
 
+// ---- Governance configuration events (Issue #366) ----
+
+// Emitted once when the governance signer set is installed.
+message GovernanceConfigured {
+    signer_count: Int as uint8;
+    threshold: Int as uint8;
+}
+
+// Emitted when a configuration change is proposed.
+message ConfigChangeProposed {
+    kind: Int as uint8;
+    target: Address;
+    code_hash: Int as uint256;
+    proposer: Address;
+}
+
+// Emitted on each approval; carries the running tally and (once queued) the
+// timestamp at which the change becomes executable.
+message ConfigChangeApproved {
+    kind: Int as uint8;
+    target: Address;
+    approver: Address;
+    approvals: Int as uint8;
+    executable_at: Int as uint64;         // 0 until the threshold is reached
+}
+
+// Emitted when a configuration change is applied.
+message ConfigChangeExecuted {
+    kind: Int as uint8;
+    target: Address;
+}
+
+// Emitted when a pending configuration change is cancelled.
+message ConfigChangeCancelled {
+    kind: Int as uint8;
+    target: Address;
+}
+
 // ==================== CONTRACT ====================
 
 contract ProposalRegistry with Deployable {
@@ -223,17 +321,20 @@ contract ProposalRegistry with Deployable {
     // Key: proposal_id * 1000 + nft_id (simple composite key)
     votes_cast: map<Int, Bool>;
 
-    // Deployer address — the only account allowed to configure the resolver.
-    // Recorded once at init() and never mutated.
+    // Deployer address — bootstraps the governance signer set once at genesis.
+    // Recorded once at init() and never mutated. After ConfigureGovernance the
+    // deployer key alone can no longer change the resolver or verifier.
     deployer: Address;
 
     // NFT ownership resolver (TEP-62 owner resolution / NFT Account Resolver).
-    // Set once by the deployer via SetOwnerResolver. Until configured, voting and
-    // proposal submission are rejected so a vote can never be recorded without an
-    // on-chain ownership check.
+    // Installed and later updated only through the governance multi-sig +
+    // timelock flow (ProposeConfigChange/ApproveConfigChange/ExecuteConfigChange).
+    // Until configured, voting and proposal submission are rejected so a vote can
+    // never be recorded without an on-chain ownership check.
     owner_resolver: Address?;
 
-    // Snapshot verifier used for voter eligibility. Set once by the deployer.
+    // Snapshot verifier used for voter eligibility. Installed/updated through the
+    // same governance multi-sig + timelock flow as the resolver.
     snapshot_verifier: Address?;
 
     // Monotonic counter correlating ownership requests with their replies.
@@ -248,28 +349,204 @@ contract ProposalRegistry with Deployable {
     // recorded only after both ownership and snapshot eligibility are confirmed.
     pending_eligibility_votes: map<Int, PendingVote>;
 
+    // ---- Governance multi-sig state (Issue #366) ----
+    //
+    // The signer set that authorises resolver/verifier changes. Installed once
+    // by the deployer via ConfigureGovernance; afterwards the deployer key alone
+    // cannot reconfigure governance.
+    governance_configured: Bool;
+    governance_signers: map<Address, Bool>;   // authorized signer -> true
+    governance_signer_count: Int as uint8;
+    governance_threshold: Int as uint8;
+
+    // ---- Pending configuration change (at most one at a time) ----
+    config_pending: Bool;
+    config_kind: Int as uint8;                // CONFIG_KIND_RESOLVER | CONFIG_KIND_VERIFIER
+    config_target: Address?;                  // proposed resolver/verifier
+    config_code_hash: Int as uint256;         // expected code.hash() of config_target
+    config_approvals: Int as uint8;           // running approval tally
+    config_executable_at: Int as uint64;      // timelock expiry; 0 until threshold reached
+    config_approvers: map<Address, Bool>;     // approval dedup for the current change
+
     init() {
         self.proposal_count = 0;
         self.deployer = sender();
         self.owner_resolver = null;
         self.snapshot_verifier = null;
         self.next_query_id = 0;
+
+        // Governance starts unconfigured: voting/proposals are frozen and no
+        // resolver/verifier change is possible until a signer set is installed.
+        self.governance_configured = false;
+        self.governance_signer_count = 0;
+        self.governance_threshold = 0;
+
+        self.config_pending = false;
+        self.config_kind = 0;
+        self.config_target = null;
+        self.config_code_hash = 0;
+        self.config_approvals = 0;
+        self.config_executable_at = 0;
     }
 
-    // ==================== CONFIGURATION ====================
+    // ==================== GOVERNANCE CONFIGURATION ====================
+    //
+    // Bootstrap once, then every resolver/verifier change requires M-of-N signer
+    // approvals + a timelock + code-hash verification (Issue #366).
 
-    // Configure the NFT ownership resolver (one-time, deployer only).
-    receive(msg: SetOwnerResolver) {
-        require(sender() == self.deployer, "Only deployer can set resolver");
-        require(self.owner_resolver == null, "Resolver already set");
-        self.owner_resolver = msg.resolver;
+    // One-time bootstrap of the governance signer set (deployer only).
+    receive(msg: ConfigureGovernance) {
+        require(sender() == self.deployer, "Only deployer can configure governance");
+        require(!self.governance_configured, "Governance already configured");
+        require(msg.signer_count >= MIN_GOV_SIGNERS, "At least two signers required");
+        require(msg.signer_count <= MAX_GOV_SIGNERS, "Too many signers");
+        require(msg.threshold >= MIN_GOV_THRESHOLD, "Threshold must be at least two");
+        require(msg.threshold <= msg.signer_count, "Threshold exceeds signer count");
+
+        // Populate the signer set, rejecting gaps, zero addresses and duplicates.
+        let zero: Address = newAddress(0, 0);
+        let i: Int = 0;
+        while (i < msg.signer_count) {
+            let entry: Address? = msg.signers.get(i);
+            require(entry != null, "Missing signer entry");
+            let signer: Address = entry!!;
+            require(signer != zero, "Zero signer address");
+            require(self.governance_signers.get(signer) == null, "Duplicate signer");
+            self.governance_signers.set(signer, true);
+            i = i + 1;
+        }
+
+        self.governance_signer_count = msg.signer_count;
+        self.governance_threshold = msg.threshold;
+        self.governance_configured = true;
+
+        emit(GovernanceConfigured{
+            signer_count: msg.signer_count,
+            threshold: msg.threshold
+        }.toCell());
     }
 
-    // Configure the snapshot verifier (one-time, deployer only).
-    receive(msg: SetSnapshotVerifier) {
-        require(sender() == self.deployer, "Only deployer can set snapshot verifier");
-        require(self.snapshot_verifier == null, "Snapshot verifier already set");
-        self.snapshot_verifier = msg.verifier;
+    // Propose a resolver/verifier change (any signer; proposer auto-approves).
+    receive(msg: ProposeConfigChange) {
+        self.requireGovernanceSigner();
+        require(!self.config_pending, "A configuration change is already pending");
+        require(
+            msg.kind == CONFIG_KIND_RESOLVER || msg.kind == CONFIG_KIND_VERIFIER,
+            "Invalid configuration kind"
+        );
+        require(msg.code_hash != 0, "Code hash required");
+
+        self.config_pending = true;
+        self.config_kind = msg.kind;
+        self.config_target = msg.target;
+        self.config_code_hash = msg.code_hash;
+        self.config_executable_at = 0;
+
+        // Reset the approver set for this fresh proposal and record the
+        // proposer's implicit first approval.
+        self.config_approvers = emptyMap();
+        self.config_approvers.set(sender(), true);
+        self.config_approvals = 1;
+
+        // With MIN_GOV_THRESHOLD >= 2 a single proposer never reaches the
+        // threshold, so the timelock is started in ApproveConfigChange.
+
+        emit(ConfigChangeProposed{
+            kind: msg.kind,
+            target: msg.target,
+            code_hash: msg.code_hash,
+            proposer: sender()
+        }.toCell());
+    }
+
+    // Approve the pending change (any signer, once each).
+    receive(msg: ApproveConfigChange) {
+        self.requireGovernanceSigner();
+        require(self.config_pending, "No configuration change pending");
+        require(msg.kind == self.config_kind, "Configuration kind mismatch");
+        require(
+            self.config_target != null && msg.target == self.config_target!!,
+            "Configuration target mismatch"
+        );
+        require(self.config_approvers.get(sender()) == null, "Signer already approved");
+
+        self.config_approvers.set(sender(), true);
+        self.config_approvals = self.config_approvals + 1;
+
+        // Start the timelock the first time the threshold is reached.
+        if (self.config_approvals >= self.governance_threshold && self.config_executable_at == 0) {
+            self.config_executable_at = now() + CONFIG_TIMELOCK_DELAY;
+        }
+
+        emit(ConfigChangeApproved{
+            kind: self.config_kind,
+            target: msg.target,
+            approver: sender(),
+            approvals: self.config_approvals,
+            executable_at: self.config_executable_at
+        }.toCell());
+    }
+
+    // Execute the pending change after threshold + timelock + code-hash proof.
+    receive(msg: ExecuteConfigChange) {
+        self.requireGovernanceSigner();
+        require(self.config_pending, "No configuration change pending");
+        require(msg.kind == self.config_kind, "Configuration kind mismatch");
+        require(
+            self.config_target != null && msg.target == self.config_target!!,
+            "Configuration target mismatch"
+        );
+        require(self.config_approvals >= self.governance_threshold, "Not enough approvals");
+        require(
+            self.config_executable_at != 0 && now() >= self.config_executable_at,
+            "Timelock has not elapsed"
+        );
+
+        // Code-hash verification (Issue #366 acceptance criterion). Prove that
+        // `target` actually runs the approved code: the supplied StateInit must
+        // reconstruct the target address AND its code must hash to the approved
+        // value. A malicious resolver with different code can therefore never be
+        // installed, even by a signer quorum that approved a specific contract.
+        require(msg.code.hash() == self.config_code_hash, "Resolver code hash mismatch");
+        let derived: Address = contractAddress(StateInit{ code: msg.code, data: msg.data });
+        require(derived == self.config_target!!, "Target address does not match code");
+
+        let applied_kind: Int = self.config_kind;
+        let applied_target: Address = self.config_target!!;
+
+        if (applied_kind == CONFIG_KIND_RESOLVER) {
+            self.owner_resolver = self.config_target;
+        } else {
+            self.snapshot_verifier = self.config_target;
+        }
+
+        self.clearPendingConfig();
+
+        emit(ConfigChangeExecuted{
+            kind: applied_kind,
+            target: applied_target
+        }.toCell());
+    }
+
+    // Cancel the pending change (escape hatch; any signer).
+    receive(msg: CancelConfigChange) {
+        self.requireGovernanceSigner();
+        require(self.config_pending, "No configuration change pending");
+        require(msg.kind == self.config_kind, "Configuration kind mismatch");
+        require(
+            self.config_target != null && msg.target == self.config_target!!,
+            "Configuration target mismatch"
+        );
+
+        let cancelled_kind: Int = self.config_kind;
+        let cancelled_target: Address = self.config_target!!;
+
+        self.clearPendingConfig();
+
+        emit(ConfigChangeCancelled{
+            kind: cancelled_kind,
+            target: cancelled_target
+        }.toCell());
     }
 
     // ==================== SUBMIT PROPOSAL ====================
@@ -457,6 +734,24 @@ contract ProposalRegistry with Deployable {
     }
 
     // ==================== INTERNAL HELPERS ====================
+
+    // Abort unless governance is configured and the sender is an authorised
+    // signer. Guards every multi-sig configuration handler.
+    fun requireGovernanceSigner() {
+        require(self.governance_configured, "Governance not configured");
+        require(self.governance_signers.get(sender()) != null, "Not a governance signer");
+    }
+
+    // Clear all pending-configuration state back to its idle defaults.
+    fun clearPendingConfig() {
+        self.config_pending = false;
+        self.config_kind = 0;
+        self.config_target = null;
+        self.config_code_hash = 0;
+        self.config_approvals = 0;
+        self.config_executable_at = 0;
+        self.config_approvers = emptyMap();
+    }
 
     // Resolve the configured resolver address or abort if it has not been set.
     fun requireResolver(): Address {
@@ -740,8 +1035,66 @@ contract ProposalRegistry with Deployable {
         return self.snapshot_verifier;
     }
 
-    // Get the deployer address (resolver configuration authority)
+    // Get the deployer address (governance bootstrap authority)
     get fun getDeployer(): Address {
         return self.deployer;
+    }
+
+    // ---- Governance multi-sig getters (Issue #366) ----
+
+    // Whether the governance signer set has been installed.
+    get fun isGovernanceConfigured(): Bool {
+        return self.governance_configured;
+    }
+
+    // Number of approvals required to change the resolver/verifier.
+    get fun getGovernanceThreshold(): Int {
+        return self.governance_threshold;
+    }
+
+    // Number of authorised governance signers.
+    get fun getGovernanceSignerCount(): Int {
+        return self.governance_signer_count;
+    }
+
+    // Whether `addr` is an authorised governance signer.
+    get fun isGovernanceSigner(addr: Address): Bool {
+        return self.governance_signers.get(addr) != null;
+    }
+
+    // The configured timelock delay (seconds) for configuration changes.
+    get fun getConfigTimelockDelay(): Int {
+        return CONFIG_TIMELOCK_DELAY;
+    }
+
+    // Whether a configuration change is currently pending.
+    get fun isConfigChangePending(): Bool {
+        return self.config_pending;
+    }
+
+    // The pending change kind (meaningful only while a change is pending).
+    get fun getPendingConfigKind(): Int {
+        return self.config_kind;
+    }
+
+    // The pending change target (null when no change is pending).
+    get fun getPendingConfigTarget(): Address? {
+        return self.config_target;
+    }
+
+    // The expected code hash of the pending change target.
+    get fun getPendingConfigCodeHash(): Int {
+        return self.config_code_hash;
+    }
+
+    // Running approval tally for the pending change.
+    get fun getPendingConfigApprovals(): Int {
+        return self.config_approvals;
+    }
+
+    // Timestamp at which the pending change becomes executable (0 until the
+    // threshold is reached).
+    get fun getPendingConfigExecutableAt(): Int {
+        return self.config_executable_at;
     }
 }
