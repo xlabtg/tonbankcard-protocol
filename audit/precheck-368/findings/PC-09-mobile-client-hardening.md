@@ -53,11 +53,61 @@ If `nftAddress`/`txId` contain URL-significant characters, the request path/quer
 - Replace the prefix check with `new URL(url).protocol === 'https:'` (guarded by try/catch).
 - Remove `autoVerify="true"` from the custom-scheme intent-filter, or move it to a real http/https App Links intent-filter with a verified `assetlinks.json`.
 
+## Resolution
+
+**RESOLVED ✅ (Issue #378 / PC-09)** — PR
+[#392](https://github.com/xlabtg/tonbankcard-protocol/pull/392), branch
+`issue-378-694838575fe6`.
+
+All three hardening issues are fixed, each backed by a CI-enforced regression:
+
+1. **Percent-encoded path interpolation (`mobile/`).** The three request-URL
+   builders now wrap the caller-supplied identifier in `encodeURIComponent`,
+   matching the convention already used by `mobile-app/`:
+   `PaymentService.getTransactionHistory` →
+   `/transactions/${encodeURIComponent(nftAddress)}`,
+   `PaymentService.getTransactionById` →
+   `/transaction/${encodeURIComponent(txId)}`, and
+   `AccountService.getAccount` → `/account/${encodeURIComponent(nftAddress)}`. A
+   crafted id such as `../admin?inject=1&x=2` can no longer traverse the path or
+   smuggle query parameters; an ordinary base64url address (no reserved
+   characters) is preserved byte-for-byte.
+2. **HTTPS check parses the URL.** `assertHttpsEndpoint` now parses the value
+   with the WHATWG `URL` constructor (guarded by try/catch) and asserts
+   `parsed.protocol === 'https:'` instead of a case-sensitive
+   `startsWith('https://')`. This accepts valid mixed-case schemes
+   (`HTTPS://…`, normalized to `https:`) and rejects non-HTTPS schemes
+   (`http:`, `ftp:`, `javascript:`) and malformed/schemeless input. Both
+   failure paths keep the existing `must use HTTPS` message, mirroring the
+   HTTPS-only guard already enforced by `HttpsClient.fetch`.
+3. **No-op `autoVerify` removed.** The custom `tonbankcard`-scheme intent-filter
+   in `AndroidManifest.xml` no longer carries `android:autoVerify="true"`; a
+   comment documents that App Links verification only runs for http/https
+   schemes and how to add a real verified filter (with a hosted
+   `/.well-known/assetlinks.json`) if ever needed.
+
+**CI-enforced regressions** (job *Test*, `.github/workflows/ci.yml`):
+
+- *Test mobile-core* — `mobile/tests/payment-service.spec.ts`
+  (`describe('request URL hardening (PC-09)')`) and
+  `mobile/tests/account-service.spec.ts`
+  (`describe('getAccount request URL hardening (PC-09)')`) spy on `fetch` and
+  assert the requested URL equals the `encodeURIComponent`-encoded path for
+  crafted identifiers, and is unchanged for an ordinary address.
+- *Test mobile-app* — `mobile-app/tests/config/config.spec.ts` covers the
+  mixed-case-accept and `ftp:`/`javascript:`/mixed-case-`http`/malformed-reject
+  cases; `mobile-app/tests/android/manifest.spec.ts`
+  (`describe('AndroidManifest deep-link intent-filters (PC-09)')`) parses the
+  real manifest and asserts `autoVerify` never sits on a custom-scheme filter.
+
+A standalone before/after reproduction of all three weaknesses lives in
+`experiments/issue-378-mobile-client-hardening/`.
+
 ## Acceptance Criteria
 
-- [ ] `mobile/` request URLs percent-encode interpolated identifiers.
-- [ ] HTTPS enforcement parses the URL and checks the protocol.
-- [ ] `autoVerify` is only present on http/https App Links filters (or removed).
+- [x] `mobile/` request URLs percent-encode interpolated identifiers.
+- [x] HTTPS enforcement parses the URL and checks the protocol.
+- [x] `autoVerify` is only present on http/https App Links filters (or removed).
 
 ## References
 
