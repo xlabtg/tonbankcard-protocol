@@ -13,7 +13,38 @@
  * - Settlement verification is done on-chain
  */
 
-import { formatTBC } from '../amount';
+import { assertAmount, formatTBC } from '../amount';
+
+/**
+ * TON address shape accepted in the deep-link `merchantNft` path component:
+ * a user-friendly base64url address (48 chars) or a raw `workchain:account_hex`
+ * address.
+ *
+ * This is a dependency-free format check rather than a full `@ton/core`
+ * checksum validation on purpose: the widget is bundled for direct
+ * `<script>`-tag use (see `src/browser.ts`) and must stay free of
+ * `@ton/core` / `@ton/crypto`. Combined with `encodeURIComponent`, it stops a
+ * crafted address from injecting or overriding query parameters in the link.
+ */
+const TON_ADDRESS_FORMAT = /^(?:-?\d+:[0-9a-fA-F]{64}|[A-Za-z0-9_-]{48})$/;
+
+/**
+ * Validate that `merchantNft` is a well-formed TON address before embedding it
+ * in a payment deep link.
+ *
+ * @param merchantNft - Merchant NFT address string
+ * @returns The validated address string (unchanged)
+ * @throws Error if the value is not a well-formed TON address
+ */
+function assertMerchantNft(merchantNft: string): string {
+  if (
+    typeof merchantNft !== 'string' ||
+    !TON_ADDRESS_FORMAT.test(merchantNft)
+  ) {
+    throw new Error(`Invalid merchant NFT address: ${String(merchantNft)}`);
+  }
+  return merchantNft;
+}
 
 export interface PaymentWidgetConfig {
   /** Merchant NFT address (required) */
@@ -132,9 +163,17 @@ export class TonbankcardPaymentWidget {
 
   /**
    * Generate TON Connect payment deep link
+   *
+   * Every interpolated component is validated and percent-encoded exactly once
+   * so that a value containing reserved characters (e.g. `&`, `?`, `#`, or
+   * `=`) cannot inject or override query parameters in the generated deep link.
+   *
+   * @throws Error if `merchantNft` is not a well-formed TON address or
+   *         `amountTbc` is not a non-negative numeric string
    */
   generatePaymentLink(): string {
-    const amount = this.config.amountTbc;
+    const merchantNft = assertMerchantNft(this.config.merchantNft);
+    const amount = assertAmount(this.config.amountTbc);
     const parts = [
       `TONBANKCARD Payment`,
       this.config.orderId ? `Order: ${this.config.orderId}` : '',
@@ -144,7 +183,9 @@ export class TonbankcardPaymentWidget {
       .join(' | ');
 
     const text = encodeURIComponent(parts);
-    let link = `ton://transfer/${this.config.merchantNft}?amount=${amount}&text=${text}`;
+    let link = `ton://transfer/${encodeURIComponent(
+      merchantNft
+    )}?amount=${encodeURIComponent(amount)}&text=${text}`;
 
     if (this.config.returnUrl) {
       link += `&return=${encodeURIComponent(this.config.returnUrl)}`;
