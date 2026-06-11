@@ -2,7 +2,7 @@
  * Unit tests for PaymentService
  */
 
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import { PaymentService } from '../src/services/PaymentService';
 import { MobileConfig, PaymentRequest } from '../src/types';
 
@@ -10,6 +10,21 @@ const testConfig: MobileConfig = {
   network: 'testnet',
   paymentHubAddress: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le',
 };
+
+const apiConfig: MobileConfig = {
+  ...testConfig,
+  apiEndpoint: 'https://api.example.com',
+};
+
+/** Build a minimal `fetch`-compatible Response stub for the mocked calls. */
+function jsonResponse(body: unknown, ok = true, status = 200): Response {
+  return {
+    ok,
+    status,
+    statusText: ok ? 'OK' : 'Error',
+    json: async () => body,
+  } as unknown as Response;
+}
 
 const merchantAddress = 'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7';
 const rawMerchantAddress =
@@ -280,6 +295,67 @@ describe('PaymentService', () => {
       const service = new PaymentService(testConfig);
       const tx = await service.getTransactionById('tx-123');
       expect(tx).toBeNull();
+    });
+  });
+
+  describe('request URL hardening (PC-09)', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('percent-encodes nftAddress in the transactions request path', async () => {
+      const fetchMock = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(jsonResponse([]));
+
+      const service = new PaymentService(apiConfig);
+      const crafted = '../admin?inject=1&x=2';
+      await service.getTransactionHistory(crafted);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const calledUrl = String(fetchMock.mock.calls[0][0]);
+      expect(calledUrl).toBe(
+        `https://api.example.com/transactions/${encodeURIComponent(crafted)}`
+      );
+      // The raw, unencoded id must not survive: no path traversal, no injected
+      // query parameters.
+      expect(calledUrl).not.toContain('../admin');
+      expect(calledUrl).not.toContain('?inject=1');
+    });
+
+    it('percent-encodes txId in the transaction request path', async () => {
+      const fetchMock = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(jsonResponse({ id: 'tx', type: 'send' }));
+
+      const service = new PaymentService(apiConfig);
+      const crafted = '1/../../secret?admin=true';
+      await service.getTransactionById(crafted);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const calledUrl = String(fetchMock.mock.calls[0][0]);
+      expect(calledUrl).toBe(
+        `https://api.example.com/transaction/${encodeURIComponent(crafted)}`
+      );
+      expect(calledUrl).not.toContain('../../secret');
+      expect(calledUrl).not.toContain('?admin=true');
+    });
+
+    it('leaves ordinary identifiers byte-for-byte unchanged', async () => {
+      const fetchMock = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(jsonResponse([]));
+
+      const service = new PaymentService(apiConfig);
+      await service.getTransactionHistory(merchantAddress);
+
+      const calledUrl = String(fetchMock.mock.calls[0][0]);
+      expect(calledUrl).toBe(
+        `https://api.example.com/transactions/${encodeURIComponent(merchantAddress)}`
+      );
+      // A user-friendly base64url address contains no reserved characters, so
+      // encoding is a no-op and the address is preserved verbatim.
+      expect(calledUrl).toBe(`https://api.example.com/transactions/${merchantAddress}`);
     });
   });
 });

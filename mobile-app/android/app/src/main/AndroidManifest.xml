@@ -43,7 +43,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <intent-filter android:autoVerify="true">
+            <!--
+                Custom-scheme deep links. `android:autoVerify` is intentionally
+                NOT set here: Android App Links verification only runs for
+                http/https data schemes, so on the custom `tonbankcard` scheme
+                it is a no-op that gives a false sense of link verification.
+                If verified App Links are ever needed, add a separate
+                http/https intent-filter with autoVerify and a hosted
+                /.well-known/assetlinks.json instead.
+            -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
