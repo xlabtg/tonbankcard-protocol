@@ -359,3 +359,54 @@ describe('Issue #367: payment-hub.fc reference integrates ownership, Account Loc
     });
   });
 });
+
+describe('Issue #371 (PC-02): PaymentHub.InitializeAccount is create-once', () => {
+  // The production hub is contracts/payments/PaymentHub.tact (CONTRACTS-H3 / #260
+  // keeps it as the single deployable hub). That directory is not built or tested
+  // in CI, so — exactly like the #364 and #367 gates above — these static
+  // assertions are the CI-enforced lock that the create-once fix stays in place.
+  // The behavioural reproduction lives in
+  // experiments/issue-371-paymenthub-create-once/.
+  const PRODUCTION = 'contracts/payments/PaymentHub.tact';
+  const source = read(PRODUCTION);
+
+  it('keeps the production hub in the deployable map', () => {
+    const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
+    expect(deployable).toContain(PRODUCTION);
+  });
+
+  it('guards InitializeAccount with a write-once existence check (CONTRACTS-M1 pattern)', () => {
+    // Mirrors the #279 owner-binding guard and the MerchantPaymentHub
+    // SetAccountBalance guard: a live account slot cannot be overwritten, so a
+    // compromised admin cannot reassign `owner` to drain a funded account.
+    expect(source).toContain('Account already initialized');
+    expect(source).toMatch(/self\.accounts\.get\(msg\.nft_address\)\s*==\s*null/);
+  });
+
+  it('places the guard inside InitializeAccount, after the admin authentication', () => {
+    const handlerIdx = source.indexOf('receive(msg: InitializeAccount)');
+    expect(handlerIdx).toBeGreaterThanOrEqual(0);
+    // Bound the search to this handler body (up to the next receive()).
+    const nextReceive = source.indexOf('receive(', handlerIdx + 1);
+    const body = source.slice(handlerIdx, nextReceive === -1 ? source.length : nextReceive);
+    const adminIdx = body.indexOf('sender() == self.admin');
+    const guardIdx = body.indexOf('Account already initialized');
+    expect(adminIdx).toBeGreaterThanOrEqual(0);
+    // Admin check first, then the create-once guard — the handler still authenticates.
+    expect(guardIdx).toBeGreaterThan(adminIdx);
+  });
+
+  it('keeps the account read path side-effect free so a query cannot squat a slot', () => {
+    // With the write-once guard in place, any path that durably created an empty
+    // slot for an arbitrary nft_address (a free GetAccountStateRequest query, a
+    // validation lookup) would permanently block that account's legitimate first
+    // initialization — a denial-of-service. The read helper must NOT persist.
+    const fnIdx = source.indexOf('fun getAccountOrDefault');
+    expect(fnIdx).toBeGreaterThanOrEqual(0);
+    const nextFn = source.indexOf('\n    fun ', fnIdx + 1);
+    const body = source.slice(fnIdx, nextFn === -1 ? source.length : nextFn);
+    expect(body).not.toMatch(/self\.accounts\.set\(/);
+    // The legacy helper that persisted a placeholder on read must be gone.
+    expect(source).not.toContain('getOrCreateAccount');
+  });
+});

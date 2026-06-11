@@ -40,6 +40,12 @@ Init ==
 \* the only side-effect is on `balance` of one account; minting does not move
 \* funds between accounts, and the property tests in tests/invariants reject
 \* the same admin issuing a `Transfer`.
+\* NOTE (Issue #371 / PC-02): this action keeps `UNCHANGED << owner, ... >>` —
+\* the model assumes InitializeAccount never reassigns an existing account's
+\* `owner`. The real PaymentHub.tact originally violated that assumption (a
+\* re-`InitializeAccount` overwrote `owner`, enabling a drain via Transfer); the
+\* create-once guard `require(self.accounts.get(msg.nft_address) == null, ...)`
+\* now makes the contract match this model's owner-stability assumption.
 Mint(nft, amt) ==
     /\ amt \in Amounts
     /\ balance' = [ balance EXCEPT ![nft] = balance[nft] + amt ]

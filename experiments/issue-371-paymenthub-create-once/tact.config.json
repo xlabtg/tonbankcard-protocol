@@ -1,0 +1,16 @@
+{
+  "projects": [
+    {
+      "name": "PaymentHub",
+      "path": "./PaymentHub.tact",
+      "output": "./dist",
+      "options": {
+        "debug": true,
+        "external": true,
+        "experimental": {
+          "inline": true
+        }
+      }
+    }
+  ]
+}
