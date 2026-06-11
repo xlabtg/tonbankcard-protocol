@@ -20,6 +20,8 @@
  * @see https://documenter.getpostman.com/view/7907941/S1a32n38
  */
 
+import { createHmac, timingSafeEqual } from 'crypto';
+
 import type {
   NOWPaymentsConfig,
   CreateInvoiceRequest,
@@ -134,29 +136,38 @@ export class NOWPaymentsAdapter {
   /**
    * Verify webhook callback authenticity
    *
-   * NOWPayments uses HMAC signature to verify callback authenticity.
-   * This prevents spoofed payment notifications.
+   * NOWPayments signs every IPN callback with HMAC-SHA512 over the JSON body
+   * whose keys are sorted recursively, keyed by the merchant's IPN secret. The
+   * resulting hex digest is delivered in the `x-nowpayments-sig` header. We
+   * recompute that digest and compare it in constant time, which prevents
+   * spoofed payment notifications: an attacker who does not know the IPN secret
+   * cannot produce a matching signature.
    *
-   * @param payload - Callback payload received
-   * @param signature - HMAC signature from header
-   * @returns true if signature is valid
+   * @param payload - Callback payload received (raw JSON string or parsed object)
+   * @param signature - HMAC-SHA512 signature from the `x-nowpayments-sig` header
+   * @returns true if the signature is authentic, false otherwise
    */
   verifyCallback(payload: string | PaymentCallback, signature: string): boolean {
     if (!this.config.ipnSecretKey) {
       throw new Error('IPN Secret Key is required for webhook verification');
     }
 
-    try {
-      // Convert payload to string if it's an object
-      const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    // A missing or non-string signature can never be valid. Bail out before
+    // touching crypto so a malformed header cannot throw inside the comparison.
+    if (typeof signature !== 'string' || signature.length === 0) {
+      return false;
+    }
 
-      // In a real implementation, use crypto.createHmac
-      // This is a placeholder that shows the verification pattern
-      // Real implementation would require Node.js crypto or Web Crypto API
-      const expectedSignature = this.calculateHMAC(payloadString, this.config.ipnSecretKey);
+    try {
+      // Reproduce the exact canonical form NOWPayments signed (recursively
+      // key-sorted JSON); otherwise a genuine callback whose key order differs
+      // from a naive JSON.stringify would be wrongly rejected.
+      const canonicalPayload = this.canonicalizePayload(payload);
+      const expectedSignature = this.calculateHMAC(canonicalPayload, this.config.ipnSecretKey);
 
       return this.constantTimeCompare(signature, expectedSignature);
     } catch (error) {
+      // Malformed JSON or any other unexpected error => treat as unverified.
       console.error('Webhook verification failed:', error);
       return false;
     }
@@ -306,32 +317,79 @@ export class NOWPaymentsAdapter {
   }
 
   /**
-   * Calculate HMAC signature for webhook verification
+   * Produce the canonical string that NOWPayments signs.
    *
-   * NOTE: This is a placeholder. Real implementation requires:
-   * - Node.js: crypto.createHmac('sha512', secret).update(data).digest('hex')
-   * - Browser: Web Crypto API SubtleCrypto.sign()
+   * The IPN signature is computed over the JSON body with **every** object's
+   * keys sorted lexicographically (recursively), then `JSON.stringify`-ed. A
+   * raw string payload is parsed first so the verifier is independent of the
+   * exact byte order the caller happened to capture; an object payload is sorted
+   * the same way. Array order is preserved (indices are significant); only
+   * object keys are reordered — for the flat IPN bodies NOWPayments actually
+   * sends, this matches their reference `sortObject` byte-for-byte.
+   *
+   * @param payload - Callback payload as received (raw JSON string or object)
+   * @returns Deterministic JSON string with recursively sorted keys
    */
-  private calculateHMAC(data: string, secret: string): string {
-    // Placeholder - actual implementation would use crypto
-    // This should be implemented with proper HMAC-SHA512
-    return `hmac_placeholder_${data.length}_${secret.length}`;
+  private canonicalizePayload(payload: string | PaymentCallback): string {
+    const parsed: unknown = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    return JSON.stringify(this.sortObjectKeys(parsed));
   }
 
   /**
-   * Constant-time string comparison to prevent timing attacks
+   * Recursively sort object keys so the serialized form is deterministic.
+   *
+   * Arrays keep their order and have each element sorted; plain objects have
+   * their keys reordered lexicographically; primitives are returned unchanged.
+   */
+  private sortObjectKeys(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sortObjectKeys(item));
+    }
+
+    if (value !== null && typeof value === 'object') {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = this.sortObjectKeys((value as Record<string, unknown>)[key]);
+          return acc;
+        }, {});
+    }
+
+    return value;
+  }
+
+  /**
+   * Calculate the HMAC-SHA512 signature for webhook verification.
+   *
+   * Matches the NOWPayments IPN scheme: HMAC-SHA512 of the canonical
+   * (recursively key-sorted) JSON body, keyed by the IPN secret, hex-encoded.
+   *
+   * @param data - Canonical payload string (see {@link canonicalizePayload})
+   * @param secret - IPN secret key configured for this merchant
+   * @returns Lower-case hex HMAC-SHA512 digest (128 chars)
+   */
+  private calculateHMAC(data: string, secret: string): string {
+    return createHmac('sha512', secret).update(data, 'utf8').digest('hex');
+  }
+
+  /**
+   * Constant-time string comparison to prevent timing attacks.
+   *
+   * Uses Node's `crypto.timingSafeEqual`, which compares in time independent of
+   * how many leading bytes match. The length pre-check is itself safe: the
+   * expected HMAC-SHA512 hex digest is always 128 chars, so a length mismatch
+   * only reveals that the attacker-supplied signature is the wrong size, never
+   * how much of a correct-length guess matched.
    */
   private constantTimeCompare(a: string, b: string): boolean {
-    if (a.length !== b.length) {
+    const bufferA = Buffer.from(a, 'utf8');
+    const bufferB = Buffer.from(b, 'utf8');
+
+    if (bufferA.length !== bufferB.length) {
       return false;
     }
 
-    let result = 0;
-    for (let i = 0; i < a.length; i++) {
-      result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-    }
-
-    return result === 0;
+    return timingSafeEqual(bufferA, bufferB);
   }
 
   /**
