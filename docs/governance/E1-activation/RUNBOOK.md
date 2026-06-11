@@ -70,11 +70,11 @@ Output of §3: a passing staging report stored at `audit/governance-snapshots/st
 
 ## 4. Mainnet bind (Phase 4 — one-time, irreversible)
 
-This is the **only** mainnet on-chain action performed by E1. It binds `SnapshotVerifier.proposal_registry` to the mainnet `ProposalRegistry` address.
+This is the **only irreversible** mainnet on-chain action performed by E1. It binds `SnapshotVerifier.proposal_registry` to the mainnet `ProposalRegistry` address. (E1 also performs one **rotatable** one-time config action — `SetTrustedIndexer`, the §5 precondition that authorises the snapshot writer; see §5 step 3 and Issue #370 / PC-01.)
 
 ### 4.1 Why one transaction?
 
-`SnapshotVerifier.set_registry` is guarded by `require(self.proposal_registry == null)`. A successful call permanently freezes the binding. A failed call (e.g. wrong sender) is rejected by the contract and does not consume the slot.
+`SnapshotVerifier.set_registry` is guarded by `require(sender() == self.deployer)` **and** `require(self.proposal_registry == null)` — Issue #370 / PC-01 hardened the previously unauthenticated, first-caller-wins handler to deployer-only. A successful call permanently freezes the binding. A failed call — wrong sender (anything other than the deploying B2 multi-sig) or a second attempt — is rejected by the contract and does not consume the slot.
 
 ### 4.2 Construct the message
 
@@ -101,7 +101,7 @@ Two of three B2 signers sign the intent on their hardware wallets following [`..
 
 Anti-foot-gun rules (mirrors B2 AF-1..AF-10):
 
-- AF-E1-1. The **sender** of `set_registry` must be the B2 multi-sig. The runbook rejects sends from EOA hot wallets.
+- AF-E1-1. The **sender** of `set_registry` must be the B2 multi-sig — which is the SnapshotVerifier **deployer** captured at `init()`. The contract now **enforces** `sender() == deployer` (Issue #370 / PC-01), so a stray EOA send is rejected on-chain, not merely by runbook discipline.
 - AF-E1-2. The recipient address **must** equal `SNAPSHOT_VERIFIER_ADDRESS` from the B2 manifest. The runbook rejects any other address.
 - AF-E1-3. The intent body **must** be exactly `set_registry` (text comment). No additional bytes.
 - AF-E1-4. The value **must** be ≤ 0.1 TON. The runbook rejects larger.
@@ -133,14 +133,16 @@ Once §4 is merged and `network-matrix.md` shows `activated: yes`:
 
 1. **Snapshot block.** Per [`../SNAPSHOT.md`](../SNAPSHOT.md) §3.2, the operator picks the snapshot block. Records it in [`STATUS.md`](./STATUS.md) §3.
 2. **Eligibility map.** Indexer builds the map per [`../SNAPSHOT.md`](../SNAPSHOT.md) §4. Operator pins proposal metadata to IPFS and records the CID.
-3. **`RegisterSnapshot`.** Multi-sig sends `SnapshotVerifier.RegisterSnapshot{proposal_id=1, timestamp=<gen_utime>, eligible_nfts=<map>}`. Awaits `SnapshotRegistered` event.
-4. **`SubmitProposal`.** Multi-sig sends `ProposalRegistry.SubmitProposal{metadata_hash=<sha256>, author_nft_id=<id>, category=0, voting_duration=604800, quorum_threshold=23}`. Awaits `ProposalSubmitted` event.
-5. **Communications.** Communications lead posts the proposal link on GitHub Discussions, the project README banner, and the merchant newsletter. The voting window is 7 days; communications cadence is `T+0`, `T+72h`, `T+144h`, `T+168h - 12h`.
-6. **Voting.** Holders cast votes from any TON wallet (TBC Diamonds NFT ownership at `snapshot_seqno` required).
+3. **`SetTrustedIndexer` (one-time precondition).** If the snapshot writer is not yet authorised, the B2 multi-sig (the SnapshotVerifier **deployer**) sends `SnapshotVerifier.SetTrustedIndexer{indexer=<indexer wallet>}` and awaits the `TrustedIndexerUpdated` event. The indexer wallet is a **dedicated hot wallet, distinct from the 2-of-3 multi-sig**, because snapshots are submitted by the automated indexer. Until this is set, **every** `RegisterSnapshot` is rejected — fail-closed (Issue #370 / PC-01). The key is rotatable: re-sending `SetTrustedIndexer` from the deployer replaces it.
+4. **`RegisterSnapshot`.** The **trusted indexer wallet** authorised in step 3 sends `SnapshotVerifier.RegisterSnapshot{proposal_id=1, timestamp=<gen_utime>, eligible_nfts=<map>}`. Awaits `SnapshotRegistered` event. Sends from any other address (including the multi-sig, unless it is itself the designated indexer) are rejected on-chain.
+5. **`SubmitProposal`.** Multi-sig sends `ProposalRegistry.SubmitProposal{metadata_hash=<sha256>, author_nft_id=<id>, category=0, voting_duration=604800, quorum_threshold=23}`. Awaits `ProposalSubmitted` event.
+6. **Communications.** Communications lead posts the proposal link on GitHub Discussions, the project README banner, and the merchant newsletter. The voting window is 7 days; communications cadence is `T+0`, `T+72h`, `T+144h`, `T+168h - 12h`.
+7. **Voting.** Holders cast votes from any TON wallet (TBC Diamonds NFT ownership at `snapshot_seqno` required).
 
 ### 5.1 Anti-foot-gun rules for §5
 
-- AF-E1-6. `RegisterSnapshot` **must** precede `SubmitProposal`. The runbook rejects the inverse order. Without snapshot, the contract's `isEligible` fallback would silently mark every NFT eligible — see [`../SNAPSHOT.md`](../SNAPSHOT.md) §4.1.
+- AF-E1-6. `RegisterSnapshot` **must** precede `SubmitProposal`. The runbook rejects the inverse order. The contract's `isEligible` is **fail-closed** — without a snapshot it returns `false` for every NFT (audit L-2), so submitting first would leave the proposal with **zero** eligible voters (it can never reach quorum), not "all NFTs eligible". See [`../SNAPSHOT.md`](../SNAPSHOT.md) §4.1.
+- AF-E1-6b. `RegisterSnapshot` **must** be sent from the wallet authorised via `SetTrustedIndexer` (§5 step 3). The contract requires `sender() == trusted_indexer` and rejects any other sender (Issue #370 / PC-01). The runbook also rejects a `RegisterSnapshot` attempt before `SetTrustedIndexer` has been confirmed.
 - AF-E1-7. `quorum_threshold` **must** be ≥ 23. The runbook rejects smaller values.
 - AF-E1-8. `voting_duration` **must** be ≥ 604 800. The runbook rejects smaller values.
 - AF-E1-9. The proposal author NFT ID **must** appear with `eligible = true` in the just-registered snapshot.
@@ -184,8 +186,9 @@ The checks have no side effects on the chain — they read state, emit alerts, a
 |---------|----------|----------|
 | §4 `set_registry` reverts (bad sender) | LOW | Re-sign with multi-sig; transaction is idempotent against contract state |
 | §4 confirmed but `getProposalRegistry()` returns wrong address | CRITICAL | Engagement aborts; cycle a new B2 deployment of `SnapshotVerifier` (binding is irreversible per contract) |
-| §5 `RegisterSnapshot` fails | LOW | Investigate eligibility map; re-send; no state change on failure |
-| §5 `SubmitProposal` succeeds **before** `RegisterSnapshot` | CRITICAL | Engagement aborts; `E1-PROP-001` is invalid because fallback eligibility allowed all NFTs. Restart at §5.1 with a new proposal ID |
+| §5 `RegisterSnapshot` fails | LOW | Confirm `SetTrustedIndexer` ran and the send is from the authorised indexer wallet (Issue #370 / PC-01); investigate eligibility map; re-send; no state change on failure |
+| §5 `RegisterSnapshot` rejected — `trusted_indexer` unset or wrong sender | LOW | Run `SetTrustedIndexer` from the B2 multi-sig (the deployer), then re-send `RegisterSnapshot` from the authorised indexer wallet; no state change on failure |
+| §5 `SubmitProposal` succeeds **before** `RegisterSnapshot` | CRITICAL | Engagement aborts; `E1-PROP-001` is invalid because fail-closed eligibility means **no** NFT can vote until the snapshot exists (audit L-2), so the proposal cannot reach quorum. Restart at §5.1 with a new proposal ID |
 | Vote-window outage (no votes in 7 days) | HIGH | Proposal finalises as `NO_QUORUM`. Activation stays live; cycle a new proposal with extended outreach |
 | Indexer mirror gap > 60 s | HIGH | B3 page on-call; investigate; no on-chain action required |
 | Holders dispute snapshot | MEDIUM | Run dispute path in [`../SNAPSHOT.md`](../SNAPSHOT.md) §6.4 |
@@ -205,7 +208,8 @@ There is **no** rollback for the activation itself because there is no on-chain 
 ☐ §4.5 verification rows all ✅
 ☐ §4.6 activation manifest committed; network-matrix.md updated atomically
 ☐ §5 snapshot block selected per ../SNAPSHOT.md §3.2
-☐ §5 RegisterSnapshot confirmed before SubmitProposal
+☐ §5 SetTrustedIndexer confirmed (snapshot writer authorised) before RegisterSnapshot
+☐ §5 RegisterSnapshot confirmed (from the authorised indexer wallet) before SubmitProposal
 ☐ §5 SubmitProposal confirmed; ProposalSubmitted event mirrored
 ☐ §5 communications cadence executed
 ☐ §6 FinalizeProposal called after voting_end

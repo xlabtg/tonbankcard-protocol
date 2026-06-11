@@ -112,9 +112,13 @@ Goals (see [Issue #129 (D3)](https://github.com/xlabtg/tonbankcard-protocol/issu
 
 | Condition | User-facing message | Source |
 |---|---|---|
-| Registry can only be set once | `Registry already set` | `governance/SnapshotVerifier.tact` |
+| Only the deployer may designate the trusted indexer (Issue #370 / PC-01) | `Only deployer can set trusted indexer` | `governance/SnapshotVerifier.tact` |
+| Only the deployer may bind the proposal registry (Issue #370 / PC-01) | `Only deployer can set registry` | `governance/SnapshotVerifier.tact` |
+| Registry can only be set once (write-once) | `Registry already set` | `governance/SnapshotVerifier.tact` |
+| `RegisterSnapshot` requires the trusted indexer to be configured — fail-closed (Issue #370 / PC-01) | `Unauthorized: trusted indexer not configured` | `governance/SnapshotVerifier.tact` |
+| `RegisterSnapshot` accepted only from the authorised trusted indexer (Issue #370 / PC-01) | `Unauthorized: only trusted indexer` | `governance/SnapshotVerifier.tact` |
 | Proposal ID must be positive | `Invalid proposal ID` | `governance/SnapshotVerifier.tact` |
-| Snapshot must not already exist | `Snapshot already exists` | `governance/SnapshotVerifier.tact` |
+| Snapshot must not already exist (no forged overwrite) | `Snapshot already exists` | `governance/SnapshotVerifier.tact` |
 
 ### `governance/TransparencyRegistry.tact`
 

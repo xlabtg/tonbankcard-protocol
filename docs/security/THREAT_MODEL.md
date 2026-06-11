@@ -281,11 +281,13 @@ on-chain NFT Account Resolver:
 
 #### 2.1.11 Governance — Snapshot Verifier (Tact) — `contracts/governance/SnapshotVerifier.tact`
 
-**Purpose:** Verifies NFT ownership at snapshot time for governance voting.
-**Lines:** 207
+**Purpose:** Eligibility oracle — records, per `proposal_id`, which Diamond NFTs may vote; consumed by `ProposalRegistry` via the `EligibilityCheckRequest`/`EligibilityCheckResponse` exchange.
+**Lines:** 330
 **Status:** Implemented, not yet deployed to mainnet
 
-**Fallback behavior:** If no snapshot exists for a given block, ALL NFTs 1–222 are eligible (permissive default). This is a deliberate design choice to avoid blocking governance when snapshots fail.
+**Sender authentication (Issue #370 / PC-01 — RESOLVED ✅):** `RegisterSnapshot` previously performed **no** `sender()` check, so any external address could forge the governance eligibility roll for any `proposal_id`. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that writer via `SetTrustedIndexer` (deployer-only, rotatable). The companion `set_registry` binding was hardened from first-caller-wins to deployer-only in the same change. Forged eligibility rolls can no longer be written. See §4.5.2; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
+
+**Eligibility default (audit L-2):** `isEligible` is **fail-closed** — when no snapshot exists for a proposal it returns `false` for every NFT (there is no "all NFTs eligible" fallback).
 
 #### 2.1.12 Governance — Transparency Registry (Tact) — `contracts/governance/TransparencyRegistry.tact`
 
@@ -759,11 +761,11 @@ The lock mirror is fed only by `op::apply_account_lock` from the trusted `accoun
 **Applicable to:** SnapshotVerifier.
 
 **Analysis:**
-- The SnapshotVerifier has a permissive fallback: if no snapshot exists, ALL NFTs 1–222 are eligible.
-- An attacker could time a governance action to occur when no snapshot exists, ensuring all NFTs are eligible regardless of actual ownership at the relevant time.
-- Snapshot recording in TransparencyRegistry is now access-controlled (Issue #365): `RecordSnapshot` is accepted only from the configured `snapshot_verifier` writer and fails closed until that writer is set, so false snapshots can no longer be injected into the transparency layer.
+- **Unauthenticated snapshot registration (Issue #370 / PC-01 — RESOLVED ✅).** Previously `RegisterSnapshot` had no `sender()` check, so any external address could register or overwrite the eligibility roll for any `proposal_id`, forging which NFTs may vote. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that indexer via `SetTrustedIndexer` (deployer-only, rotatable). The `set_registry` binding was hardened to deployer-only in the same change. Forged snapshots can no longer be written; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
+- **No permissive fallback (audit L-2).** `isEligible` is **fail-closed**: if no snapshot exists for a `proposal_id` it returns `false` for every NFT (the historical "all NFTs eligible" branch was removed). Timing a governance action when no snapshot exists therefore admits **zero** voters, not all of them — the proposal cannot reach quorum. The runbook still requires `hasSnapshot == true` before `SubmitProposal` as defence-in-depth so legitimate voters are not denied.
+- Snapshot recording in TransparencyRegistry is also access-controlled (Issue #365): `RecordSnapshot` is accepted only from the configured `snapshot_verifier` writer and fails closed until that writer is set, so false snapshots can no longer be injected into the transparency layer.
 
-**Residual risk:** MEDIUM. The permissive fallback is a documented design choice. False snapshot injection into TransparencyRegistry is RESOLVED ✅ (Issue #365).
+**Residual risk:** LOW. On-chain snapshot forgery is blocked by trusted-indexer authentication (Issue #370 ✅); the eligibility oracle is fail-closed (L-2); false snapshot injection into TransparencyRegistry is RESOLVED ✅ (Issue #365). Residual exposure is limited to a compromised trusted-indexer key, mitigated by the deployer-only rotatable `SetTrustedIndexer` and the multi-sig deployer requirement (PARAMETERS.md PP-41).
 
 #### 4.5.3 Off-Chain Misinformation
 
@@ -960,6 +962,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`) removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `ApplyAccountLock`, accepted ONLY from `account_locks_contract` (Issue #363) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | CollateralSignal.tact | Test-only `RegisterNFTOwner` removed from the production contract; ownership is registered ONLY via `ResolveNFTOwner`, accepted from the immutable `nft_resolver` (on-chain NFT Account Resolver), and remains write-once (CONTRACTS-M1) (Issue #364) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | TransparencyRegistry.tact | All six record handlers verify `sender()` against a deployer-configured per-domain authorized writer (`proposal_registry` / `snapshot_verifier` / `report_writer`); slots start `null` and fail closed; deployer-only `Set*` configuration messages (Issue #365) | RESOLVED ✅ (pre-mainnet) — covered by `TransparencyRegistry.spec.ts` |
+| **Access control bypass** (4.1.5) | SnapshotVerifier.tact | `RegisterSnapshot` (the governance eligibility-oracle writer consumed by `ProposalRegistry`) verifies `sender() == trusted_indexer`; the slot starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; `set_registry` hardened from first-caller-wins to deployer-only + write-once (Issue #370 / PC-01) | RESOLVED ✅ (pre-mainnet) — covered by `SnapshotVerifier.spec.ts` |
 | **Access control bypass** (4.1.5) | ProposalRegistry.tact | NFT ownership verification must be implemented for `SubmitProposal` and `CastVote` | HIGH (pre-production) — Anyone can submit/vote |
 
 ### 6.2 Economic Threat Mitigations
@@ -995,7 +998,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
 | **Proposal flooding** (4.5.1) | ProposalRegistry | Gas costs provide economic rate limiting; non-executable proposals limit impact | LOW |
-| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | Permissive fallback is documented design choice; TransparencyRegistry `RecordSnapshot` now restricted to the configured `snapshot_verifier` writer (Issue #365) | MEDIUM — Permissive fallback remains; false snapshot injection into TransparencyRegistry RESOLVED ✅ |
+| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | `RegisterSnapshot` requires `sender() == trusted_indexer`, fail-closed until the deployer (governance multi-sig) sets that writer via deployer-only `SetTrustedIndexer`; `set_registry` hardened to deployer-only; eligibility oracle fails closed (returns `false`, no permissive fallback — audit L-2) (Issue #370 / PC-01); TransparencyRegistry `RecordSnapshot` restricted to the configured `snapshot_verifier` writer (Issue #365) | LOW — On-chain snapshot forgery blocked ✅; fail-closed; residual exposure limited to a compromised rotatable trusted-indexer key |
 | **Off-chain misinformation** (4.5.3) | Governance communication | On-chain proposal data is authoritative record | LOW for protocol; MEDIUM for social context |
 | **False record injection** (4.5.4) | TransparencyRegistry | **RESOLVED ✅ (Issue #365)** — every record handler authenticates `sender()` against a deployer-configured per-domain writer and fails closed until configured | LOW — Only the designated writers can append records; regression-tested |
 
@@ -1374,8 +1377,9 @@ This checklist enables an external auditor to systematically verify the protocol
 
 - [ ] **CRITICAL: Verify `SubmitProposal` and `CastVote` verify Diamond NFT ownership** — currently unverified
 - [x] **CRITICAL: Verify TransparencyRegistry record messages have access control** — RESOLVED ✅ (Issue #365): all six record handlers authenticate `sender()` against deployer-configured per-domain writers and fail closed; covered by `contracts/governance/TransparencyRegistry.spec.ts`
+- [x] **CRITICAL: Verify `SnapshotVerifier.RegisterSnapshot` has access control** — RESOLVED ✅ (Issue #370 / PC-01): the eligibility-oracle writer authenticates `sender() == trusted_indexer`, starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; `set_registry` hardened to deployer-only + write-once; covered by `contracts/governance/SnapshotVerifier.spec.ts`
 - [ ] Verify ProposalRegistry double-vote prevention (composite key `proposal_id * 1000 + nft_id`)
-- [ ] Verify SnapshotVerifier permissive fallback behavior is acceptable
+- [x] Verify SnapshotVerifier eligibility default is fail-closed — RESOLVED ✅: `isEligible` returns `false` when no authorized snapshot is registered (audit L-2, no permissive "all NFTs eligible" fallback); on-chain forgery is blocked by trusted-indexer authentication (Issue #370 / PC-01)
 - [ ] Confirm governance proposals are non-executable
 
 ### C.2 Invariant Verification
