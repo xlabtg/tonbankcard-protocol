@@ -590,6 +590,30 @@ jobs:
         working-directory: tests/adversarial
         run: npm run test:coverage
 
+  test-nowpayments-adapter:
+    name: Test (NOWPayments IPN HMAC)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install NOWPayments adapter test dependencies
+        working-directory: tests/nowpayments-adapter
+        run: npm install --no-audit --no-fund
+
+      # PC-03 / #372: locks real HMAC-SHA512 IPN verification (golden vector,
+      # forgery rejection, constant-time compare). Runs transpile-only via
+      # ts-jest isolatedModules because backend/adapters carries pre-existing
+      # latent type issues outside this finding's scope.
+      - name: NOWPayments IPN HMAC regression tests (PC-03)
+        working-directory: tests/nowpayments-adapter
+        run: npm test
+
   deploy:
     name: Deploy to Vercel
     runs-on: ubuntu-latest

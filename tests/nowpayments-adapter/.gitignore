@@ -1,0 +1,9 @@
+# Dependencies
+node_modules/
+# Pattern A: this workspace intentionally ships WITHOUT a committed lockfile so
+# CI installs with `npm install --no-audit --no-fund` (DEVOPS-M2 only mandates
+# `npm ci` where a lockfile is committed). Keep any generated lockfile untracked.
+package-lock.json
+
+# Logs
+*.log

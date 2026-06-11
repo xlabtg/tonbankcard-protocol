@@ -12,6 +12,8 @@
  * - Add rate limiting and validation
  */
 
+import { createHmac } from 'crypto';
+
 import { createNOWPaymentsAdapter } from '../../backend/adapters';
 import type { ExternalTransaction, PaymentCallback } from '../../backend/adapters';
 
@@ -20,6 +22,31 @@ import type { ExternalTransaction, PaymentCallback } from '../../backend/adapter
  * In production, use PostgreSQL, MongoDB, etc.
  */
 const mockDatabase: ExternalTransaction[] = [];
+
+/**
+ * Reproduce the signature NOWPayments places in the `x-nowpayments-sig` header:
+ * HMAC-SHA512 of the recursively key-sorted JSON body, keyed by the IPN secret.
+ *
+ * ⚠️ A real webhook handler never does this — NOWPayments signs server-side and
+ * your handler only *verifies*. It is shown here solely so this self-contained
+ * example can exercise `verifyCallback()` with a genuine signature.
+ */
+function signLikeNowpayments(payload: PaymentCallback, ipnSecret: string): string {
+  const sortKeys = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(sortKeys);
+    if (value !== null && typeof value === 'object') {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = sortKeys((value as Record<string, unknown>)[key]);
+          return acc;
+        }, {});
+    }
+    return value;
+  };
+  const canonical = JSON.stringify(sortKeys(payload));
+  return createHmac('sha512', ipnSecret).update(canonical, 'utf8').digest('hex');
+}
 
 async function main() {
   console.log('=== NOWPayments Adapter Example ===\n');
@@ -94,12 +121,22 @@ async function main() {
       payin_hash: 'abc123def456...',
     };
 
-    // Verify webhook signature (in real scenario, signature comes from header)
-    const mockSignature = 'mock-hmac-signature';
-    const isValid = nowPayments.verifyCallback(mockCallback, mockSignature);
-    console.log(`Webhook signature valid: ${isValid}`);
+    // Verify webhook signature.
+    //
+    // In production the signature arrives in the `x-nowpayments-sig` request
+    // header — NOWPayments computes it from the raw body and your IPN secret.
+    // Here we reproduce a genuine signature so the example is runnable, then
+    // show that a forged one is rejected (audit finding PC-03 / issue #372).
+    const genuineSignature = signLikeNowpayments(mockCallback, ipnSecret);
+    const isValid = nowPayments.verifyCallback(mockCallback, genuineSignature);
+    console.log(`Webhook signature valid (genuine): ${isValid}`); // true
 
-    if (mockCallback.payment_status === 'finished') {
+    const forgedSignature = 'forged-signature-from-an-attacker';
+    const isForgedAccepted = nowPayments.verifyCallback(mockCallback, forgedSignature);
+    console.log(`Webhook signature valid (forged):  ${isForgedAccepted}`); // false
+
+    // Only act on a callback whose signature actually checks out.
+    if (isValid && mockCallback.payment_status === 'finished') {
       console.log('Payment confirmed! Processing order...');
 
       // Emit payment settled event
