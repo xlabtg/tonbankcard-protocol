@@ -9,6 +9,30 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [2.0.1] — 2026-06-11
+
+### Security — `PaymentWidget` deep link validates and percent-encodes its inputs (Issue #374, PC-05)
+
+- `PaymentWidget.generatePaymentLink()` now percent-encodes every component of
+  the `ton://transfer/...` deep link (`merchantNft` path segment, `amount`,
+  `text`, and `return`) via `encodeURIComponent` instead of interpolating raw
+  values. A crafted input containing reserved URL characters (`&`, `?`, `#`,
+  `=`) can no longer break out of its field to inject or override query
+  parameters in the link the payer's wallet receives.
+- `merchantNft` is validated against the TON address format (user-friendly
+  base64url or raw `workchain:account_hex`) and `amountTbc` against a
+  non-negative integer nanocoin string before the link is built; invalid values
+  now throw `Invalid merchant NFT address` / `Invalid amount` rather than
+  producing a malformed link.
+- The validators are dependency-free regex/string checks on purpose, so the
+  `<script>`-tag browser bundle (`dist/index.global.js`) stays free of
+  `@ton/core` / `@ton/crypto`.
+- Added regression coverage in `tests/widget.spec.ts` proving that a value
+  containing `&amount=` (or other reserved characters) cannot inject or override
+  query parameters.
+
+---
+
 ## [2.0.0] — 2026-06-04
 
 ### Security — `generateWalletLink` separates native TON value from TBC amount (Issue #294, SDK-M4)
