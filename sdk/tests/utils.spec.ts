@@ -5,6 +5,7 @@
 import { afterEach, describe, it, expect, jest } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import { Address } from '@ton/core';
 import { PaymentStatus } from '../src/types';
 import {
@@ -54,8 +55,41 @@ const sdkLowStatusFixture = JSON.parse(
   statuses: string[];
 };
 
+const pc06Fixture = JSON.parse(
+  readFileSync(
+    join(__dirname, '../../tests/fixtures/pc-06-canonical-conformance.json'),
+    'utf8'
+  )
+) as {
+  string_values: {
+    name: string;
+    input: string;
+    canonical: string;
+    sha256: string;
+  }[];
+  payloads: {
+    name: string;
+    input: Record<string, unknown>;
+    canonical: string;
+    sha256: string;
+    input_reordered?: Record<string, unknown>;
+  }[];
+  safe_integers: {
+    name: string;
+    decimal: string;
+    canonical: string;
+    sha256: string;
+  }[];
+  rejected_floats: { name: string; decimal: string }[];
+  rejected_unsafe_integers: { name: string; decimal: string }[];
+};
+
 function hashToHex(hash: bigint): string {
   return hash.toString(16).padStart(64, '0');
+}
+
+function sha256Hex(canonical: string): string {
+  return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
 describe('Utils', () => {
@@ -433,4 +467,50 @@ describe('Utils', () => {
       });
     });
   });
+});
+
+describe('PC-06 cross-SDK canonical conformance', () => {
+  // These vectors are shared byte-for-byte with the Go and Python SDK test
+  // suites (tests/fixtures/pc-06-canonical-conformance.json). Identical logical
+  // inputs must produce identical canonical bytes and SHA-256 digests in every
+  // SDK, including the U+2028/U+2029 separators and the numeric policy.
+  for (const vector of pc06Fixture.string_values) {
+    it(`encodes string vector "${vector.name}" to shared canonical bytes`, () => {
+      expect(canonicalJson(vector.input)).toBe(vector.canonical);
+      expect(sha256Hex(vector.canonical)).toBe(vector.sha256);
+    });
+  }
+
+  for (const vector of pc06Fixture.payloads) {
+    it(`encodes payload vector "${vector.name}" to shared canonical bytes`, () => {
+      expect(canonicalJson(vector.input)).toBe(vector.canonical);
+      expect(sha256Hex(vector.canonical)).toBe(vector.sha256);
+      expect(hashToHex(createPayloadHash(vector.input))).toBe(vector.sha256);
+      if (vector.input_reordered) {
+        expect(canonicalJson(vector.input_reordered)).toBe(vector.canonical);
+        expect(hashToHex(createPayloadHash(vector.input_reordered))).toBe(
+          vector.sha256
+        );
+      }
+    });
+  }
+
+  for (const vector of pc06Fixture.safe_integers) {
+    it(`encodes safe-integer vector "${vector.name}" to shared canonical bytes`, () => {
+      expect(canonicalJson(Number(vector.decimal))).toBe(vector.canonical);
+      expect(sha256Hex(vector.canonical)).toBe(vector.sha256);
+    });
+  }
+
+  for (const vector of pc06Fixture.rejected_floats) {
+    it(`rejects floating-point vector "${vector.name}"`, () => {
+      expect(() => canonicalJson(Number(vector.decimal))).toThrow();
+    });
+  }
+
+  for (const vector of pc06Fixture.rejected_unsafe_integers) {
+    it(`rejects unsafe-integer vector "${vector.name}"`, () => {
+      expect(() => canonicalJson(Number(vector.decimal))).toThrow();
+    });
+  }
 });

@@ -8,7 +8,7 @@
 
 ---
 
-> **TL;DR.** Voter eligibility is **NFT-only** (TBC Diamonds, 222 NFTs, 1 NFT = 1 vote). Eligibility is fixed at a **snapshot block selected before the proposal is submitted**. The snapshot is produced by the indexer, recorded on-chain via `SnapshotVerifier.RegisterSnapshot`, and is the **single source of truth** for which NFT IDs may cast a vote on a given proposal.
+> **TL;DR.** Voter eligibility is **NFT-only** (TBC Diamonds, 222 NFTs, 1 NFT = 1 vote). Eligibility is fixed at a **snapshot block selected before the proposal is submitted**. The snapshot is produced by the indexer, recorded on-chain via `SnapshotVerifier.RegisterSnapshot` (callable **only** by the on-chain–authorised trusted indexer — Issue #370 / PC-01), and is the **single source of truth** for which NFT IDs may cast a vote on a given proposal.
 
 ---
 
@@ -99,7 +99,7 @@ The proposal author selects the snapshot block using the following deterministic
    - The block hash (`root_hash`).
    - The `gen_utime` of that block.
 4. **Indexer attestation.** The maintainer team's archive indexer independently re-derives the same block from the published `draft_timestamp`. A divergence aborts the proposal and the author restarts at step 1.
-5. **On-chain submission.** The author triggers `SnapshotVerifier.RegisterSnapshot` with the eligibility map derived in §4. **Only after** `SnapshotRegistered` is observed may the author broadcast `ProposalRegistry.SubmitProposal`.
+5. **On-chain submission.** The **trusted indexer** — the maintainer indexer wallet authorised on-chain via `SetTrustedIndexer` (see §4.1) — submits `SnapshotVerifier.RegisterSnapshot` with the eligibility map derived in §4. Submissions from any other address are rejected on-chain (Issue #370 / PC-01), so the author cannot self-register a forged roll. **Only after** `SnapshotRegistered` is observed may the author broadcast `ProposalRegistry.SubmitProposal`.
 
 The 24-hour cool-down defeats the "submit-then-buy" attack from issue #132 §7: a buyer who acquires NFTs **after** the snapshot block cannot vote on the open proposal.
 
@@ -152,7 +152,9 @@ RegisterSnapshot {
 
 The contract iterates `nft_id ∈ [1, 222]` and stores `eligibility[proposal_id * 1000 + nft_id] = true` for every eligible NFT. Non-eligible NFT IDs are intentionally **absent** from `eligible_nfts` — the contract's `isEligible` method returns `false` for missing keys.
 
-> **Important.** `SnapshotVerifier.isEligible` has a fallback branch that returns `true` for every NFT in `[1, 222]` **when no snapshot has been registered** (`hasSnapshot == false`). The runbook treats this as a defect-class invariant: **`hasSnapshot(proposal_id)` MUST be `true` before `ProposalRegistry.SubmitProposal` is broadcast**. The on-chain order is enforced by the deployment runbook ([`E1-activation/RUNBOOK.md`](./E1-activation/RUNBOOK.md) §5) and re-checked by the indexer before counting any vote.
+> **Sender authorisation (Issue #370 / PC-01).** `RegisterSnapshot` is **not** an open endpoint. The handler calls `requireTrustedIndexer()` (`SnapshotVerifier.tact:178`→`168`) and **rejects** any message whose `sender()` is not the registered `trusted_indexer`. The deployer designates that writer **once, off the critical path**, via `SetTrustedIndexer{indexer}` (gated by `sender() == deployer`); the address is rotatable but never defaults to "any caller". Until the deployer sets it, `RegisterSnapshot` is **fail-closed** — every submission is rejected, so no snapshot (forged or genuine) can be recorded. See [`PARAMETERS.md`](./PARAMETERS.md) PP-41 for the governance classification of the `trusted_indexer` key.
+
+> **Important (fail-closed eligibility).** `SnapshotVerifier.isEligible` returns `false` for **every** NFT in `[1, 222]` **when no snapshot has been registered** for that `proposal_id` (`hasSnapshot == false`) — see `SnapshotVerifier.tact:251-253`. There is **no** "all NFTs eligible" fallback (the historical fail-open branch was removed; audit L-2), so voting before a snapshot exists admits **zero** voters, not all of them. The ordering invariant is still enforced as defence-in-depth — **`hasSnapshot(proposal_id)` MUST be `true` before `ProposalRegistry.SubmitProposal` is broadcast** so that legitimate voters are not denied — via the deployment runbook ([`E1-activation/RUNBOOK.md`](./E1-activation/RUNBOOK.md) §5), re-checked by the indexer before counting any vote.
 
 ---
 
@@ -218,13 +220,14 @@ The example below mirrors the round-trip executed in [`E1-activation/TESTNET_VAL
 
 | Step | Actor | Action |
 |------|-------|--------|
+| 0 (one-time setup) | Deployer multi-sig | Authorises the indexer wallet via `SnapshotVerifier.SetTrustedIndexer{indexer}` (see [`E1-activation/RUNBOOK.md`](./E1-activation/RUNBOOK.md) §5). Until this runs, **every** `RegisterSnapshot` is rejected (fail-closed; Issue #370 / PC-01). |
 | 1 | Author (`@konard`) | Publishes draft `E1-PROP-001` to GitHub Discussions at `T₀`. |
 | 2 | — | 24-hour cool-down. |
 | 3 | Author | At `T₀ + 24h` picks the first master-chain block with `gen_utime ≥ T₀ + 24h`. Records `snapshot_seqno`, `root_hash`, `gen_utime`. |
 | 4 | Indexer | Independently derives the same `(seqno, root_hash)`. Publishes attestation. |
 | 5 | Indexer | Builds eligibility map per §4. Computes `eligibility_root`. |
 | 6 | Author | Pushes proposal metadata to IPFS, records the CID. |
-| 7 | Maintainer | Sends `SnapshotVerifier.RegisterSnapshot{proposal_id=1, timestamp=gen_utime, eligible_nfts}`. Awaits `SnapshotRegistered` event. |
+| 7 | Indexer (trusted wallet from step 0) | Sends `SnapshotVerifier.RegisterSnapshot{proposal_id=1, timestamp=gen_utime, eligible_nfts}` from the address authorised via `SetTrustedIndexer`; any other sender is rejected (Issue #370 / PC-01). Awaits `SnapshotRegistered` event. |
 | 8 | Maintainer | Sends `ProposalRegistry.SubmitProposal{metadata_hash=sha256(metadata), author_nft_id, category=0, voting_duration=604800, quorum_threshold=23}`. Awaits `ProposalSubmitted` event. |
 | 9 | Holders | Cast votes during the 7-day window. |
 | 10 | Anyone | After `voting_end`, invokes `ProposalRegistry.FinalizeProposal{proposal_id=1}`. |
@@ -241,7 +244,8 @@ A successful run of steps 1–12 against TON testnet is one of the acceptance ga
 |---------|---------|------------|
 | Snapshot block re-org | `root_hash` mismatch on indexer re-derivation | Abort, re-start at §3.2 step 1 |
 | Indexer divergence (two indexers, two maps) | Different `eligibility_root` for the same `snapshot_seqno` | Hold-fast: do not submit `SubmitProposal`; investigate canonical address & exclusion list versions |
-| `SubmitProposal` before `RegisterSnapshot` | `SnapshotVerifier.isEligible` falls back to "all NFTs eligible" | Forbidden by runbook §5; CI rejects ordering at PR-review time |
+| `SubmitProposal` before `RegisterSnapshot` | `SnapshotVerifier.isEligible` is **fail-closed**: it returns `false` for every NFT, so **no one** can vote until the snapshot is registered (there is no "all NFTs eligible" fallback; audit L-2) | Forbidden by runbook §5; CI rejects ordering at PR-review time |
+| Forged / unauthorised `RegisterSnapshot` | A non-indexer address attempts to register or overwrite the eligibility roll | **Blocked on-chain** — the handler requires `sender() == trusted_indexer`; unauthorised submissions are rejected (Issue #370 / PC-01). The `trusted_indexer` is set deployer-only via `SetTrustedIndexer` |
 | Excluded-list drift between proposals | Same address eligible in proposal N, excluded in proposal N+1 | `excluded_addresses_version` published per proposal; governance proposal required to change the list |
 | Vote buying after snapshot | Buyer cannot vote — eligibility is fixed at `snapshot_seqno` | By design (see §3.1) |
 | NFT transferred during voting | Original owner at `snapshot_seqno` retains the vote, new owner has none | By design — `docs/governance-process.md` §"Identity Resolution" |

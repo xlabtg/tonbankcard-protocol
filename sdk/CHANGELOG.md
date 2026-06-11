@@ -9,6 +9,56 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [2.0.2] — 2026-06-11
+
+### Fixed — Cross-SDK canonical JSON converges on U+2028/U+2029 and the numeric policy (Issue #375, PC-06)
+
+- `canonicalJson()` now always escapes the line/paragraph separators U+2028 and
+  U+2029 to `\u2028` / `\u2029`. Node's `JSON.stringify` emitted them as raw
+  UTF-8 while Go's `encoding/json` escaped them, so a string field containing
+  either code point hashed to a different SHA-256 in each SDK — silently
+  breaking cross-SDK invoice-ID and payload-hash matching.
+- Numbers in canonical payloads are now restricted to integers in the 53-bit
+  safe range (`[-(2^53 - 1), 2^53 - 1]`): floating-point values and out-of-range
+  integers throw a `TypeError` instead of producing language-dependent output
+  (`2` vs `2.0`, `1e+16` vs `10000000000000000`). Larger or fractional amounts
+  must be supplied as a `bigint` or a decimal string — the existing on-chain
+  amount/timestamp fields already are.
+- Booleans and safe integers are emitted directly (`true` / `123`) instead of
+  routing through `JSON.stringify`, keeping the output byte-identical to the Go
+  and Python SDKs.
+- Added a shared cross-SDK conformance vector set
+  (`tests/fixtures/pc-06-canonical-conformance.json`, including U+2028/U+2029 and
+  the divergent numeric forms) exercised by the TypeScript, Go, and Python test
+  suites in CI; identical logical inputs now produce identical canonical bytes
+  and SHA-256 digests in all three SDKs.
+
+---
+
+## [2.0.1] — 2026-06-11
+
+### Security — `PaymentWidget` deep link validates and percent-encodes its inputs (Issue #374, PC-05)
+
+- `PaymentWidget.generatePaymentLink()` now percent-encodes every component of
+  the `ton://transfer/...` deep link (`merchantNft` path segment, `amount`,
+  `text`, and `return`) via `encodeURIComponent` instead of interpolating raw
+  values. A crafted input containing reserved URL characters (`&`, `?`, `#`,
+  `=`) can no longer break out of its field to inject or override query
+  parameters in the link the payer's wallet receives.
+- `merchantNft` is validated against the TON address format (user-friendly
+  base64url or raw `workchain:account_hex`) and `amountTbc` against a
+  non-negative integer nanocoin string before the link is built; invalid values
+  now throw `Invalid merchant NFT address` / `Invalid amount` rather than
+  producing a malformed link.
+- The validators are dependency-free regex/string checks on purpose, so the
+  `<script>`-tag browser bundle (`dist/index.global.js`) stays free of
+  `@ton/core` / `@ton/crypto`.
+- Added regression coverage in `tests/widget.spec.ts` proving that a value
+  containing `&amount=` (or other reserved characters) cannot inject or override
+  query parameters.
+
+---
+
 ## [2.0.0] — 2026-06-04
 
 ### Security — `generateWalletLink` separates native TON value from TBC amount (Issue #294, SDK-M4)

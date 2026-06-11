@@ -113,6 +113,7 @@ Contracts implement the specified behavior for all happy paths. The following kn
 |-----|----------|----------|--------|
 | Test-only functions have no access control | `MerchantPaymentHub.tact` | HIGH | Known, documented |
 | ~~`RegisterNFTOwner` has no access control~~ | `CollateralSignal.tact` | ~~HIGH~~ | **RESOLVED (Issue #364)** — handler removed; ownership registered only via the `nft_resolver`-gated `ResolveNFTOwner`, write-once (CONTRACTS-M1) |
+| ~~`InitializeAccount` overwrites an existing account's owner/balance~~ | `PaymentHub.tact` | ~~HIGH~~ | **RESOLVED (Issue #371 / PC-02)** — `InitializeAccount` is create-once (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`); a compromised admin can no longer re-initialize a funded slot to reassign `owner` and drain it (I1/I3). Account read path made side-effect free so a query cannot squat a slot |
 | TransparencyRegistry record messages unprotected | `TransparencyRegistry.tact` | HIGH | Known, documented |
 | Governance proposal/vote NFT ownership unverified | `ProposalRegistry.tact` | HIGH | Known, documented |
 | FunC Payment Hub missing Account Locks check | `payment-hub.fc` | HIGH | Known, documented |
@@ -284,6 +285,20 @@ TBC Diamonds (governance NFT): Fixed supply of 222 tokens. Concentration risk ex
 
 **Must be fixed before Phase 2** when governance gains executable authority.
 
+### 6.4 Snapshot Eligibility Oracle Integrity
+
+**Finding: SENDER-AUTHENTICATED — RESOLVED ✅ (Issue #370 / PC-01)**
+
+`SnapshotVerifier.tact` is the eligibility oracle that `ProposalRegistry` consults (via the `EligibilityCheckRequest` / `EligibilityCheckResponse` exchange) to decide which Diamond NFTs may vote. Its `RegisterSnapshot` handler previously performed **no** `sender()` check, so any external address could register or overwrite the eligibility roll for any `proposal_id` — forging the electorate.
+
+**Remediation (this audit cycle):**
+- `RegisterSnapshot` now requires `sender() == trusted_indexer`. The `trusted_indexer` slot starts `null`, so the handler **fails closed** (rejects every registration) until the deployer designates the writer.
+- The trusted indexer is set by the deployer-only, **rotatable** `SetTrustedIndexer` message (`require(sender() == deployer)`), with the deployer being the governance multi-sig in production.
+- The companion `set_registry` binding was hardened from first-caller-wins to deployer-only (`require(sender() == deployer)`) while keeping the write-once guard.
+- The `isEligible` default remains **fail-closed**: it returns `false` when no authorised snapshot is registered (audit L-2 — there is no permissive "all NFTs eligible" fallback).
+
+Eligibility decisions therefore derive only from snapshots written by the authorised trusted indexer. Regression coverage: `contracts/governance/SnapshotVerifier.spec.ts` (non-indexer rejection, fail-closed-before-configuration, deployer-only configuration, authorised write, forged-overwrite rejection). Residual exposure is limited to a compromised trusted-indexer key, mitigated by the rotatable deployer-only setter and the multi-sig requirement (PARAMETERS.md PP-41).
+
 ---
 
 ## 7. Integration Audit
@@ -305,11 +320,19 @@ Merchant payment flow is correctly designed: all payments require payer signatur
 
 **Gap:** Invoice replay protection is off-chain only. Merchants are responsible for deduplication. This is a documented accepted risk (risk borne by merchants, not users).
 
+**Update (Issue #373 / PC-04):** the off-chain idempotency itself was unreliable — `generateIdempotencyKey` serialised with `JSON.stringify(data, Object.keys(data).sort())`, whose replacer array recursively dropped every nested key, so two creates differing only inside `metadata` collided and the second was served as a replay of the first. The key is now built from a recursive `canonicalize` (`api/src/utils/helpers.ts`) that sorts keys at every level, so nested `metadata.*` differences produce distinct keys while staying order-invariant; `hashMetadata` shares the same helper (byte-identical for the flat payloads it hashes, so on-chain matching is unchanged). Locked by a CI regression suite (`api/tests/helpers.test.ts`, golden-vector pinned) and a standalone before/after reproduction (`experiments/issue-373-idempotency-key/`).
+
+**Update (Issue #374 / PC-05):** the merchant PaymentWidget (`sdk/src/widget/PaymentWidget.ts`) built its `ton://transfer/<merchantNft>?amount=...&text=...` deep link from raw, unencoded `merchantNft`/`amount`, so a crafted value (e.g. `amountTbc = "10&bin=evil"`) could inject or override the query parameters the payer's wallet receives. `generatePaymentLink` now validates `merchantNft` against the TON address format and `amount` as a non-negative integer string, then percent-encodes every interpolated component, so reserved characters (`&`, `?`, `#`, `=`) can no longer break out of their field. Both validators are dependency-free regex checks (`assertMerchantNft` / `assertAmount`) so the `<script>`-tag browser/IIFE bundle (`dist/index.global.js`) stays free of `@ton/core` / `@ton/crypto` — build artifacts verified to contain zero `@ton/*` references; this mirrors the sibling mobile fix (`mobile/src/services/PaymentService.ts`, FRONTEND-H2). Locked by a CI regression suite (`sdk/tests/widget.spec.ts`, `generatePaymentLink security (PC-05)`, 10 tests).
+
+**Update (Issue #375 / PC-06):** the three SDKs each implement a "canonical JSON" whose bytes must match so that an invoice ID / payload hash produced by one SDK verifies under another, but two divergences broke that contract: the line/paragraph separators U+2028/U+2029 were emitted as raw UTF-8 by Node/Python yet escaped to `\u2028`/`\u2029` by Go, and Python's float formatting differed from Node/Go (`2.0` vs `2`, `1e+16` vs `10000000000000000`), so any payload carrying those characters or a float hashed to a different SHA-256 per language. A single policy is now enforced identically in all three: U+2028/U+2029 are always escaped to `\u2028`/`\u2029`; floating-point numbers are rejected; only integers in the 53-bit safe range are accepted as plain decimals, with larger/fractional amounts required as decimal strings (the on-chain `amount_tbc`/`timestamp` fields already are strings, so invoice-ID and payload-hash paths are unchanged). Locked by a shared conformance vector set (`tests/fixtures/pc-06-canonical-conformance.json`, including U+2028/U+2029 and the divergent numeric forms) that drives a CI suite in every SDK — `sdk/tests/utils.spec.ts`, `sdk-python/tests/test_hashing.py`, `sdk-go/conformance_test.go` — proving identical logical inputs yield identical canonical bytes and SHA-256 digests; the Go/Python workflow `paths` filters were extended with `tests/fixtures/**` and a standalone reproduction lives in `experiments/issue-375-canonical-json/`.
+
 ### 7.3 API Trust Boundaries
 
 **Finding: CORRECT ARCHITECTURE, INCOMPLETE WEBHOOK VALIDATION SPEC ⚠️**
 
 The Merchant API correctly acts as an orchestration layer, not an authoritative one. However, the webhook validation specification for external providers (NOWPayments callbacks, ChangeNOW callbacks) lacks a formal test plan.
+
+**Update (Issue #372 / PC-03):** the NOWPayments IPN path is now closed — `verifyCallback()` performs real HMAC-SHA512 verification (was a length-only placeholder) and is locked by a CI regression suite (`tests/nowpayments-adapter/`, golden-vector pinned) plus a standalone before/after reproduction (`experiments/issue-372-nowpayments-hmac/`). The residual gap is the ChangeNOW callback test plan.
 
 **Recommendation:** Add formal webhook validation tests to the security testing strategy.
 
@@ -344,6 +367,8 @@ Documented failure modes:
 - API downtime: Invoice creation unavailable; on-chain payments still work
 
 **Gap:** No formal runbook for each failure mode. Recommendation: Create `docs/production/RUNBOOK.md` with operational procedures.
+
+**Update (Issue #376 / PC-07):** both `docker-compose.yml` and `docker-compose.sandbox.yml` published the Redis service with a bare `host:container` port spec (which makes Docker bind `0.0.0.0`) and started `redis-server` with no `--requirepass`, leaving the store reachable from every interface with full unauthenticated access — while Postgres in the same files was already bound to `127.0.0.1` with a mandatory password. Because Redis backs the API/indexer idempotency keys and rate-limit counters, that exposure let anyone on a reachable network overwrite idempotency records (replay/drop payments), delete rate-limit counters, or `FLUSHALL` the store. Redis is now published on `127.0.0.1:${…:-6379}:6379` only and runs `redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?…}`, with the API and indexer forwarding the same required `REDIS_PASSWORD`; the stack refuses to start without it (matching Postgres). The healthcheck uses `redis-cli ping | grep -q PONG` (with `REDISCLI_AUTH`) so it fails closed under `NOAUTH` instead of reporting a password-less misconfiguration as healthy, and the `.env`/`.env.sandbox` templates declare a required empty `REDIS_PASSWORD` with `openssl rand -hex 32` guidance. Locked by a CI policy guard (`scripts/tooling/check-compose-redis-hardening.sh`, job *infra-verify*) that greps both compose files and the env templates and renders them with `docker compose config` (a negative render fails with `REDIS_PASSWORD` unset, a positive render confirms the loopback host_ip and the `requirepass` command), plus a standalone runtime before/after reproduction (`experiments/issue-376-redis-exposed/`).
 
 ---
 

@@ -29,11 +29,33 @@ export function canonicalizeTonAddress(address: Address | string): string {
 }
 
 /**
+ * Encode a string as a canonical JSON string literal.
+ *
+ * `JSON.stringify` leaves U+2028 (line separator) and U+2029 (paragraph
+ * separator) as raw UTF-8 bytes, but Go's `encoding/json` escapes them. To keep
+ * canonical bytes identical across the TypeScript, Go, and Python SDKs we always
+ * escape them to the lowercase `\u2028` / `\u2029` forms (see audit finding
+ * PC-06). The replacement is safe because those code points never appear inside
+ * an ASCII escape sequence emitted by `JSON.stringify`.
+ */
+function encodeCanonicalString(value: string): string {
+  return JSON.stringify(value)
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
  * Canonical JSON used by SDK hashing helpers.
  *
  * Objects are encoded with lexicographically sorted keys, arrays keep their
  * original order, BigInt values are decimal strings, and no insignificant
  * whitespace is emitted.
+ *
+ * Numbers must be integers in the 53-bit safe range
+ * (`[-(2^53 - 1), 2^53 - 1]`); floating-point and out-of-range values are
+ * rejected so the result cannot diverge across SDK languages. Larger or
+ * fractional values must be supplied as a `bigint` (encoded as a decimal
+ * string) or as a decimal string.
  */
 export function canonicalJson(value: unknown): string {
   if (value === null) {
@@ -41,18 +63,31 @@ export function canonicalJson(value: unknown): string {
   }
 
   if (typeof value === 'bigint') {
-    return JSON.stringify(value.toString());
+    return encodeCanonicalString(value.toString());
   }
 
-  if (typeof value === 'string' || typeof value === 'boolean') {
-    return JSON.stringify(value);
+  if (typeof value === 'string') {
+    return encodeCanonicalString(value);
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
   }
 
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) {
-      throw new TypeError('Canonical JSON does not support non-finite numbers');
+    if (!Number.isInteger(value)) {
+      throw new TypeError(
+        Number.isFinite(value)
+          ? 'Canonical JSON forbids floating-point numbers; use integer minor units, a bigint, or a decimal string'
+          : 'Canonical JSON does not support non-finite numbers'
+      );
     }
-    return JSON.stringify(value);
+    if (!Number.isSafeInteger(value)) {
+      throw new TypeError(
+        'Canonical JSON forbids integers outside the 53-bit safe range; use a bigint or a decimal string'
+      );
+    }
+    return value.toString();
   }
 
   if (Array.isArray(value)) {
@@ -70,7 +105,9 @@ export function canonicalJson(value: unknown): string {
     const objectValue = value as Record<string, unknown>;
     return `{${Object.keys(objectValue)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(objectValue[key])}`)
+      .map(
+        (key) => `${encodeCanonicalString(key)}:${canonicalJson(objectValue[key])}`
+      )
       .join(',')}}`;
   }
 

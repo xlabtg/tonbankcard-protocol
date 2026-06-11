@@ -96,7 +96,7 @@ No assumption in this document relies on "trust" alone.
 
 **Purpose:** Core payment routing for TBC transfers between NFT accounts.
 **Lines:** 372
-**Status:** Implemented, not yet deployed to mainnet
+**Status:** **Non-deployable audit reference stub.** `recv_internal` throws `DEPLOY_BLOCKER_NOT_PRODUCTION_READY` (0xDEAD) as its first statement, so the contract can never be deployed. The production payment hub is `PaymentHub.tact` (CONTRACTS-H3 / #260). The blocker is retained as defence-in-depth even though the reference now models the correct logic.
 
 **Entry points:**
 | Op Code | Name | Handler | Lines | Access |
@@ -109,7 +109,14 @@ No assumption in this document relies on "trust" alone.
 
 **State variables:** `admin_address`, `paused` flag, `nft_collection_addresses` dictionary, `blocked_accounts` dictionary, `tbc_jetton_master` address.
 
-**Access control:** `verify_nft_account()` (lines 96–112) validates collection whitelist membership, blocked status, and NFT ownership via `get_nft_owner()`. Admin functions check `equal_slices(sender_address, admin_address)`.
+**Access control:** `verify_nft_account()` validates collection whitelist membership, blocked status, and NFT ownership via `get_nft_owner()`. Admin functions check `equal_slices(sender_address, admin_address)`.
+
+**Update (Issue #367) — ownership, Account Locks, and balance mutations integrated at the reference level.** Synchronous cross-contract reads are impossible on TON, so the reference now models the same message-driven patterns used by the deployable contracts:
+- **Ownership (C-PHF-C1):** the `get_nft_data_raw` placeholder is removed. Ownership comes from a resolver-gated, write-once `nft_owners` registry; bindings are accepted only via `op::resolve_nft_owner` from the immutable `nft_resolver`, and `verify_nft_account()` rejects empty/`addr_none` owners with `owner.slice_bits() >= 267` (mirrors `nft_account_resolver.fc`, #320).
+- **Account Locks (C-PHF-C2):** the hub stores an immutable `account_locks_contract` and mirrors lock state pushed only by it via `op::apply_account_lock` (the ApplyAccountLock pattern, #363). `can_send()` gates `handle_internal_transfer()` and `handle_merchant_payment()`; `handle_payment_received()` stays unguarded so a locked account can always still RECEIVE (invariant I6).
+- **Balance mutations (C-PHF-H1):** both transfer handlers atomically debit the sender and credit the recipient against an internal TBC ledger and check `insufficient_balance` before sending (invariant I4/I1), instead of only emitting an event.
+
+These changes harden the reference; the 0xDEAD blocker is **deliberately retained** and a CI gate (`contracts/payment-hub/non-production-stubs.spec.ts`) ensures it cannot be removed without the C-PHF-C1/C2/H1 integration coverage (`contracts/payments/tests/payment-hub.spec.fc`) being present.
 
 #### 2.1.2 Payment Hub (Tact) — `contracts/payments/PaymentHub.tact`
 
@@ -118,6 +125,24 @@ No assumption in this document relies on "trust" alone.
 **Status:** Implemented, not yet deployed to mainnet
 
 **Key difference from FunC version:** Includes explicit reentrancy guard (`self.locked` flag, lines 121, 149–150). Self-transfers handled as no-op with event emission.
+
+**Pre-production hardening (Issue #371 / PC-02 — RESOLVED):** account creation is
+now **write-once**. `receive(msg: InitializeAccount)` previously checked only
+`sender() == self.admin` and then unconditionally wrote `balance`/`owner` for the
+target slot. A malicious or compromised admin could re-initialize an
+already-funded account, reassign `owner` to an attacker-controlled address, and
+drain it via `TransferInternalRequest` (which authorizes on
+`sender() == from_account.owner`) — breaking I1 (Non-Custodial) and I3 (No Admin
+Fund Control). The handler now rejects any write to a live slot
+(`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`),
+mirroring the `MerchantPaymentHub` create-once pattern. The account **read** path
+was hardened in the same change: the helper (`getOrCreateAccount` →
+`getAccountOrDefault`) no longer persists a placeholder slot, so the free,
+unauthenticated `GetAccountStateRequest` query cannot squat an `nft_address` and
+block its legitimate first initialization (a denial-of-service the bare guard
+would otherwise introduce). Regression coverage: a CI grep gate in
+`contracts/payment-hub/non-production-stubs.spec.ts` plus a standalone
+reproduction in `experiments/issue-371-paymenthub-create-once/`.
 
 #### 2.1.3 Merchant Payment Hub (Tact) — `contracts/MerchantPaymentHub.tact`
 
@@ -276,11 +301,13 @@ on-chain NFT Account Resolver:
 
 #### 2.1.11 Governance — Snapshot Verifier (Tact) — `contracts/governance/SnapshotVerifier.tact`
 
-**Purpose:** Verifies NFT ownership at snapshot time for governance voting.
-**Lines:** 207
+**Purpose:** Eligibility oracle — records, per `proposal_id`, which Diamond NFTs may vote; consumed by `ProposalRegistry` via the `EligibilityCheckRequest`/`EligibilityCheckResponse` exchange.
+**Lines:** 330
 **Status:** Implemented, not yet deployed to mainnet
 
-**Fallback behavior:** If no snapshot exists for a given block, ALL NFTs 1–222 are eligible (permissive default). This is a deliberate design choice to avoid blocking governance when snapshots fail.
+**Sender authentication (Issue #370 / PC-01 — RESOLVED ✅):** `RegisterSnapshot` previously performed **no** `sender()` check, so any external address could forge the governance eligibility roll for any `proposal_id`. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that writer via `SetTrustedIndexer` (deployer-only, rotatable). The companion `set_registry` binding was hardened from first-caller-wins to deployer-only in the same change. Forged eligibility rolls can no longer be written. See §4.5.2; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
+
+**Eligibility default (audit L-2):** `isEligible` is **fail-closed** — when no snapshot exists for a proposal it returns `false` for every NFT (there is no "all NFTs eligible" fallback).
 
 #### 2.1.12 Governance — Transparency Registry (Tact) — `contracts/governance/TransparencyRegistry.tact`
 
@@ -362,9 +389,9 @@ These contracts are deployed, immutable, and outside protocol control:
 - Non-custodial orchestrator: user sends funds to ChangeNOW deposit address directly.
 - Protocol does not receive or hold funds during swap.
 
-**NOWPayments** (`backend/adapters/nowpayments.ts`, 397 lines):
+**NOWPayments** (`backend/adapters/nowpayments.ts`, 454 lines):
 - Payment processing API client.
-- Includes HMAC webhook verification interface (implementation is stubbed — `verifyWebhookSignature` method exists but is not fully implemented).
+- IPN webhook verification (`verifyCallback`) computes a **real HMAC-SHA512** over the recursively key-sorted JSON body keyed by the IPN secret and constant-time compares it (`crypto.timingSafeEqual`) against the `x-nowpayments-sig` header (Issue #372 / PC-03 — RESOLVED ✅; previously a length-only placeholder that accepted forged IPNs).
 
 **CoinRabbit** (`backend/adapters/coinrabbit.ts`, 577 lines):
 - Lending adapter. Identity resolution, collateral signal verification (read-only), loan intent creation.
@@ -661,22 +688,24 @@ This section defines the adversary classes the protocol must defend against. Eac
 
 **Applicable to:** Payment Hub (FunC), Account Locks.
 
-**Critical finding:** The FunC Payment Hub (`payment-hub.fc`) does NOT call `account-locks.fc::can_send()` before processing transfers in `handle_internal_transfer()` (line 135) or `handle_merchant_payment()` (line 174). These functions verify NFT ownership but skip lock checks.
+**Critical finding (original):** The FunC Payment Hub (`payment-hub.fc`) did NOT call a lock check before processing transfers in `handle_internal_transfer()` or `handle_merchant_payment()`. These functions verified NFT ownership but skipped lock checks.
 
-**Impact:** A locked account could execute transfers through the FunC Payment Hub, violating invariant I6.
+**✅ Update (Issue #367) — resolved at the reference level.** `payment-hub.fc` now mirrors lock state via the gated `op::apply_account_lock` push (accepted only from the immutable `account_locks_contract`; synchronous reads of `account-locks.fc` are impossible on TON) and calls `can_send()` before moving funds in both `handle_internal_transfer()` and `handle_merchant_payment()`, throwing `account_locked` (107) when the sender is locked. `handle_payment_received()` stays unguarded so a locked account can always still RECEIVE (invariant I6, Lock ≠ Confiscation). The file remains a non-deployable reference (0xDEAD blocker retained); production lock enforcement lives in the Tact hubs.
+
+**Impact (if the reference were ever deployed without the fix):** A locked account could execute transfers through the FunC Payment Hub, violating invariant I6. The reference now prevents this; the contract is non-deployable regardless.
 
 **Note:** The Tact Merchant Payment Hub (`MerchantPaymentHub.tact`) DOES check locks at line 116–119 via `canSendWithLocks(payer_locks)`.
 
-**Remediation required:** The FunC Payment Hub must integrate Account Locks checking before mainnet deployment:
+**Remediation (implemented at the reference level, Issue #367):** the FunC Payment Hub now checks the locally mirrored lock state after `verify_nft_account()`:
 ```func
-// Required addition after verify_nft_account() call:
-int sender_can_send = account_locks.can_send(from_nft);
-throw_unless(error::account_locked, sender_can_send);
+// After verify_nft_account(), before moving funds:
+throw_unless(error::account_locked, can_send(from_nft));
 ```
+The lock mirror is fed only by `op::apply_account_lock` from the trusted `account_locks_contract`. Production lock enforcement remains the responsibility of the deployable Tact hubs.
 
 **Additional bypass vector:** TBC jetton transfers sent DIRECTLY via the jetton wallet (not through Payment Hub) bypass all protocol controls. The TBC jetton contract is immutable and has no knowledge of Account Locks. This is a fundamental architectural limitation.
 
-**Residual risk:** HIGH (FunC Payment Hub missing lock check). MEDIUM (direct jetton transfer bypass — accepted architectural limitation, documented as advisory locks).
+**Residual risk:** LOW for the FunC Payment Hub — the lock check is now present at the reference level and the contract is non-deployable (0xDEAD blocker). MEDIUM (direct jetton transfer bypass — accepted architectural limitation, documented as advisory locks).
 
 #### 4.3.3 Partial Execution Scenarios
 
@@ -696,13 +725,12 @@ throw_unless(error::account_locked, sender_can_send);
 **Applicable to:** Merchant API (NOWPayments integration), external adapters.
 
 **Analysis:**
-- NOWPayments adapter includes `verifyWebhookSignature()` interface, but implementation is stubbed (nowpayments.ts).
-- If webhook verification is not implemented, an attacker could send fake "payment confirmed" webhooks to the Merchant API.
+- The NOWPayments adapter's `verifyCallback()` previously authenticated callbacks with a length-only placeholder digest, so an attacker who knew the (public) request shape could forge a "payment confirmed" IPN that passed verification (Issue #372 / PC-03).
 - If the Merchant API acts on unverified webhooks (e.g., marks invoice as paid, triggers fulfillment), the merchant suffers financial loss.
 
-**Mitigation status:** Webhook signature verification is structurally required but not fully implemented.
+**Mitigation status:** **RESOLVED ✅ (Issue #372 / PC-03).** `verifyCallback()` now computes a real HMAC-SHA512 over the recursively key-sorted JSON body keyed by the configured IPN secret and constant-time compares it (`crypto.timingSafeEqual`, with a length pre-check) against the `x-nowpayments-sig` header; a missing/empty signature or malformed body fails closed. A forged IPN no longer authenticates. Locked by a CI regression suite (`tests/nowpayments-adapter/`, golden-vector pinned) plus a standalone before/after reproduction (`experiments/issue-372-nowpayments-hmac/`).
 
-**Residual risk:** MEDIUM. The Merchant API must verify webhook signatures before acting on them. The protocol's on-chain verification (`verifySettlement()` in SDK) provides an independent confirmation path.
+**Residual risk:** LOW. The adapter verifies IPN signatures; the protocol's on-chain verification (`verifySettlement()` in SDK) remains an independent confirmation path.
 
 #### 4.4.2 Callback Replay
 
@@ -756,11 +784,11 @@ throw_unless(error::account_locked, sender_can_send);
 **Applicable to:** SnapshotVerifier.
 
 **Analysis:**
-- The SnapshotVerifier has a permissive fallback: if no snapshot exists, ALL NFTs 1–222 are eligible.
-- An attacker could time a governance action to occur when no snapshot exists, ensuring all NFTs are eligible regardless of actual ownership at the relevant time.
-- Snapshot recording in TransparencyRegistry is now access-controlled (Issue #365): `RecordSnapshot` is accepted only from the configured `snapshot_verifier` writer and fails closed until that writer is set, so false snapshots can no longer be injected into the transparency layer.
+- **Unauthenticated snapshot registration (Issue #370 / PC-01 — RESOLVED ✅).** Previously `RegisterSnapshot` had no `sender()` check, so any external address could register or overwrite the eligibility roll for any `proposal_id`, forging which NFTs may vote. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that indexer via `SetTrustedIndexer` (deployer-only, rotatable). The `set_registry` binding was hardened to deployer-only in the same change. Forged snapshots can no longer be written; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
+- **No permissive fallback (audit L-2).** `isEligible` is **fail-closed**: if no snapshot exists for a `proposal_id` it returns `false` for every NFT (the historical "all NFTs eligible" branch was removed). Timing a governance action when no snapshot exists therefore admits **zero** voters, not all of them — the proposal cannot reach quorum. The runbook still requires `hasSnapshot == true` before `SubmitProposal` as defence-in-depth so legitimate voters are not denied.
+- Snapshot recording in TransparencyRegistry is also access-controlled (Issue #365): `RecordSnapshot` is accepted only from the configured `snapshot_verifier` writer and fails closed until that writer is set, so false snapshots can no longer be injected into the transparency layer.
 
-**Residual risk:** MEDIUM. The permissive fallback is a documented design choice. False snapshot injection into TransparencyRegistry is RESOLVED ✅ (Issue #365).
+**Residual risk:** LOW. On-chain snapshot forgery is blocked by trusted-indexer authentication (Issue #370 ✅); the eligibility oracle is fail-closed (L-2); false snapshot injection into TransparencyRegistry is RESOLVED ✅ (Issue #365). Residual exposure is limited to a compromised trusted-indexer key, mitigated by the deployer-only rotatable `SetTrustedIndexer` and the multi-sig deployer requirement (PARAMETERS.md PP-41).
 
 #### 4.5.3 Off-Chain Misinformation
 
@@ -956,8 +984,9 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Invalid state transitions** (4.1.4) | Account State Machine | Explicit transition rules; `FROZEN` and `COLLATERAL_LOCKED` have no exit path (blocked by design until mechanism is built) | MEDIUM — Frozen accounts cannot be unfrozen until DAO mechanism is implemented |
 | **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`) removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `ApplyAccountLock`, accepted ONLY from `account_locks_contract` (Issue #363) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | CollateralSignal.tact | Test-only `RegisterNFTOwner` removed from the production contract; ownership is registered ONLY via `ResolveNFTOwner`, accepted from the immutable `nft_resolver` (on-chain NFT Account Resolver), and remains write-once (CONTRACTS-M1) (Issue #364) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
-| **Access control bypass** (4.1.5) | TransparencyRegistry.tact | All six record handlers verify `sender()` against a deployer-configured per-domain authorized writer (`proposal_registry` / `snapshot_verifier` / `report_writer`); slots start `null` and fail closed; deployer-only `Set*` configuration messages (Issue #365) | RESOLVED ✅ (pre-mainnet) — covered by `TransparencyRegistry.spec.ts` |
 | **Access control bypass** (4.1.5) | ProposalRegistry.tact | `SubmitProposal`/`CastVote` confirm ownership asynchronously via a trusted on-chain resolver before recording, failing closed until configured (Issue #248); the resolver/verifier addresses are governed by an M-of-N multi-sig + 7-day timelock + code-hash verification, with a recovery path for misconfiguration (Issue #366) | RESOLVED ✅ (pre-mainnet) — covered by `ProposalRegistry.spec.ts` |
+| **Access control bypass** (4.1.5) | SnapshotVerifier.tact | `RegisterSnapshot` (the governance eligibility-oracle writer consumed by `ProposalRegistry`) verifies `sender() == trusted_indexer`; the slot starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; `set_registry` hardened from first-caller-wins to deployer-only + write-once (Issue #370 / PC-01) | RESOLVED ✅ (pre-mainnet) — covered by `SnapshotVerifier.spec.ts` |
+| **Admin account hijack** (4.1.5) | PaymentHub.tact | `InitializeAccount` is now **write-once** (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`): a compromised admin can no longer re-initialize a funded slot to reassign `owner` and drain it via `TransferInternalRequest`. The account read path (`getAccountOrDefault`) was made side-effect free so a free `GetAccountStateRequest` query cannot squat a slot and DoS its first init (Issue #371 / PC-02) | RESOLVED ✅ (pre-mainnet) — grep gate in `non-production-stubs.spec.ts`; repro in `experiments/issue-371-paymenthub-create-once/` |
 
 ### 6.2 Economic Threat Mitigations
 
@@ -973,7 +1002,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
 | **Invalid transitions** (4.3.1) | Account State Machine | Explicit transition rules enforced in contract logic | LOW |
-| **Locked account bypass** (4.3.2) | FunC Payment Hub | **NOT MITIGATED** — `handle_internal_transfer()` and `handle_merchant_payment()` do not check Account Locks | **HIGH** — Must be fixed before deployment |
+| **Locked account bypass** (4.3.2) | FunC Payment Hub | Mitigated at reference level (Issue #367) — `handle_internal_transfer()` and `handle_merchant_payment()` call `can_send()` against the `op::apply_account_lock` mirror; contract is non-deployable (0xDEAD blocker) | LOW — lock check present; production hub is `PaymentHub.tact` |
 | **Locked account bypass** (4.3.2) | Tact Merchant Payment Hub | Mitigated — checks `canSendWithLocks(payer_locks)` at line 116–119 | LOW |
 | **Locked account bypass** (4.3.2) | Direct TBC jetton transfer | **Architectural limitation** — TBC jetton contract is immutable, does not know about Account Locks | **MEDIUM** — Locks are advisory for direct transfers; documented limitation |
 | **Partial execution** (4.3.3) | Multi-step external flows | Each on-chain operation is atomic; off-chain partial execution is inherent to cross-service flows | MEDIUM — Users accept risk of external service failures |
@@ -982,7 +1011,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
-| **Webhook forgery** (4.4.1) | NOWPayments adapter | HMAC webhook verification interface exists but is stubbed; on-chain verification provides independent confirmation | MEDIUM — Webhook verification must be fully implemented |
+| **Webhook forgery** (4.4.1) | NOWPayments adapter | `verifyCallback()` computes a real HMAC-SHA512 over the key-sorted JSON body and constant-time compares the `x-nowpayments-sig` header; on-chain verification provides independent confirmation | RESOLVED ✅ (Issue #372 / PC-03) — real HMAC verification; CI regression suite `tests/nowpayments-adapter/` + repro `experiments/issue-372-nowpayments-hmac/` |
 | **Callback replay** (4.4.2) | Merchant API | Idempotency support for invoice creation; no on-chain duplicate invoice prevention | MEDIUM — On-chain replay protection not implemented |
 | **Order ID collision** (4.4.3) | Merchant API/SDK | Deterministic SHA-256 hashing for invoice IDs | NEGLIGIBLE — SHA-256 collision resistance |
 | **Cross-chain spoofing** (4.4.4) | ChangeNOW adapter | On-chain TON-side receipt verification; cross-chain verification is ChangeNOW's responsibility | MEDIUM — Users must verify on-chain receipt |
@@ -992,7 +1021,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
 | **Proposal flooding** (4.5.1) | ProposalRegistry | Gas costs provide economic rate limiting; non-executable proposals limit impact | LOW |
-| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | Permissive fallback is documented design choice; TransparencyRegistry `RecordSnapshot` now restricted to the configured `snapshot_verifier` writer (Issue #365) | MEDIUM — Permissive fallback remains; false snapshot injection into TransparencyRegistry RESOLVED ✅ |
+| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | `RegisterSnapshot` requires `sender() == trusted_indexer`, fail-closed until the deployer (governance multi-sig) sets that writer via deployer-only `SetTrustedIndexer`; `set_registry` hardened to deployer-only; eligibility oracle fails closed (returns `false`, no permissive fallback — audit L-2) (Issue #370 / PC-01); TransparencyRegistry `RecordSnapshot` restricted to the configured `snapshot_verifier` writer (Issue #365) | LOW — On-chain snapshot forgery blocked ✅; fail-closed; residual exposure limited to a compromised rotatable trusted-indexer key |
 | **Off-chain misinformation** (4.5.3) | Governance communication | On-chain proposal data is authoritative record | LOW for protocol; MEDIUM for social context |
 | **False record injection** (4.5.4) | TransparencyRegistry | **RESOLVED ✅ (Issue #365)** — every record handler authenticates `sender()` against a deployer-configured per-domain writer and fails closed until configured | LOW — Only the designated writers can append records; regression-tested |
 
@@ -1290,7 +1319,7 @@ This section maps each threat to the seven protocol invariants defined in [docs/
 | Invalid transitions (4.1.4) | - | - | - | - | - | Preserved | - |
 | Access control bypass (4.1.5) | **At risk** | **At risk** | **At risk** | - | **At risk** | - | - |
 | NFT race / front-running | Preserved | Preserved | - | Preserved | - | - | - |
-| Locked account bypass (4.3.2) | - | - | - | - | - | **At risk** | - |
+| Locked account bypass (4.3.2) | - | - | - | - | - | Preserved | - |
 | Webhook forgery (4.4.1) | - | - | - | - | - | - | Preserved |
 | Callback replay (4.4.2) | - | - | - | - | - | - | - |
 | Governance attacks (4.5) | - | - | - | - | - | - | - |
@@ -1310,7 +1339,9 @@ This section maps each threat to the seven protocol invariants defined in [docs/
 | I1 | ~~Test-only functions in MerchantPaymentHub.tact allow anyone to set account state/balance~~ | `SetAccountState`, `SetAccountBalance` messages with no access control | RESOLVED ✅ (Issue #363) — handlers removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); CI regression guard blocks reintroduction |
 | I3 | ~~Test-only functions allow balance modification without NFT owner signature~~ | `SetAccountBalance` message in MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production; merchant payments debit/credit only via NFT-owner-authorised `MerchantPaymentRequest` |
 | I5 | ~~`SetAccountBalance` can create/destroy funds~~ | MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production contract before mainnet |
-| I6 | FunC Payment Hub does not check Account Locks | payment-hub.fc missing `can_send()` call | Add lock checking integration |
+| I6 | ~~FunC Payment Hub does not check Account Locks~~ | `payment-hub.fc` missing `can_send()` call | RESOLVED ✅ (Issue #367, reference level) — `handle_internal_transfer()`/`handle_merchant_payment()` now gate on `can_send()` fed by the `op::apply_account_lock` mirror; `handle_payment_received()` stays open (locked accounts still RECEIVE). Contract is non-deployable (0xDEAD blocker retained); production hub is `PaymentHub.tact` |
+| I1 | ~~`PaymentHub.InitializeAccount` overwrites an existing account's `owner`/`balance`~~ | `PaymentHub.tact` initializer had no "account already exists" guard | RESOLVED ✅ (Issue #371 / PC-02) — `InitializeAccount` is write-once (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`); a re-init of a funded slot reverts, so funds stay controllable only by the original NFT owner |
+| I3 | ~~A compromised admin can re-initialize a funded account, reassign `owner`, then drain it~~ | `PaymentHub.InitializeAccount` (admin-gated) + `TransferInternalRequest` authorizing on `sender() == from_account.owner` | RESOLVED ✅ (Issue #371 / PC-02) — write-once init removes the only admin path to reassign ownership; the account read path was also made side-effect free so a query cannot squat a slot and DoS first init |
 
 ---
 
@@ -1322,21 +1353,23 @@ This checklist enables an external auditor to systematically verify the protocol
 
 #### Payment Hub (FunC: `payment-hub.fc`)
 
-- [ ] Verify `verify_nft_account()` (lines 96–112) correctly validates NFT ownership
-- [ ] Verify `get_nft_owner()` (lines 73–80) returns actual on-chain NFT owner (currently placeholder)
-- [ ] Confirm `handle_internal_transfer()` (lines 127–163) checks Account Locks before transfer — **EXPECTED TO FAIL: lock check is missing**
-- [ ] Confirm `handle_merchant_payment()` (lines 166–197) checks Account Locks before transfer — **EXPECTED TO FAIL: lock check is missing**
-- [ ] Verify `handle_set_paused()` (lines 233–239) only sets flag, cannot move funds
-- [ ] Verify `handle_flag_account()` (lines 242–263) only sets flag, cannot move funds
+- [x] Verify `verify_nft_account()` correctly validates NFT ownership — **resolved at reference level (Issue #367):** rejects empty/`addr_none` owners via `owner.slice_bits() >= 267` and matches against the registered owner
+- [x] Verify `get_nft_owner()` returns the actual NFT owner — **resolved at reference level (Issue #367):** the placeholder is removed; ownership comes from a resolver-gated, write-once `nft_owners` registry (`op::resolve_nft_owner`)
+- [x] Confirm `handle_internal_transfer()` checks Account Locks before transfer — **resolved at reference level (Issue #367):** `can_send(from_nft)` gate, fed by the `op::apply_account_lock` mirror
+- [x] Confirm `handle_merchant_payment()` checks Account Locks before transfer — **resolved at reference level (Issue #367):** `can_send(payer_nft)` gate
+- [x] Confirm transfers mutate balances atomically — **resolved at reference level (Issue #367):** both handlers debit the sender and credit the recipient against the internal TBC ledger and check `insufficient_balance` before sending (C-PHF-H1)
+- [ ] Verify `handle_set_paused()` only sets flag, cannot move funds
+- [ ] Verify `handle_flag_account()` only sets flag, cannot move funds
 - [ ] Confirm no admin withdrawal, drain, or privileged transfer functions exist
-- [ ] Verify events emitted after state changes, not before (lines 115–124)
-- [ ] Check `recv_internal()` (lines 266–332) handles unknown opcodes safely
+- [ ] Verify events emitted after state changes, not before
+- [x] Confirm the contract is non-deployable — `recv_internal()` throws `DEPLOY_BLOCKER_NOT_PRODUCTION_READY` (0xDEAD) as its first statement; the deploy blocker is retained as defence-in-depth and a CI gate (`non-production-stubs.spec.ts`) couples its removal to the C-PHF-C1/C2/H1 coverage (Issue #367)
 
 #### Payment Hub (Tact: `PaymentHub.tact`)
 
 - [ ] Verify reentrancy guard (lines 121, 149–150) is correctly implemented
 - [ ] Verify ownership check in `TransferInternalRequest` handler
 - [ ] Confirm self-transfer handled as no-op with event emission
+- [x] **CRITICAL: `InitializeAccount` is create-once (Issue #371 / PC-02)** — RESOLVED ✅: the initializer rejects writes to a live slot (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`), so a compromised admin cannot re-initialize a funded account, reassign `owner` and drain it via `TransferInternalRequest` (I1/I3); the account read path (`getAccountOrDefault`) was made side-effect free so a free query cannot squat a slot; grep gate in `non-production-stubs.spec.ts`, repro in `experiments/issue-371-paymenthub-create-once/`
 
 #### Merchant Payment Hub (Tact: `MerchantPaymentHub.tact`)
 
@@ -1370,8 +1403,9 @@ This checklist enables an external auditor to systematically verify the protocol
 
 - [ ] **CRITICAL: Verify `SubmitProposal` and `CastVote` verify Diamond NFT ownership** — currently unverified
 - [x] **CRITICAL: Verify TransparencyRegistry record messages have access control** — RESOLVED ✅ (Issue #365): all six record handlers authenticate `sender()` against deployer-configured per-domain writers and fail closed; covered by `contracts/governance/TransparencyRegistry.spec.ts`
+- [x] **CRITICAL: Verify `SnapshotVerifier.RegisterSnapshot` has access control** — RESOLVED ✅ (Issue #370 / PC-01): the eligibility-oracle writer authenticates `sender() == trusted_indexer`, starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; `set_registry` hardened to deployer-only + write-once; covered by `contracts/governance/SnapshotVerifier.spec.ts`
 - [ ] Verify ProposalRegistry double-vote prevention (composite key `proposal_id * 1000 + nft_id`)
-- [ ] Verify SnapshotVerifier permissive fallback behavior is acceptable
+- [x] Verify SnapshotVerifier eligibility default is fail-closed — RESOLVED ✅: `isEligible` returns `false` when no authorized snapshot is registered (audit L-2, no permissive "all NFTs eligible" fallback); on-chain forgery is blocked by trusted-indexer authentication (Issue #370 / PC-01)
 - [ ] Confirm governance proposals are non-executable
 
 ### C.2 Invariant Verification
@@ -1394,7 +1428,7 @@ This checklist enables an external auditor to systematically verify the protocol
 
 ### C.4 Integration Security
 
-- [ ] Verify webhook signature verification is implemented before production use
+- [x] Verify webhook signature verification is implemented before production use — **RESOLVED ✅ (Issue #372 / PC-03):** the NOWPayments adapter's `verifyCallback()` computes a real HMAC-SHA512 over the key-sorted JSON body and constant-time compares the `x-nowpayments-sig` header (was a length-only placeholder); CI regression suite `tests/nowpayments-adapter/`, repro `experiments/issue-372-nowpayments-hmac/`
 - [ ] Confirm on-chain verification is the authoritative settlement check
 - [ ] Verify indexer reorg detection and rollback logic
 - [ ] Confirm API authentication and rate limiting in Merchant API

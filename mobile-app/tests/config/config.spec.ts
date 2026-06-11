@@ -37,6 +37,42 @@ describe('assertHttpsEndpoint', () => {
       /must use HTTPS/,
     );
   });
+
+  // PC-09: the check parses the URL instead of a case-sensitive prefix test.
+  it('accepts a mixed-case HTTPS scheme', () => {
+    expect(() => assertHttpsEndpoint('HTTPS://example.com', 'foo')).not.toThrow();
+    expect(() => assertHttpsEndpoint('HtTpS://example.com/path', 'foo')).not.toThrow();
+  });
+
+  it('rejects non-HTTPS schemes such as ftp', () => {
+    expect(() => assertHttpsEndpoint('ftp://example.com', 'apiEndpoint')).toThrow(
+      /apiEndpoint must use HTTPS/,
+    );
+  });
+
+  it('rejects javascript: pseudo-URLs', () => {
+    expect(() => assertHttpsEndpoint('javascript:alert(1)', 'apiEndpoint')).toThrow(
+      /apiEndpoint must use HTTPS/,
+    );
+  });
+
+  it('rejects a mixed-case HTTP scheme that a prefix check would also catch', () => {
+    expect(() => assertHttpsEndpoint('HTTP://example.com', 'apiEndpoint')).toThrow(
+      /apiEndpoint must use HTTPS/,
+    );
+  });
+
+  it('rejects structurally invalid URLs', () => {
+    expect(() => assertHttpsEndpoint('https://', 'apiEndpoint')).toThrow(
+      /apiEndpoint must use HTTPS/,
+    );
+    expect(() => assertHttpsEndpoint('ht!tp://nope', 'apiEndpoint')).toThrow(
+      /apiEndpoint must use HTTPS/,
+    );
+    expect(() => assertHttpsEndpoint('not a url', 'apiEndpoint')).toThrow(
+      /apiEndpoint must use HTTPS/,
+    );
+  });
 });
 
 describe('validateAppConfig', () => {

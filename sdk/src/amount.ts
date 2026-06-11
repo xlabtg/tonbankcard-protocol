@@ -74,3 +74,22 @@ export function parseTBC(tbc: string): bigint {
 
   return BigInt(wholePart) * NANOCOINS_PER_TBC + BigInt(nanocoinFraction);
 }
+
+/**
+ * Validate that an amount is a non-negative integer string (nanocoins).
+ *
+ * TBC amounts are expressed in nanocoins as decimal strings for precision,
+ * so a valid value is one or more digits with no sign, separators, or
+ * fractional part. Rejecting anything else prevents query-parameter
+ * injection through the amount field of a payment deep link.
+ *
+ * @param amount - Amount string to validate
+ * @returns The validated amount string (unchanged)
+ * @throws Error if the value is not a non-negative numeric string
+ */
+export function assertAmount(amount: string): string {
+  if (typeof amount !== 'string' || !/^\d+$/.test(amount)) {
+    throw new Error(`Invalid amount: ${String(amount)}`);
+  }
+  return amount;
+}

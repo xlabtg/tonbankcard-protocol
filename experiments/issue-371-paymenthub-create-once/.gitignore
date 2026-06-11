@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Production source synced in by `npm run build` (never edit/commit the copy)
+PaymentHub.tact
+
+# Tact / wrapper build output
+dist/
+
+# Logs
+*.log

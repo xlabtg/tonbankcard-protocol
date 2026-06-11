@@ -1,0 +1,25 @@
+{
+  "name": "issue-372-nowpayments-hmac",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone reproduction of PC-03 / #372 — NOWPayments IPN callbacks must be verified with a real HMAC-SHA512 digest (constant-time) instead of a forgeable placeholder.",
+  "scripts": {
+    "test": "jest"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.6",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/*.repro.spec.ts"
+    ]
+  }
+}

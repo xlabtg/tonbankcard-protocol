@@ -23,13 +23,28 @@ export interface AppConfig extends MobileConfig {
   readonly biometricRequiredForUnlock: boolean;
 }
 
-const HTTPS_PREFIX = 'https://';
-
+/**
+ * Assert that `url` is a well-formed HTTPS endpoint.
+ *
+ * The check parses the URL with the WHATWG `URL` constructor and inspects the
+ * normalized `protocol` instead of a case-sensitive `startsWith('https://')`
+ * prefix test. This is more robust: it accepts mixed-case schemes
+ * (`HTTPS://…`, which the parser normalizes to `https:`) and rejects malformed
+ * strings or non-HTTPS schemes (`http:`, `ftp:`, `javascript:`, schemeless
+ * hosts) that a prefix check could not reason about. Mirrors the HTTPS-only
+ * guard already enforced by `HttpsClient.fetch` in `network/httpsClient.ts`.
+ */
 export function assertHttpsEndpoint(url: string | undefined, fieldName: string): void {
   if (!url) {
     return;
   }
-  if (!url.startsWith(HTTPS_PREFIX)) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`${fieldName} must use HTTPS, received: ${url}`);
+  }
+  if (parsed.protocol !== 'https:') {
     throw new Error(`${fieldName} must use HTTPS, received: ${url}`);
   }
 }

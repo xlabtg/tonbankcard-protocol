@@ -1,0 +1,256 @@
+;; Unit / integration reference tests for payment-hub.fc
+;;
+;; Covers the three audit findings hardened in the reference (see
+;; audit/SMART_CONTRACTS_SECURITY_AUDIT.md §2.8):
+;;   - C-PHF-C1: real NFT ownership verification — ownership comes from a
+;;     resolver-gated registry, and empty/dummy owners are rejected by the
+;;     owner.slice_bits() >= 267 guard (a placeholder owner can never pass).
+;;   - C-PHF-C2: Account Locks integration — can_send() gates every send; a
+;;     locked account can never SEND but can always still RECEIVE (invariant I6,
+;;     Lock != Confiscation).
+;;   - C-PHF-H1: balance mutations — internal transfers and merchant payments
+;;     atomically debit the sender and credit the recipient (invariant I4,
+;;     Atomic Transfers; invariant I1, no funds created or destroyed).
+;;
+;; NOTE on how this suite runs. payment-hub.fc is a NON-DEPLOYABLE audit
+;; reference: recv_internal throws DEPLOY_BLOCKER_NOT_PRODUCTION_READY (0xDEAD)
+;; as its first statement (the production payment hub is PaymentHub.tact,
+;; CONTRACTS-H3 / #260). These tests therefore exercise the helper and handler
+;; functions DIRECTLY, setting the contract globals instead of routing through
+;; recv_internal. Like account-locks.spec.fc, this file is a reference harness
+;; run with the FunC toolchain — there is no FunC compiler in CI, so the
+;; enforceable CI gate that couples removing the 0xDEAD blocker to these three
+;; fixes is the static suite contracts/payment-hub/non-production-stubs.spec.ts.
+;;
+;; Negative cases that must THROW (locked sender, insufficient balance, a sender
+;; that is not the owner) are expressed as precondition assertions on the exact
+;; guard inputs, because FunC has no try/catch here — mirroring the documented
+;; convention in account-locks.spec.fc.
+
+#include "../payment-hub.fc";
+
+;; ==================== test helpers ====================
+
+;; Build a standard NFT/account address (addr_std$10).
+slice create_nft_address(int wc, int addr) inline {
+    return begin_cell()
+        .store_uint(4, 3)   ;; addr_std$10
+        .store_uint(0, 1)   ;; anycast nothing
+        .store_uint(wc, 8)
+        .store_uint(addr, 256)
+    .end_cell().begin_parse();
+}
+
+;; Reset every contract global to a clean, empty state.
+() reset_state() impure {
+    admin_address = create_nft_address(0, 1);
+    paused = 0;
+    nft_collection_addresses = new_dict();
+    blocked_accounts = new_dict();
+    tbc_jetton_master = create_nft_address(0, 2);
+    nft_resolver = create_nft_address(0, 3);
+    account_locks_contract = create_nft_address(0, 4);
+    nft_owners = new_dict();
+    account_locks = new_dict();
+    balances = new_dict();
+}
+
+;; Register an NFT as a member of an allowed collection.
+() register_in_collection(slice nft) impure {
+    nft_collection_addresses~udict_set(256, slice_hash(nft),
+        begin_cell().store_uint(1, 1).end_cell().begin_parse());
+}
+
+;; Bind an owner directly (test shortcut for the resolver-gated registry).
+() register_owner(slice nft, slice owner) impure {
+    nft_owners~udict_set(256, slice_hash(nft), owner);
+}
+
+;; Push a lock-state value into the local Account Locks mirror.
+() set_lock_mirror(slice nft, int state) impure {
+    account_locks~udict_set(256, slice_hash(nft),
+        begin_cell().store_uint(state, 8).end_cell().begin_parse());
+}
+
+;; ==================== C-PHF-C1: ownership ====================
+
+;; An unregistered NFT yields an empty owner slice, which fails the
+;; owner.slice_bits() >= 267 guard in verify_nft_account — so a dummy/placeholder
+;; owner can never satisfy an ownership check.
+() test_c1_unregistered_owner_rejected() impure {
+    reset_state();
+    slice nft = create_nft_address(0, 100);
+    register_in_collection(nft);
+
+    slice owner = get_nft_owner(nft);
+    throw_unless(1000, owner.slice_bits() == 0);    ;; empty slice
+    throw_unless(1001, owner.slice_bits() < 267);   ;; guard would throw invalid_nft (101)
+}
+
+;; The resolver registers NFT -> owner, after which verify_nft_account accepts
+;; the true owner and returns it.
+() test_c1_resolver_registers_owner() impure {
+    reset_state();
+    slice nft = create_nft_address(0, 101);
+    slice owner = create_nft_address(0, 500);
+    register_in_collection(nft);
+
+    ;; Trusted resolver pushes the binding (gated on nft_resolver).
+    handle_resolve_nft_owner(nft_resolver, nft, owner);
+
+    slice got = get_nft_owner(nft);
+    throw_unless(1010, got.slice_bits() == 267);      ;; a real std address passes the guard
+    throw_unless(1011, equal_slices(got, owner) == -1);
+
+    (int valid, slice vowner) = verify_nft_account(nft, owner);
+    throw_unless(1012, valid == -1);
+    throw_unless(1013, equal_slices(vowner, owner) == -1);
+}
+
+;; A sender that is not the registered owner fails the ownership-match guard
+;; (equal_slices(owner, sender) is false -> verify_nft_account throws
+;; unauthorized (105)).
+() test_c1_non_owner_mismatch() impure {
+    reset_state();
+    slice nft = create_nft_address(0, 102);
+    slice owner = create_nft_address(0, 501);
+    slice attacker = create_nft_address(0, 999);
+    register_in_collection(nft);
+    register_owner(nft, owner);
+
+    slice got = get_nft_owner(nft);
+    throw_unless(1020, equal_slices(got, attacker) == 0);  ;; attacker is NOT the owner
+    throw_unless(1021, equal_slices(got, owner) == -1);    ;; the real owner matches
+}
+
+;; ==================== C-PHF-C2: Account Locks ====================
+
+;; can_send reflects the local lock mirror: unlocked -> may send; locked -> may
+;; not send.
+() test_c2_can_send_reflects_lock() impure {
+    reset_state();
+    slice nft = create_nft_address(0, 200);
+
+    throw_unless(2000, get_lock_state(nft) == 0);
+    throw_unless(2001, can_send(nft) == 1);
+
+    set_lock_mirror(nft, 1);
+    throw_unless(2002, get_lock_state(nft) == 1);
+    throw_unless(2003, can_send(nft) == 0);  ;; locked account cannot SEND
+}
+
+;; Lock state is accepted only from the trusted account_locks_contract; once
+;; applied, the account cannot send until it is unlocked.
+() test_c2_apply_account_lock_gated() impure {
+    reset_state();
+    slice nft = create_nft_address(0, 201);
+
+    throw_unless(2010, can_send(nft) == 1);
+
+    handle_apply_account_lock(account_locks_contract, nft, 1);
+    throw_unless(2011, get_lock_state(nft) == 1);
+    throw_unless(2012, can_send(nft) == 0);
+
+    handle_apply_account_lock(account_locks_contract, nft, 0);
+    throw_unless(2013, can_send(nft) == 1);
+}
+
+;; Invariant I6 (Lock != Confiscation): a locked account can still RECEIVE.
+() test_c2_locked_can_still_receive() impure {
+    reset_state();
+    slice nft = create_nft_address(0, 202);
+    register_in_collection(nft);
+    set_lock_mirror(nft, 1);  ;; locked
+
+    slice src = create_nft_address(0, 700);
+    handle_payment_received(nft, 300, src, begin_cell().end_cell());
+
+    throw_unless(2020, get_balance(nft) == 300);  ;; receiving works while locked
+    throw_unless(2021, can_send(nft) == 0);        ;; but sending is still blocked
+}
+
+;; ==================== C-PHF-H1: balance mutations ====================
+
+;; An internal transfer atomically debits the sender and credits the recipient.
+() test_h1_internal_transfer_moves_balance() impure {
+    reset_state();
+    slice from_nft = create_nft_address(0, 300);
+    slice to_nft = create_nft_address(0, 301);
+    slice owner = create_nft_address(0, 800);
+    register_in_collection(from_nft);
+    register_in_collection(to_nft);
+    register_owner(from_nft, owner);
+    set_balance(from_nft, 1000);
+
+    handle_internal_transfer(owner, from_nft, to_nft, 300, begin_cell().end_cell());
+
+    throw_unless(3000, get_balance(from_nft) == 700);
+    throw_unless(3001, get_balance(to_nft) == 300);
+}
+
+;; A merchant payment atomically debits the payer and credits the merchant.
+() test_h1_merchant_payment_moves_balance() impure {
+    reset_state();
+    slice payer = create_nft_address(0, 400);
+    slice merchant = create_nft_address(0, 401);
+    slice owner = create_nft_address(0, 900);
+    register_in_collection(payer);
+    register_in_collection(merchant);
+    register_owner(payer, owner);
+    set_balance(payer, 1000);
+
+    handle_merchant_payment(owner, payer, merchant, 250, begin_cell().end_cell());
+
+    throw_unless(3010, get_balance(payer) == 750);
+    throw_unless(3011, get_balance(merchant) == 250);
+}
+
+;; The insufficient-balance guard input: balance < amount -> handler throws
+;; insufficient_balance (103).
+() test_h1_insufficient_balance_precondition() impure {
+    reset_state();
+    slice from_nft = create_nft_address(0, 302);
+    set_balance(from_nft, 100);
+
+    throw_unless(3020, get_balance(from_nft) < 500);  ;; 100 < 500 -> would throw 103
+}
+
+;; Invariant I1 / I4: a transfer conserves total supply (no funds created or
+;; destroyed) and moves exactly the transferred amount.
+() test_h1_conservation_of_balance() impure {
+    reset_state();
+    slice from_nft = create_nft_address(0, 303);
+    slice to_nft = create_nft_address(0, 304);
+    slice owner = create_nft_address(0, 803);
+    register_in_collection(from_nft);
+    register_in_collection(to_nft);
+    register_owner(from_nft, owner);
+    set_balance(from_nft, 1000);
+    set_balance(to_nft, 500);
+
+    int total_before = get_balance(from_nft) + get_balance(to_nft);
+    handle_internal_transfer(owner, from_nft, to_nft, 400, begin_cell().end_cell());
+    int total_after = get_balance(from_nft) + get_balance(to_nft);
+
+    throw_unless(3030, total_before == total_after);  ;; conserved
+    throw_unless(3031, get_balance(from_nft) == 600);
+    throw_unless(3032, get_balance(to_nft) == 900);
+}
+
+;; ==================== runner ====================
+
+() run_tests() impure {
+    ;; C-PHF-C1
+    test_c1_unregistered_owner_rejected();
+    test_c1_resolver_registers_owner();
+    test_c1_non_owner_mismatch();
+    ;; C-PHF-C2
+    test_c2_can_send_reflects_lock();
+    test_c2_apply_account_lock_gated();
+    test_c2_locked_can_still_receive();
+    ;; C-PHF-H1
+    test_h1_internal_transfer_moves_balance();
+    test_h1_merchant_payment_moves_balance();
+    test_h1_insufficient_balance_precondition();
+    test_h1_conservation_of_balance();
+}

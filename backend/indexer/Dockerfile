@@ -27,8 +27,12 @@ WORKDIR /build
 # Native build toolchain for better-sqlite3.
 RUN apk add --no-cache python3 make g++
 
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+# Install from the committed lockfile so the native better-sqlite3 build and the
+# rest of the dependency tree match the audited package-lock.json. The lockfile
+# is tracked in every workspace so `npm ci` stays reproducible; `npm install`
+# would re-resolve versions — see the root .gitignore.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src

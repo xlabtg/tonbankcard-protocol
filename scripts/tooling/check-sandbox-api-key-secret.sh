@@ -98,7 +98,14 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   }
   trap cleanup EXIT
 
-  if env -u SANDBOX_API_KEY_SECRET docker compose --env-file /dev/null -f "${COMPOSE_FILE}" config >"${tmp_config}" 2>"${tmp_err}"; then
+  # Provide every other required secret (REDIS_PASSWORD is also enforced via the
+  # compose :? operator — PC-07) so that SANDBOX_API_KEY_SECRET is the only unset
+  # variable and the failure unambiguously points at it.
+  cat >"${tmp_env}" <<'ENV'
+REDIS_PASSWORD=compose-policy-test-redis-password
+ENV
+
+  if env -u SANDBOX_API_KEY_SECRET docker compose --env-file "${tmp_env}" -f "${COMPOSE_FILE}" config >"${tmp_config}" 2>"${tmp_err}"; then
     violations+=("$(relative_path "${COMPOSE_FILE}"): docker compose config succeeds when SANDBOX_API_KEY_SECRET is unset")
   elif ! grep -q 'SANDBOX_API_KEY_SECRET' "${tmp_err}"; then
     violations+=("$(relative_path "${COMPOSE_FILE}"): docker compose config failed without clearly requiring SANDBOX_API_KEY_SECRET")
@@ -106,6 +113,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 
   cat >"${tmp_env}" <<'ENV'
 SANDBOX_API_KEY_SECRET=compose-policy-test-secret-generated-for-ci
+REDIS_PASSWORD=compose-policy-test-redis-password
 ENV
 
   if docker compose --env-file "${tmp_env}" -f "${COMPOSE_FILE}" config >"${tmp_config}" 2>"${tmp_err}"; then

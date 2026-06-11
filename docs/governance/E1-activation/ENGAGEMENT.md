@@ -145,8 +145,9 @@ The engagement may begin once all rows below are ✅. The live state of each gat
 
 Additional engagement-level hardening:
 
-- The `set_registry` transaction (G-9) is irreversible; the runbook treats accidental re-call as a CRITICAL incident and the contract correctly rejects it with `"Registry already set"`.
-- The `SnapshotVerifier.isEligible` **fallback** (returns `true` for any in-range NFT when no snapshot is registered) is treated as a defect-class invariant: every voted proposal must have `hasSnapshot == true`. The indexer refuses to count votes otherwise.
+- The `set_registry` transaction (G-9) is irreversible; the runbook treats accidental re-call as a CRITICAL incident and the contract correctly rejects it with `"Registry already set"` (write-once guard). The binding is also **sender-authenticated** — accepted only from `sender() == deployer` (Issue #370 / PC-01); the previously unguarded first-caller-wins handler is fixed.
+- **Eligibility-oracle writer authentication (Issue #370 / PC-01).** `SnapshotVerifier.RegisterSnapshot` is accepted **only** from the on-chain–authorised `trusted_indexer`; the slot starts `null`, so the handler **fails closed** until the deployer (governance multi-sig) designates the indexer wallet via deployer-only, rotatable `SetTrustedIndexer` (RUNBOOK §5 step 3). Forged eligibility rolls from arbitrary senders are rejected on-chain.
+- The `SnapshotVerifier.isEligible` default is **fail-closed**: it returns `false` for any NFT when no authorised snapshot is registered (audit L-2 — there is no permissive "all in-range NFTs eligible" fallback). The indexer additionally refuses to count votes unless `hasSnapshot == true`, so a missing or unauthorised snapshot can never enfranchise voters.
 - The activation does not enable any **mutable** state on the governance contracts beyond what the contracts themselves expose; there is no admin key, no upgrade path, no pause primitive.
 
 ---

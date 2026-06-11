@@ -21,20 +21,22 @@ FROM node:${NODE_VERSION} AS builder
 
 WORKDIR /build
 
-# Install dependencies (use package.json only; lockfile is intentionally
-# excluded from version control per .gitignore — see CONTRIBUTING).
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+# Install dependencies from the committed lockfile so the image is built from
+# the exact, audit-verified dependency tree. package-lock.json is tracked in
+# every workspace precisely so `npm ci` yields a reproducible install — see the
+# root .gitignore and docs/security/DEPENDENCY_AUDIT.md.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 # Copy sources and build TypeScript.
 COPY tsconfig.json ./
 COPY src ./src
 RUN npx tsc
 
-# Re-install only production dependencies to produce a lean node_modules
-# that we can copy into the runtime image.
-RUN rm -rf node_modules \
-    && npm install --omit=dev --no-audit --no-fund
+# Re-install only production dependencies to produce a lean node_modules that
+# we can copy into the runtime image. `npm ci` wipes node_modules and installs
+# the locked tree, so the production layer stays reproducible too.
+RUN npm ci --omit=dev --no-audit --no-fund
 
 ############################
 # Stage 2 — runtime

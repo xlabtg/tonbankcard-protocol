@@ -14,24 +14,47 @@
 ;; - NFT ownership = account authority
 ;;
 ;; ============================================================================
-;; ⚠️  STATUS: REFERENCE STUB — NOT DEPLOYABLE
+;; STATUS: NON-PRODUCTION REFERENCE STUB — NOT IN THE DEPLOYABLE SET
 ;; ============================================================================
 ;; Audit findings C-PHF-C1, C-PHF-C2, C-PHF-H1 (see
-;; audit/SMART_CONTRACTS_SECURITY_AUDIT.md §2.8) document that:
-;;   - get_nft_data_raw is a placeholder that returns empty slices, so
-;;     verify_nft_account performs no real ownership check;
-;;   - the contract never integrates with account-locks.fc (lock bypass);
-;;   - handle_internal_transfer / handle_merchant_payment never mutate
-;;     balances — they only emit events.
+;; audit/SMART_CONTRACTS_SECURITY_AUDIT.md §2.8) are addressed here at the
+;; reference level using the SAME patterns as the production Tact payment hubs:
 ;;
-;; To prevent accidental deployment of this stub to mainnet, recv_internal
-;; throws DEPLOY_BLOCKER_NOT_PRODUCTION_READY (0xDEAD) on every entry until
-;; the items above are implemented and the constant is removed.
+;;   - C-PHF-C1 (ownership): the placeholder that pretended to read NFT data
+;;     synchronously is removed. Synchronous cross-contract NFT
+;;     reads are impossible on TON, so ownership is resolved from a registry
+;;     populated ONLY by the trusted NFT resolver (op::resolve_nft_owner), and
+;;     verify_nft_account rejects empty/addr_none owners (owner.slice_bits() >=
+;;     267) — mirroring nft_account_resolver.fc (#320). A dummy owner can never
+;;     pass an ownership check.
+;;   - C-PHF-C2 (locks): the hub keeps a local account_locks mirror written ONLY
+;;     by the trusted account_locks_contract (op::apply_account_lock — the
+;;     ApplyAccountLock push pattern, #363). Every transfer checks can_send()
+;;     first, so a fraud/collateral-locked account can never SEND (it can always
+;;     still RECEIVE — invariant I6, Lock != Confiscation).
+;;   - C-PHF-H1 (balances): handle_internal_transfer / handle_merchant_payment
+;;     debit the sender and credit the recipient atomically against an internal
+;;     TBC ledger, then emit the event (invariant I4, Atomic Transfers).
+;;
+;; The file nevertheless REMAINS non-deployable. Per CONTRACTS-H3 / #260 the
+;; production payment hub is contracts/payments/PaymentHub.tact; this FunC
+;; variant is kept only as a corrected audit reference and is excluded from
+;; every deployable manifest (scripts/deploy/deployable-contracts.ts). As
+;; defence in depth, recv_internal still throws
+;; DEPLOY_BLOCKER_NOT_PRODUCTION_READY (0xDEAD) as its first statement. The
+;; regression guard contracts/payment-hub/non-production-stubs.spec.ts couples
+;; the two: the blocker cannot be removed while this file is in
+;; NON_PRODUCTION_STUBS, and the three fixes above must stay present (Issue
+;; #367 — "work required before removing the blocker").
 ;; ============================================================================
 
 #include "stdlib.fc";
 
-;; Deploy blocker — set to 0 only after C-PHF-C1, C-PHF-C2, C-PHF-H1 are fixed.
+;; Deploy blocker. This is a NON-DEPLOYABLE reference: the constant is retained
+;; (not "set to 0 once fixed") because the production payment hub is the Tact
+;; contract per CONTRACTS-H3 / #260. The blocker may only be removed by a
+;; deliberate, reviewed change that also removes this file from
+;; NON_PRODUCTION_STUBS — enforced by the regression guard / CI gate.
 const int DEPLOY_BLOCKER_NOT_PRODUCTION_READY = 0xDEAD;
 
 ;; Operation codes
@@ -41,6 +64,8 @@ const int op::payment_received = 0x73774304;
 const int op::account_flagged = 0x73774305;
 const int op::set_paused = 0x73774306;
 const int op::verify_nft_ownership = 0x73774307;
+const int op::resolve_nft_owner = 0x73774308;   ;; C-PHF-C1: resolver registers NFT -> owner
+const int op::apply_account_lock = 0x73774309;  ;; C-PHF-C2: Account Locks contract pushes lock state
 
 ;; Error codes
 const int error::invalid_sender = 100;
@@ -50,20 +75,39 @@ const int error::insufficient_balance = 103;
 const int error::contract_paused = 104;
 const int error::unauthorized = 105;
 const int error::invalid_amount = 106;
+const int error::account_locked = 107;       ;; C-PHF-C2: sender is fraud/collateral locked
+
+;; Lock state encoding for the local Account Locks mirror (C-PHF-C2).
+;; 0 = unlocked (may send); any non-zero value = locked (may still receive).
+const int LOCK_STATE_UNLOCKED = 0;
 
 ;; Storage layout
 ;;
-;; admin_address: slice - admin for emergency pause only
-;; paused: int - emergency pause flag (0 = active, 1 = paused)
-;; nft_collection_addresses: cell - dictionary of allowed NFT collection addresses
-;; blocked_accounts: cell - dictionary of blocked NFT addresses
-;; tbc_jetton_master: slice - TBC jetton master contract address
+;; Root cell:
+;;   admin_address: slice - admin for emergency pause only
+;;   paused: int - emergency pause flag (0 = active, 1 = paused)
+;;   nft_collection_addresses: cell - dictionary of allowed NFT collection addresses
+;;   blocked_accounts: cell - dictionary of blocked NFT addresses
+;;   tbc_jetton_master: slice - TBC jetton master contract address
+;;   ext: ^cell - Issue #367 extension (see below)
+;;
+;; Extension ref cell (keeps the root within the 1023-bit / 4-ref limits):
+;;   nft_resolver: slice - trusted NFT resolver (C-PHF-C1 owner registration)
+;;   account_locks_contract: slice - trusted Account Locks contract (C-PHF-C2)
+;;   nft_owners: cell - NFT -> owner registry (resolver-gated, C-PHF-C1)
+;;   account_locks: cell - NFT -> lock-state mirror (locks-gated, C-PHF-C2)
+;;   balances: cell - NFT -> internal TBC balance ledger (C-PHF-H1)
 ;;
 global slice admin_address;
 global int paused;
 global cell nft_collection_addresses;
 global cell blocked_accounts;
 global slice tbc_jetton_master;
+global slice nft_resolver;
+global slice account_locks_contract;
+global cell nft_owners;
+global cell account_locks;
+global cell balances;
 
 ;; Load contract storage
 () load_data() impure {
@@ -73,61 +117,117 @@ global slice tbc_jetton_master;
     nft_collection_addresses = ds~load_dict();
     blocked_accounts = ds~load_dict();
     tbc_jetton_master = ds~load_msg_addr();
+
+    ;; Issue #367 extension (stored in a ref to stay within cell limits)
+    slice ext = ds~load_ref().begin_parse();
+    nft_resolver = ext~load_msg_addr();
+    account_locks_contract = ext~load_msg_addr();
+    nft_owners = ext~load_dict();
+    account_locks = ext~load_dict();
+    balances = ext~load_dict();
 }
 
 ;; Save contract storage
 () save_data() impure {
+    ;; Issue #367 fields live in an extension ref to keep the legacy root layout
+    ;; stable and within the 1023-bit / 4-ref cell limits.
+    cell ext = begin_cell()
+        .store_slice(nft_resolver)
+        .store_slice(account_locks_contract)
+        .store_dict(nft_owners)
+        .store_dict(account_locks)
+        .store_dict(balances)
+        .end_cell();
+
     set_data(begin_cell()
         .store_slice(admin_address)
         .store_uint(paused, 1)
         .store_dict(nft_collection_addresses)
         .store_dict(blocked_accounts)
         .store_slice(tbc_jetton_master)
+        .store_ref(ext)
         .end_cell()
     );
 }
 
-;; Get NFT owner address
-;; This function queries the NFT item contract to retrieve the owner
+;; ==================== OWNERSHIP (C-PHF-C1) ====================
+
+;; Resolve the registered owner of an NFT.
+;;
+;; Synchronous cross-contract reads of TEP-62 get_nft_data are IMPOSSIBLE on
+;; TON, so there is no synchronous NFT-data read here. Ownership is established by
+;; the trusted NFT resolver, which pushes NFT -> owner bindings via
+;; op::resolve_nft_owner. An unregistered NFT yields an empty slice, which the
+;; slice_bits() guard in verify_nft_account rejects — a dummy owner can never
+;; satisfy an ownership-based access-control check.
 slice get_nft_owner(slice nft_address) inline {
-    ;; Call get_nft_data() method on NFT contract
-    ;; Returns: (int init?, int index, slice collection_address, slice owner_address, cell individual_content)
-    var (init?, index, collection_address, owner_address, individual_content) =
-        get_nft_data_raw(nft_address);
-
-    return owner_address;
+    (slice owner, int found) = nft_owners.udict_get?(256, slice_hash(nft_address));
+    ifnot (found) {
+        return begin_cell().end_cell().begin_parse();  ;; empty slice (0 bits)
+    }
+    return owner;
 }
 
-;; Helper to call NFT contract's get_nft_data method
-;; In production, this would use run_method or similar TVM operation
-(int, int, slice, slice, cell) get_nft_data_raw(slice nft_address) inline_ref {
-    ;; This is a placeholder for the actual NFT data retrieval
-    ;; In real implementation, use: var result = run_method(nft_address, "get_nft_data");
-    ;; For now, return dummy data structure
-    ;; Production implementation would use proper cross-contract call
-
-    ;; Note: Actual implementation requires proper TVM run_method call
-    ;; This simplified version demonstrates the expected interface
-    return (1, 0, begin_cell().end_cell().begin_parse(), begin_cell().end_cell().begin_parse(), begin_cell().end_cell());
-}
-
-;; Verify NFT ownership and check if account is active
+;; Verify NFT ownership and check that the account is usable as a sender.
 (int, slice) verify_nft_account(slice nft_address, slice expected_owner) inline {
-    ;; Check if NFT is from allowed collection
-    var (collection_found, collection_value) = nft_collection_addresses.udict_get?(256, slice_hash(nft_address));
+    ;; Check if NFT is from an allowed collection
+    (slice collection_value, int collection_found) = nft_collection_addresses.udict_get?(256, slice_hash(nft_address));
     throw_unless(error::invalid_nft, collection_found);
 
-    ;; Check if account is not blocked
-    var (blocked, blocked_value) = blocked_accounts.udict_get?(256, slice_hash(nft_address));
+    ;; Check if account is not blocked (admin anti-fraud flag)
+    (slice blocked_value, int blocked) = blocked_accounts.udict_get?(256, slice_hash(nft_address));
     throw_if(error::account_blocked, blocked);
 
-    ;; Get NFT owner
+    ;; Resolve owner from the resolver-gated registry (C-PHF-C1)
     slice owner = get_nft_owner(nft_address);
 
-    ;; Verify ownership matches expected owner
+    ;; Reject dummy/empty owners. A valid TEP-62 std address is 267 bits
+    ;; (tag + workchain + 256-bit hash); addr_none is 2 bits and an empty slice
+    ;; is 0 bits. Mirrors nft_account_resolver.fc (#320): never authorize a
+    ;; non-address owner, so the old empty-slice placeholder can never pass.
+    throw_unless(error::invalid_nft, owner.slice_bits() >= 267);
+
+    ;; Verify ownership matches the message sender
     throw_unless(error::unauthorized, equal_slices(owner, expected_owner));
 
-    return (true, owner);
+    return (-1, owner);  ;; -1 = true (valid, owned account)
+}
+
+;; ==================== ACCOUNT LOCKS MIRROR (C-PHF-C2) ====================
+
+;; Read the local Account Locks mirror state for an NFT (0 = unlocked).
+;; The mirror is written ONLY by the trusted account_locks_contract via
+;; op::apply_account_lock — never by the admin or a user.
+int get_lock_state(slice nft_address) inline {
+    (slice v, int found) = account_locks.udict_get?(256, slice_hash(nft_address));
+    ifnot (found) {
+        return LOCK_STATE_UNLOCKED;
+    }
+    return v~load_uint(8);
+}
+
+;; Whether the NFT account may currently SEND.
+;; A fraud/collateral-locked account can never send; it can always still
+;; receive (invariant I6 — Lock != Confiscation). 1 = may send, 0 = locked.
+int can_send(slice nft_address) inline {
+    return get_lock_state(nft_address) == LOCK_STATE_UNLOCKED;
+}
+
+;; ==================== INTERNAL TBC LEDGER (C-PHF-H1) ====================
+
+;; Read the internal TBC balance of an NFT account (0 if none).
+int get_balance(slice nft_address) inline {
+    (slice v, int found) = balances.udict_get?(256, slice_hash(nft_address));
+    ifnot (found) {
+        return 0;
+    }
+    return v~load_coins();
+}
+
+;; Write the internal TBC balance of an NFT account.
+() set_balance(slice nft_address, int amount) impure inline {
+    balances~udict_set(256, slice_hash(nft_address),
+        begin_cell().store_coins(amount).end_cell().begin_parse());
 }
 
 ;; Emit event for indexing
@@ -150,27 +250,30 @@ slice get_nft_owner(slice nft_address) inline {
     int amount,
     cell memo
 ) impure {
-    ;; Verify sender is owner of from_nft
+    ;; C-PHF-C1: verify the sender actually owns from_nft (rejects dummy owners)
     var (valid, owner) = verify_nft_account(from_nft, sender_address);
 
-    ;; Verify to_nft is valid and active
-    var (to_collection_found, _) = nft_collection_addresses.udict_get?(256, slice_hash(to_nft));
+    ;; Verify to_nft is a valid, non-blocked account
+    (slice to_collection_value, int to_collection_found) = nft_collection_addresses.udict_get?(256, slice_hash(to_nft));
     throw_unless(error::invalid_nft, to_collection_found);
 
-    var (to_blocked, _) = blocked_accounts.udict_get?(256, slice_hash(to_nft));
+    (slice to_blocked_value, int to_blocked) = blocked_accounts.udict_get?(256, slice_hash(to_nft));
     throw_if(error::account_blocked, to_blocked);
 
     ;; Amount must be positive
     throw_unless(error::invalid_amount, amount > 0);
 
-    ;; In actual implementation, this would:
-    ;; 1. Get TBC jetton wallet address for from_nft
-    ;; 2. Send jetton transfer message
-    ;; 3. Jetton wallet validates balance and executes transfer
-    ;;
-    ;; For now, we emit the event to demonstrate the flow
+    ;; C-PHF-C2: a locked sender can never send (locked accounts may still receive)
+    throw_unless(error::account_locked, can_send(from_nft));
 
-    ;; Emit TransferInternal event
+    ;; C-PHF-H1: atomic balance mutation — debit sender, credit recipient
+    int from_balance = get_balance(from_nft);
+    throw_unless(error::insufficient_balance, from_balance >= amount);
+    set_balance(from_nft, from_balance - amount);
+    set_balance(to_nft, get_balance(to_nft) + amount);
+    save_data();
+
+    ;; Emit TransferInternal event AFTER the state change
     cell event_data = begin_cell()
         .store_slice(from_nft)
         .store_slice(to_nft)
@@ -189,22 +292,27 @@ slice get_nft_owner(slice nft_address) inline {
     int amount,
     cell payment_details  ;; Contains: invoice_id, order_id, memo
 ) impure {
-    ;; Verify payer NFT ownership
+    ;; C-PHF-C1: verify payer NFT ownership (rejects dummy owners)
     var (valid, owner) = verify_nft_account(payer_nft, sender_address);
 
     ;; Verify merchant NFT is valid
-    var (merchant_valid, _) = nft_collection_addresses.udict_get?(256, slice_hash(merchant_nft));
+    (slice merchant_value, int merchant_valid) = nft_collection_addresses.udict_get?(256, slice_hash(merchant_nft));
     throw_unless(error::invalid_nft, merchant_valid);
 
     ;; Amount must be positive
     throw_unless(error::invalid_amount, amount > 0);
 
-    ;; In actual implementation:
-    ;; - Execute jetton transfer from payer to merchant
-    ;; - Parse payment_details for invoice_id, order_id
-    ;; - Potentially trigger callback webhook (via off-chain indexer)
+    ;; C-PHF-C2: a locked payer can never send
+    throw_unless(error::account_locked, can_send(payer_nft));
 
-    ;; Emit MerchantPaid event
+    ;; C-PHF-H1: atomic balance mutation — debit payer, credit merchant
+    int payer_balance = get_balance(payer_nft);
+    throw_unless(error::insufficient_balance, payer_balance >= amount);
+    set_balance(payer_nft, payer_balance - amount);
+    set_balance(merchant_nft, get_balance(merchant_nft) + amount);
+    save_data();
+
+    ;; Emit MerchantPaid event AFTER the state change
     cell event_data = begin_cell()
         .store_slice(payer_nft)
         .store_slice(merchant_nft)
@@ -223,19 +331,19 @@ slice get_nft_owner(slice nft_address) inline {
     cell details
 ) impure {
     ;; Verify recipient NFT is valid
-    var (nft_valid, _) = nft_collection_addresses.udict_get?(256, slice_hash(recipient_nft));
+    (slice recipient_value, int nft_valid) = nft_collection_addresses.udict_get?(256, slice_hash(recipient_nft));
     throw_unless(error::invalid_nft, nft_valid);
 
-    var (blocked, _) = blocked_accounts.udict_get?(256, slice_hash(recipient_nft));
+    (slice recipient_blocked_value, int blocked) = blocked_accounts.udict_get?(256, slice_hash(recipient_nft));
     throw_if(error::account_blocked, blocked);
 
     ;; Amount must be positive
     throw_unless(error::invalid_amount, amount > 0);
 
-    ;; In actual implementation:
-    ;; - Verify incoming jetton transfer notification
-    ;; - Credit to recipient NFT's jetton wallet
-    ;; - Source could be DEX contract after swap
+    ;; C-PHF-H1: credit the recipient's internal balance. Receiving is always
+    ;; allowed even for a locked account (invariant I6).
+    set_balance(recipient_nft, get_balance(recipient_nft) + amount);
+    save_data();
 
     ;; Emit PaymentReceived event
     cell event_data = begin_cell()
@@ -246,6 +354,31 @@ slice get_nft_owner(slice nft_address) inline {
         .end_cell();
 
     emit_event(op::payment_received, event_data);
+}
+
+;; Resolver-gated NFT ownership registration (C-PHF-C1)
+;; Only the trusted NFT resolver may bind NFT -> owner. The binding is
+;; write-once (CONTRACTS-M1 / #279): the resolver cannot overwrite it.
+() handle_resolve_nft_owner(slice sender_address, slice nft_address, slice owner_address) impure {
+    throw_unless(error::unauthorized, equal_slices(sender_address, nft_resolver));
+
+    (slice existing, int exists) = nft_owners.udict_get?(256, slice_hash(nft_address));
+    throw_if(error::unauthorized, exists);
+
+    nft_owners~udict_set(256, slice_hash(nft_address), owner_address);
+    save_data();
+}
+
+;; Account Locks push (C-PHF-C2)
+;; Lock state is accepted ONLY from the trusted account_locks_contract — never
+;; from the admin or a user. Mirrors MerchantPaymentHub.ApplyAccountLock (#363),
+;; preserving invariant I3 (No Admin Fund Control) and I6 (Lock != Confiscation).
+() handle_apply_account_lock(slice sender_address, slice nft_address, int lock_state) impure {
+    throw_unless(error::unauthorized, equal_slices(sender_address, account_locks_contract));
+
+    account_locks~udict_set(256, slice_hash(nft_address),
+        begin_cell().store_uint(lock_state, 8).end_cell().begin_parse());
+    save_data();
 }
 
 ;; Admin function: Emergency pause
@@ -283,11 +416,14 @@ slice get_nft_owner(slice nft_address) inline {
 
 ;; Main message receiver
 () recv_internal(int msg_value, cell in_msg_full, slice in_msg_body) impure {
-    ;; Deploy blocker — refuse every message until the verify_ownership stub
-    ;; (C-PHF-C1), the missing Account Locks integration (C-PHF-C2), and the
-    ;; missing balance updates (C-PHF-H1) are implemented. Remove this throw
-    ;; together with DEPLOY_BLOCKER_NOT_PRODUCTION_READY once the contract is
-    ;; production-ready.
+    ;; Deploy blocker — refuse every message. This file is a NON-DEPLOYABLE
+    ;; audit reference (CONTRACTS-H3 / #260): the production payment hub is
+    ;; contracts/payments/PaymentHub.tact. C-PHF-C1/C2/H1 are resolved at the
+    ;; reference level below (ownership, Account Locks integration, balance
+    ;; mutations), but the blocker is retained as defence in depth. It may be
+    ;; removed only by a reviewed change that also removes this file from
+    ;; NON_PRODUCTION_STUBS — the regression guard
+    ;; contracts/payment-hub/non-production-stubs.spec.ts enforces the coupling.
     throw(DEPLOY_BLOCKER_NOT_PRODUCTION_READY);
 
     ;; Parse incoming message
@@ -340,6 +476,20 @@ slice get_nft_owner(slice nft_address) inline {
         return ();
     }
 
+    if (op == op::resolve_nft_owner) {
+        slice nft_address = in_msg_body~load_msg_addr();
+        slice owner_address = in_msg_body~load_msg_addr();
+        handle_resolve_nft_owner(sender_address, nft_address, owner_address);
+        return ();
+    }
+
+    if (op == op::apply_account_lock) {
+        slice nft_address = in_msg_body~load_msg_addr();
+        int lock_state = in_msg_body~load_uint(8);
+        handle_apply_account_lock(sender_address, nft_address, lock_state);
+        return ();
+    }
+
     if (op == op::set_paused) {
         int pause_state = in_msg_body~load_uint(1);
         handle_set_paused(sender_address, pause_state);
@@ -364,18 +514,42 @@ int is_account_active(slice nft_address) method_id {
     load_data();
 
     ;; Check if in allowed collection
-    var (collection_found, _) = nft_collection_addresses.udict_get?(256, slice_hash(nft_address));
+    (slice collection_value, int collection_found) = nft_collection_addresses.udict_get?(256, slice_hash(nft_address));
     if (~ collection_found) {
         return 0;
     }
 
     ;; Check if blocked
-    var (blocked, _) = blocked_accounts.udict_get?(256, slice_hash(nft_address));
+    (slice blocked_value, int blocked) = blocked_accounts.udict_get?(256, slice_hash(nft_address));
     if (blocked) {
         return 0;
     }
 
     return -1;  ;; True in FunC
+}
+
+;; Get registered owner of an NFT (empty slice if unregistered) — C-PHF-C1
+slice get_owner_of(slice nft_address) method_id {
+    load_data();
+    return get_nft_owner(nft_address);
+}
+
+;; Get internal TBC ledger balance of an NFT — C-PHF-H1
+int get_balance_of(slice nft_address) method_id {
+    load_data();
+    return get_balance(nft_address);
+}
+
+;; Get local Account Locks mirror state (0 = unlocked) — C-PHF-C2
+int get_lock_state_of(slice nft_address) method_id {
+    load_data();
+    return get_lock_state(nft_address);
+}
+
+;; Whether the NFT account may currently SEND (locked accounts may still receive)
+int get_can_send(slice nft_address) method_id {
+    load_data();
+    return can_send(nft_address);
 }
 
 ;; Get contract paused state
@@ -388,6 +562,18 @@ int get_paused() method_id {
 slice get_admin() method_id {
     load_data();
     return admin_address;
+}
+
+;; Get trusted NFT resolver address (C-PHF-C1)
+slice get_nft_resolver() method_id {
+    load_data();
+    return nft_resolver;
+}
+
+;; Get trusted Account Locks contract address (C-PHF-C2)
+slice get_account_locks_contract() method_id {
+    load_data();
+    return account_locks_contract;
 }
 
 ;; Get TBC jetton master address

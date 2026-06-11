@@ -35,6 +35,18 @@ jobs:
       - name: Verify sandbox API key secret hardening
         run: scripts/tooling/check-sandbox-api-key-secret.sh
 
+      # PC-07: Redis backs idempotency keys and rate-limit counters, so both
+      # compose files must run it with mandatory --requirepass authentication
+      # and publish it only on the loopback interface.
+      - name: Verify compose Redis hardening
+        run: scripts/tooling/check-compose-redis-hardening.sh
+
+      # PC-08: Dockerfiles whose build context ships a committed lockfile must
+      # COPY package-lock.json and install with npm ci, so images are built from
+      # the audited dependency tree instead of a freshly re-resolved one.
+      - name: Verify Dockerfiles install with npm ci
+        run: scripts/tooling/check-dockerfile-npm-ci.sh
+
       # DEVOPS-LOW: keep the low-severity DevOps hardening backlog closed.
       - name: Verify DEVOPS-LOW hardening backlog
         run: scripts/tooling/check-devops-low-hardening.sh
@@ -589,6 +601,30 @@ jobs:
       - name: Adversarial + fuzz tests with coverage gate
         working-directory: tests/adversarial
         run: npm run test:coverage
+
+  test-nowpayments-adapter:
+    name: Test (NOWPayments IPN HMAC)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install NOWPayments adapter test dependencies
+        working-directory: tests/nowpayments-adapter
+        run: npm install --no-audit --no-fund
+
+      # PC-03 / #372: locks real HMAC-SHA512 IPN verification (golden vector,
+      # forgery rejection, constant-time compare). Runs transpile-only via
+      # ts-jest isolatedModules because backend/adapters carries pre-existing
+      # latent type issues outside this finding's scope.
+      - name: NOWPayments IPN HMAC regression tests (PC-03)
+        working-directory: tests/nowpayments-adapter
+        run: npm test
 
   deploy:
     name: Deploy to Vercel
