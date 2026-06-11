@@ -82,6 +82,10 @@ export class PaymentService {
    *
    * READ-ONLY: Queries transaction history from the API endpoint.
    *
+   * The `nftAddress` is percent-encoded before being interpolated into the
+   * request path so a value containing URL-significant characters (e.g. `/`,
+   * `?`, `&`, `#`) cannot alter the request path or inject query parameters.
+   *
    * @param nftAddress - NFT account address
    * @returns Array of transaction items
    */
@@ -92,7 +96,7 @@ export class PaymentService {
 
     try {
       const response = await fetch(
-        `${this.config.apiEndpoint}/transactions/${nftAddress}`
+        `${this.config.apiEndpoint}/transactions/${encodeURIComponent(nftAddress)}`
       );
 
       if (!response.ok) {
@@ -124,6 +128,10 @@ export class PaymentService {
    *
    * READ-ONLY: Queries transaction details from the API endpoint.
    *
+   * The `txId` is percent-encoded before being interpolated into the request
+   * path so a value containing URL-significant characters cannot alter the
+   * request path or inject query parameters.
+   *
    * @param txId - Transaction identifier
    * @returns Transaction item or null if not found
    */
@@ -134,7 +142,7 @@ export class PaymentService {
 
     try {
       const response = await fetch(
-        `${this.config.apiEndpoint}/transaction/${txId}`
+        `${this.config.apiEndpoint}/transaction/${encodeURIComponent(txId)}`
       );
 
       if (!response.ok) {

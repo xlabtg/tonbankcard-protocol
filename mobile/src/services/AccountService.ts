@@ -35,6 +35,10 @@ export class AccountService {
    *
    * READ-ONLY: Queries account state but cannot modify it.
    *
+   * The `nftAddress` is percent-encoded before being interpolated into the
+   * request path so a value containing URL-significant characters (e.g. `/`,
+   * `?`, `&`, `#`) cannot alter the request path or inject query parameters.
+   *
    * @param nftAddress - NFT account address
    * @returns Card account information
    */
@@ -42,7 +46,7 @@ export class AccountService {
     if (this.config.apiEndpoint) {
       try {
         const response = await fetch(
-          `${this.config.apiEndpoint}/account/${nftAddress}`
+          `${this.config.apiEndpoint}/account/${encodeURIComponent(nftAddress)}`
         );
 
         if (!response.ok) {
