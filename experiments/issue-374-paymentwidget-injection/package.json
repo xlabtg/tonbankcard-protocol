@@ -1,0 +1,25 @@
+{
+  "name": "issue-374-paymentwidget-injection",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone reproduction of PC-05 / #374 — PaymentWidget.generatePaymentLink must validate and percent-encode every deep-link component instead of interpolating raw merchantNft/amount that lets a crafted value inject query parameters.",
+  "scripts": {
+    "test": "jest"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.6",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/*.repro.spec.ts"
+    ]
+  }
+}

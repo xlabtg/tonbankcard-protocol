@@ -15,6 +15,11 @@ describe('TonbankcardPaymentWidget', () => {
     amountTbc: '1000000000', // 1 TBC
   };
 
+  // Raw `workchain:account_hex` form whose `:` must be percent-encoded in the
+  // deep-link path so it cannot break out of the path component.
+  const rawMerchantAddress =
+    '0:0000000000000000000000000000000000000000000000000000000000000000';
+
   describe('constructor validation', () => {
     it('should create widget with valid config', () => {
       const widget = new TonbankcardPaymentWidget(testConfig);
@@ -108,6 +113,120 @@ describe('TonbankcardPaymentWidget', () => {
       });
       const link = widget.generatePaymentLink();
       expect(link).toContain('amount=999000000000');
+    });
+  });
+
+  describe('generatePaymentLink security (PC-05)', () => {
+    it('should reject query-parameter injection through amountTbc', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        amountTbc: '10&bin=evil',
+      });
+
+      expect(() => widget.generatePaymentLink()).toThrow(/Invalid amount/);
+    });
+
+    it('should not produce an injected parameter when amount is malformed', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        amountTbc: '10&bin=evil',
+      });
+
+      let link = '';
+      try {
+        link = widget.generatePaymentLink();
+      } catch {
+        link = '';
+      }
+      expect(link).not.toContain('bin=evil');
+    });
+
+    it('should reject non-numeric amountTbc values', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        amountTbc: 'NaN',
+      });
+
+      expect(() => widget.generatePaymentLink()).toThrow(/Invalid amount/);
+    });
+
+    it('should reject negative amountTbc values', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        amountTbc: '-100',
+      });
+
+      expect(() => widget.generatePaymentLink()).toThrow(/Invalid amount/);
+    });
+
+    it('should reject an invalid merchant NFT address', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        merchantNft: 'not-an-address&injected=1',
+      });
+
+      expect(() => widget.generatePaymentLink()).toThrow(
+        /Invalid merchant NFT address/
+      );
+    });
+
+    it('should not produce an injected parameter when merchantNft is malformed', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        merchantNft: 'EQabc?amount=1&bin=evil',
+      });
+
+      let link = '';
+      try {
+        link = widget.generatePaymentLink();
+      } catch {
+        link = '';
+      }
+      expect(link).not.toContain('bin=evil');
+    });
+
+    it('should encode raw-form merchant addresses in the link path', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        merchantNft: rawMerchantAddress,
+      });
+      const link = widget.generatePaymentLink();
+
+      expect(link).toContain(
+        `ton://transfer/${encodeURIComponent(rawMerchantAddress)}?`
+      );
+      expect(link).not.toContain(`ton://transfer/${rawMerchantAddress}?`);
+    });
+
+    it('should produce exactly one amount parameter for a valid request', () => {
+      const widget = new TonbankcardPaymentWidget(testConfig);
+      const link = widget.generatePaymentLink();
+
+      expect(link.match(/[?&]amount=/g)?.length).toBe(1);
+    });
+
+    it('should encode reserved characters injected via orderId exactly once', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        orderId: '1&amount=999',
+      });
+      const link = widget.generatePaymentLink();
+
+      // The injected "amount=999" must be encoded inside the text field, not a
+      // second standalone amount parameter.
+      expect(link.match(/[?&]amount=/g)?.length).toBe(1);
+      expect(link).toContain(encodeURIComponent('Order: 1&amount=999'));
+    });
+
+    it('should encode reserved characters injected via description exactly once', () => {
+      const widget = new TonbankcardPaymentWidget({
+        ...testConfig,
+        description: 'gift&bin=evil',
+      });
+      const link = widget.generatePaymentLink();
+
+      expect(link).not.toContain('bin=evil');
+      expect(link).toContain(encodeURIComponent('gift&bin=evil'));
     });
   });
 
