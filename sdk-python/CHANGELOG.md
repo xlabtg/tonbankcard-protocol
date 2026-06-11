@@ -3,6 +3,28 @@
 All notable changes to `tonbankcard-merchant` (Python SDK) are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] - 2026-06-11
+
+### Fixed
+
+- **Cross-SDK canonical JSON now matches the TypeScript and Go SDKs
+  byte-for-byte.** `canonical_json` escapes the line/paragraph separators
+  U+2028/U+2029 to their `\u2028`/`\u2029` forms (previously emitted as raw
+  UTF-8, unlike Go) and forbids floating-point numbers and integers outside the
+  53-bit safe range `[-(2**53 - 1), 2**53 - 1]` (which Python formatted
+  differently from Node/Go, e.g. `2.0` vs `2`, `1e+16` vs `10000000000000000`).
+  Out-of-range or fractional amounts must be supplied as a decimal string, so
+  invoice IDs and payload hashes now match across SDKs. (PC-06, #375)
+- Reconciled the exported `__version__` with the packaged project version; it
+  was stale at `1.1.0` since the 1.1.1 release.
+
+### Added
+
+- Shared cross-SDK conformance vectors
+  (`tests/fixtures/pc-06-canonical-conformance.json`), covering U+2028/U+2029
+  and the divergent numeric forms, run in CI for the Python, TypeScript, and Go
+  SDKs.
+
 ## [1.1.1] - 2026-06-04
 
 ### Fixed

@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - 'sdk-python/**'
+      - 'tests/fixtures/**'
       - 'examples/python-integration/**'
       - '.github/workflows/sdk-python.yml'
   pull_request:
     branches: [main]
     paths:
       - 'sdk-python/**'
+      - 'tests/fixtures/**'
       - 'examples/python-integration/**'
       - '.github/workflows/sdk-python.yml'
 
