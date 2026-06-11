@@ -1,0 +1,286 @@
+{
+  "version": "pc-06-canonical-conformance-v1",
+  "description": "Cross-SDK canonical JSON conformance vectors for audit finding PC-06 (issue #375). Identical logical inputs must produce identical canonical bytes and SHA-256 digests in the TypeScript, Go, and Python SDKs.",
+  "policy": {
+    "separators": "U+2028 (line separator) and U+2029 (paragraph separator) are always escaped to the lowercase \\u2028 / \\u2029 forms.",
+    "numbers": "Only integers in the 53-bit safe range [-(2^53-1), 2^53-1] are allowed and are emitted as plain decimals. Floating-point numbers and out-of-range integers are rejected; callers must use integer minor units or a decimal string. rejected_floats and rejected_unsafe_integers list logical inputs every SDK must refuse.",
+    "harness_notes": "safe_integers / rejected_* carry the number as a decimal string so that a generic JSON parse cannot silently coerce it to a float (Go's encoding/json decodes every JSON number as float64). Each SDK converts the decimal string to its native integer/float type before calling canonical JSON."
+  },
+  "string_values": [
+    {
+      "name": "plain",
+      "input": "hello world",
+      "canonical": "\"hello world\"",
+      "sha256": "9ddefe4435b21d901439e546d54a14a175a3493b9fd8fbf38d9ea6d3cbf70826"
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "canonical": "\"\"",
+      "sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "name": "line_separator_u2028",
+      "input": "before\u2028after",
+      "canonical": "\"before\\u2028after\"",
+      "sha256": "f359e42300db83b45419990c2559ac4e3eb4d0bc6c1c83c35c6699ce2e98b7f7"
+    },
+    {
+      "name": "paragraph_separator_u2029",
+      "input": "before\u2029after",
+      "canonical": "\"before\\u2029after\"",
+      "sha256": "02840f0ea233bc59731154e21ecb51dcc351879a69291cf09055eafec55b73b8"
+    },
+    {
+      "name": "both_separators",
+      "input": "\u2028\u2029",
+      "canonical": "\"\\u2028\\u2029\"",
+      "sha256": "b36c0076c7e28a52a8a9cb89306b164f887df89d715680d7b1ca8a858a8f3d33"
+    },
+    {
+      "name": "separators_amid_text",
+      "input": "a\u2028b\u2029c",
+      "canonical": "\"a\\u2028b\\u2029c\"",
+      "sha256": "24f86ea030d13aa0ad7f530c4f0cfdbfd3eb38b9ed526a9eebbebfd37f7b661f"
+    },
+    {
+      "name": "html_chars_not_escaped",
+      "input": "<tag> & \"quote\" 'apos' /slash/",
+      "canonical": "\"<tag> & \\\"quote\\\" 'apos' /slash/\"",
+      "sha256": "e8b37e691bd2998585b2ac4b666e530c10b2a40ad4ef371780821df0e9f26f31"
+    },
+    {
+      "name": "backslash_and_quote",
+      "input": "a\\b\"c",
+      "canonical": "\"a\\\\b\\\"c\"",
+      "sha256": "cd065fb0d95bc5d55a42e9b5289ce98193db1a17be4bb0bc31686cd2d7bfaf6b"
+    },
+    {
+      "name": "short_control_escapes",
+      "input": "\b\f\t\n\r",
+      "canonical": "\"\\b\\f\\t\\n\\r\"",
+      "sha256": "aab429568c3d1e78009df8758b8db82bafdd18216637ed3820917cb75b7474f0"
+    },
+    {
+      "name": "low_control_u0000_u001f",
+      "input": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u000b\f\r\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f",
+      "canonical": "\"\\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007\\b\\t\\n\\u000b\\f\\r\\u000e\\u000f\\u0010\\u0011\\u0012\\u0013\\u0014\\u0015\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d\\u001e\\u001f\"",
+      "sha256": "f144bcffbdbaea0a670956fb0a3edd44ce6bc4dedc77c30cfc14f40034044739"
+    },
+    {
+      "name": "del_0x7f_raw",
+      "input": "x\u007fy",
+      "canonical": "\"x\u007fy\"",
+      "sha256": "6a3be647df18dab6393c77c9e11c6c3de0085cc5fe2d0d8d178219b985b7eda1"
+    },
+    {
+      "name": "non_ascii_passthrough",
+      "input": "\u00e9\u4e2d\ud83d\ude00",
+      "canonical": "\"\u00e9\u4e2d\ud83d\ude00\"",
+      "sha256": "53a6f80d1698e3fd26110153d41dfab9d190ad14be744e2d10eaec25ded28f06"
+    },
+    {
+      "name": "separators_next_to_emoji",
+      "input": "\ud83d\ude00\u2028\ud83d\ude00\u2029\ud83d\ude00",
+      "canonical": "\"\ud83d\ude00\\u2028\ud83d\ude00\\u2029\ud83d\ude00\"",
+      "sha256": "91009d3331c55d2c6aa3975176029d5caddbefdc7568f1d91575ee3221417c9a"
+    }
+  ],
+  "payloads": [
+    {
+      "name": "invoice_like_strings_only",
+      "input": {
+        "amount_tbc": "10000000000",
+        "invoice_id": "INV-123",
+        "items": [
+          "sku-1",
+          "sku-2"
+        ],
+        "metadata": {
+          "customer_id": "CUSTOMER-1",
+          "order_id": "ORDER-123"
+        },
+        "settled": true
+      },
+      "canonical": "{\"amount_tbc\":\"10000000000\",\"invoice_id\":\"INV-123\",\"items\":[\"sku-1\",\"sku-2\"],\"metadata\":{\"customer_id\":\"CUSTOMER-1\",\"order_id\":\"ORDER-123\"},\"settled\":true}",
+      "sha256": "ae83ebe9a5ec1448179eeed440445e22d542a4691363197e55ef098fdbc808ff",
+      "input_reordered": {
+        "settled": true,
+        "metadata": {
+          "order_id": "ORDER-123",
+          "customer_id": "CUSTOMER-1"
+        },
+        "items": [
+          "sku-1",
+          "sku-2"
+        ],
+        "invoice_id": "INV-123",
+        "amount_tbc": "10000000000"
+      }
+    },
+    {
+      "name": "separator_in_value",
+      "input": {
+        "memo": "line\u2028break",
+        "note": "para\u2029graph"
+      },
+      "canonical": "{\"memo\":\"line\\u2028break\",\"note\":\"para\\u2029graph\"}",
+      "sha256": "ca3df3735453f439f242853c70adf5b6932a56cebb7110748f1fb509626787d9"
+    },
+    {
+      "name": "separator_in_key",
+      "input": {
+        "k\u2028": "line",
+        "k\u2029": "para",
+        "k": "plain"
+      },
+      "canonical": "{\"k\":\"plain\",\"k\\u2028\":\"line\",\"k\\u2029\":\"para\"}",
+      "sha256": "5b163136c8bab0a2c458ab585c33f9b4d3bdb8166cb05101760ddd5dfa1116b9"
+    },
+    {
+      "name": "html_and_control_chars",
+      "input": {
+        "html": "<a href=\"x\">&amp;</a>",
+        "ctrl": "\t\n\r\b\f"
+      },
+      "canonical": "{\"ctrl\":\"\\t\\n\\r\\b\\f\",\"html\":\"<a href=\\\"x\\\">&amp;</a>\"}",
+      "sha256": "dd5d29b171020cbc52685ae827b2d201ccb714cf0a00b9f4f85897cd7b160485"
+    },
+    {
+      "name": "non_ascii_values",
+      "input": {
+        "city": "Z\u00e9rich",
+        "cjk": "\u4e2d",
+        "emoji": "\ud83d\ude00"
+      },
+      "canonical": "{\"city\":\"Z\u00e9rich\",\"cjk\":\"\u4e2d\",\"emoji\":\"\ud83d\ude00\"}",
+      "sha256": "c267c3463375926ee38a75210a8c13ed22ecb88c8941f6257f897675ef9618a5"
+    },
+    {
+      "name": "null_and_bool_and_array",
+      "input": {
+        "flag": false,
+        "maybe": null,
+        "tags": [
+          "a",
+          null,
+          "b"
+        ],
+        "ok": true
+      },
+      "canonical": "{\"flag\":false,\"maybe\":null,\"ok\":true,\"tags\":[\"a\",null,\"b\"]}",
+      "sha256": "08bca273beb6f331e9c9dcf201946c8303fe260645033744de28f34893bef2de"
+    },
+    {
+      "name": "large_value_as_decimal_string",
+      "input": {
+        "amount_minor": "340282366920938463463374607431768211455"
+      },
+      "canonical": "{\"amount_minor\":\"340282366920938463463374607431768211455\"}",
+      "sha256": "e31478de6b581ef834790361c4bc99992fdfd20b4bad6d581f4dad087faae7db"
+    },
+    {
+      "name": "key_sort_unicode_bmp",
+      "input": {
+        "b": "x",
+        "a\u2028": "sep",
+        "a": "z",
+        "Z": "upper"
+      },
+      "canonical": "{\"Z\":\"upper\",\"a\":\"z\",\"a\\u2028\":\"sep\",\"b\":\"x\"}",
+      "sha256": "413877e332df6fa3340d6bd0aa48962ef2fe5d862345dad817cc51497665672b",
+      "input_reordered": {
+        "Z": "upper",
+        "a": "z",
+        "a\u2028": "sep",
+        "b": "x"
+      }
+    }
+  ],
+  "safe_integers": [
+    {
+      "name": "zero",
+      "decimal": "0",
+      "canonical": "0",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "name": "one",
+      "decimal": "1",
+      "canonical": "1",
+      "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+    },
+    {
+      "name": "negative_one",
+      "decimal": "-1",
+      "canonical": "-1",
+      "sha256": "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464"
+    },
+    {
+      "name": "positive",
+      "decimal": "42",
+      "canonical": "42",
+      "sha256": "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049"
+    },
+    {
+      "name": "negative",
+      "decimal": "-42",
+      "canonical": "-42",
+      "sha256": "fec80006df0542549b4cbaafb8987eee00bb49bca396eefe9ac8be5b5928e8f6"
+    },
+    {
+      "name": "million",
+      "decimal": "1000000",
+      "canonical": "1000000",
+      "sha256": "6cce36d9f8a9e151b100234af75cca89d55bcb94c153f51847debdf1f39cae45"
+    },
+    {
+      "name": "max_safe_integer",
+      "decimal": "9007199254740991",
+      "canonical": "9007199254740991",
+      "sha256": "f40b423c2dd95ff2b2f027e22208f438cf7242862e5e746860e697308c9add26"
+    },
+    {
+      "name": "min_safe_integer",
+      "decimal": "-9007199254740991",
+      "canonical": "-9007199254740991",
+      "sha256": "4c933a456bb8f2e9894b2d0b26480439cd72d52fb8a27cbf8fd7f323f22c7815"
+    }
+  ],
+  "rejected_floats": [
+    {
+      "name": "simple_fraction",
+      "decimal": "2.5"
+    },
+    {
+      "name": "tenth",
+      "decimal": "0.1"
+    },
+    {
+      "name": "negative_fraction",
+      "decimal": "-0.1"
+    },
+    {
+      "name": "scientific_small",
+      "decimal": "1e-7"
+    },
+    {
+      "name": "high_precision",
+      "decimal": "3.141592653589793"
+    }
+  ],
+  "rejected_unsafe_integers": [
+    {
+      "name": "two_pow_53",
+      "decimal": "9007199254740992"
+    },
+    {
+      "name": "negative_two_pow_53",
+      "decimal": "-9007199254740992"
+    },
+    {
+      "name": "max_int64",
+      "decimal": "9223372036854775807"
+    }
+  ]
+}

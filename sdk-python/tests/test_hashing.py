@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -123,3 +124,53 @@ def test_create_payload_hash_supports_null_values() -> None:
 
     assert canonical_json(payload) == '{"memo":null,"nested":{"value":null}}'
     assert create_payload_hash(payload) > 0
+
+
+def load_pc06_fixture() -> dict[str, Any]:
+    fixture_path = Path(__file__).parents[2] / "tests/fixtures/pc-06-canonical-conformance.json"
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+# These vectors are shared byte-for-byte with the TypeScript and Go SDK test
+# suites. Identical logical inputs must produce identical canonical bytes and
+# SHA-256 digests in every SDK, including the U+2028/U+2029 separators and the
+# numeric policy.
+_PC06 = load_pc06_fixture()
+
+
+def _sha256_hex(canonical: str) -> str:
+    return sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("vector", _PC06["string_values"], ids=lambda v: v["name"])
+def test_pc06_string_vectors(vector: dict[str, Any]) -> None:
+    assert canonical_json(vector["input"]) == vector["canonical"]
+    assert _sha256_hex(vector["canonical"]) == vector["sha256"]
+
+
+@pytest.mark.parametrize("vector", _PC06["payloads"], ids=lambda v: v["name"])
+def test_pc06_payload_vectors(vector: dict[str, Any]) -> None:
+    assert canonical_json(vector["input"]) == vector["canonical"]
+    assert _sha256_hex(vector["canonical"]) == vector["sha256"]
+    assert f"{create_payload_hash(vector['input']):064x}" == vector["sha256"]
+    if "input_reordered" in vector:
+        assert canonical_json(vector["input_reordered"]) == vector["canonical"]
+        assert f"{create_payload_hash(vector['input_reordered']):064x}" == vector["sha256"]
+
+
+@pytest.mark.parametrize("vector", _PC06["safe_integers"], ids=lambda v: v["name"])
+def test_pc06_safe_integer_vectors(vector: dict[str, Any]) -> None:
+    assert canonical_json(int(vector["decimal"])) == vector["canonical"]
+    assert _sha256_hex(vector["canonical"]) == vector["sha256"]
+
+
+@pytest.mark.parametrize("vector", _PC06["rejected_floats"], ids=lambda v: v["name"])
+def test_pc06_rejects_floats(vector: dict[str, Any]) -> None:
+    with pytest.raises(TypeError):
+        canonical_json(float(vector["decimal"]))
+
+
+@pytest.mark.parametrize("vector", _PC06["rejected_unsafe_integers"], ids=lambda v: v["name"])
+def test_pc06_rejects_unsafe_integers(vector: dict[str, Any]) -> None:
+    with pytest.raises(TypeError):
+        canonical_json(int(vector["decimal"]))
