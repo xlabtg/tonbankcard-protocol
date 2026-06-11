@@ -320,6 +320,8 @@ Merchant payment flow is correctly designed: all payments require payer signatur
 
 **Gap:** Invoice replay protection is off-chain only. Merchants are responsible for deduplication. This is a documented accepted risk (risk borne by merchants, not users).
 
+**Update (Issue #373 / PC-04):** the off-chain idempotency itself was unreliable — `generateIdempotencyKey` serialised with `JSON.stringify(data, Object.keys(data).sort())`, whose replacer array recursively dropped every nested key, so two creates differing only inside `metadata` collided and the second was served as a replay of the first. The key is now built from a recursive `canonicalize` (`api/src/utils/helpers.ts`) that sorts keys at every level, so nested `metadata.*` differences produce distinct keys while staying order-invariant; `hashMetadata` shares the same helper (byte-identical for the flat payloads it hashes, so on-chain matching is unchanged). Locked by a CI regression suite (`api/tests/helpers.test.ts`, golden-vector pinned) and a standalone before/after reproduction (`experiments/issue-373-idempotency-key/`).
+
 ### 7.3 API Trust Boundaries
 
 **Finding: CORRECT ARCHITECTURE, INCOMPLETE WEBHOOK VALIDATION SPEC ⚠️**
