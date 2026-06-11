@@ -2,7 +2,7 @@
  * Unit tests for AccountService
  */
 
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import { AccountService } from '../src/services/AccountService';
 import { AccountState, MobileConfig, CardAccount } from '../src/types';
 
@@ -10,6 +10,21 @@ const testConfig: MobileConfig = {
   network: 'testnet',
   paymentHubAddress: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le',
 };
+
+const apiConfig: MobileConfig = {
+  ...testConfig,
+  apiEndpoint: 'https://api.example.com',
+};
+
+/** Build a minimal `fetch`-compatible Response stub for the mocked calls. */
+function jsonResponse(body: unknown, ok = true, status = 200): Response {
+  return {
+    ok,
+    status,
+    statusText: ok ? 'OK' : 'Error',
+    json: async () => body,
+  } as unknown as Response;
+}
 
 describe('AccountService', () => {
   describe('constructor', () => {
@@ -160,6 +175,39 @@ describe('AccountService', () => {
       expect(account.canSend).toBe(false);
       expect(account.canReceive).toBe(false);
       expect(account.lastSyncedAt).toBe(0);
+    });
+  });
+
+  describe('getAccount request URL hardening (PC-09)', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('percent-encodes nftAddress in the account request path', async () => {
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(
+        jsonResponse({
+          nftAddress: 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le',
+          balance: '0',
+          state: AccountState.ACTIVE,
+          canSend: false,
+          canReceive: false,
+          lastSyncedAt: 0,
+        })
+      );
+
+      const service = new AccountService(apiConfig);
+      const crafted = '../admin?inject=1&x=2';
+      await service.getAccount(crafted);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const calledUrl = String(fetchMock.mock.calls[0][0]);
+      expect(calledUrl).toBe(
+        `https://api.example.com/account/${encodeURIComponent(crafted)}`
+      );
+      // The raw, unencoded id must not survive: no path traversal, no injected
+      // query parameters.
+      expect(calledUrl).not.toContain('../admin');
+      expect(calledUrl).not.toContain('?inject=1');
     });
   });
 });
