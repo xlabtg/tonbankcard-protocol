@@ -66,6 +66,7 @@ const PARAMETER_INVENTORY: ParameterRecord[] = [
   { id: 'PP-5',  contract: 'governance/ProposalRegistry.tact',  parameter: 'category enum 0..5', classification: 'I', recommendedQuorum: 0,  recommendedCooldownHours: 0 },
   { id: 'PP-6',  contract: 'governance/ProposalRegistry.tact',  parameter: 'vote enum 0..2', classification: 'I', recommendedQuorum: 0,  recommendedCooldownHours: 0 },
   { id: 'PP-7',  contract: 'governance/SnapshotVerifier.tact',  parameter: 'proposal_registry', classification: 'T', recommendedQuorum: 0,  recommendedCooldownHours: 0 },
+  { id: 'PP-41', contract: 'governance/SnapshotVerifier.tact',  parameter: 'trusted_indexer', classification: 'G', recommendedQuorum: 44, recommendedCooldownHours: 48, proposalCategory: 1 }, // Issue #370 / PC-01 — deployer-only, rotatable; sole authorised RegisterSnapshot writer
   { id: 'PP-8',  contract: 'governance/TransparencyRegistry.tact', parameter: 'snapshot pointer', classification: 'G', recommendedQuorum: 22, recommendedCooldownHours: 48, proposalCategory: 3 },
   { id: 'PP-9',  contract: 'governance/TransparencyRegistry.tact', parameter: 'quorum_threshold (init-only)', classification: 'I', recommendedQuorum: 0, recommendedCooldownHours: 0 },
   { id: 'PP-10', contract: 'governance/TransparencyRegistry.tact', parameter: 'counters', classification: 'U', recommendedQuorum: 0, recommendedCooldownHours: 0 },

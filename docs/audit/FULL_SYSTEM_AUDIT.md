@@ -284,6 +284,20 @@ TBC Diamonds (governance NFT): Fixed supply of 222 tokens. Concentration risk ex
 
 **Must be fixed before Phase 2** when governance gains executable authority.
 
+### 6.4 Snapshot Eligibility Oracle Integrity
+
+**Finding: SENDER-AUTHENTICATED — RESOLVED ✅ (Issue #370 / PC-01)**
+
+`SnapshotVerifier.tact` is the eligibility oracle that `ProposalRegistry` consults (via the `EligibilityCheckRequest` / `EligibilityCheckResponse` exchange) to decide which Diamond NFTs may vote. Its `RegisterSnapshot` handler previously performed **no** `sender()` check, so any external address could register or overwrite the eligibility roll for any `proposal_id` — forging the electorate.
+
+**Remediation (this audit cycle):**
+- `RegisterSnapshot` now requires `sender() == trusted_indexer`. The `trusted_indexer` slot starts `null`, so the handler **fails closed** (rejects every registration) until the deployer designates the writer.
+- The trusted indexer is set by the deployer-only, **rotatable** `SetTrustedIndexer` message (`require(sender() == deployer)`), with the deployer being the governance multi-sig in production.
+- The companion `set_registry` binding was hardened from first-caller-wins to deployer-only (`require(sender() == deployer)`) while keeping the write-once guard.
+- The `isEligible` default remains **fail-closed**: it returns `false` when no authorised snapshot is registered (audit L-2 — there is no permissive "all NFTs eligible" fallback).
+
+Eligibility decisions therefore derive only from snapshots written by the authorised trusted indexer. Regression coverage: `contracts/governance/SnapshotVerifier.spec.ts` (non-indexer rejection, fail-closed-before-configuration, deployer-only configuration, authorised write, forged-overwrite rejection). Residual exposure is limited to a compromised trusted-indexer key, mitigated by the rotatable deployer-only setter and the multi-sig requirement (PARAMETERS.md PP-41).
+
 ---
 
 ## 7. Integration Audit

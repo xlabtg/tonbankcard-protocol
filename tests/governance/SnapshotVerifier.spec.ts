@@ -3,6 +3,21 @@
  * Tests snapshot registration and voter eligibility verification
  *
  * IMPORTANT: This verifier is for ADVISORY governance only.
+ *
+ * NOTE (Issue #370 — sender authentication):
+ *   This spec imports a hand-written `../../wrappers/SnapshotVerifier` wrapper
+ *   and is NOT wired into CI (there is no package.json under tests/governance).
+ *   The CANONICAL, CI-runnable tests — including the full sender-authentication
+ *   coverage (unauthorized rejection, fail-closed before configuration,
+ *   deployer-only trusted-indexer designation, forged-overwrite rejection) —
+ *   live in contracts/governance/SnapshotVerifier.spec.ts and run against the
+ *   Tact-generated wrapper.
+ *
+ *   Since Issue #370 the RegisterSnapshot handler rejects every sender that is
+ *   not the configured trusted indexer, and a missing snapshot denies
+ *   eligibility (fail-closed, CONTRACTS-LOW / L-2). To keep this functional spec
+ *   consistent with the deployed contract, each beforeEach below now authorizes
+ *   `indexer` as the trusted indexer before any RegisterSnapshot is sent.
  */
 
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
@@ -38,6 +53,14 @@ describe('SnapshotVerifier - Snapshot Registration', () => {
             deploy: true,
             success: true,
         });
+
+        // Sender authentication (Issue #370): authorize the off-chain indexer as
+        // the trusted writer before any RegisterSnapshot is sent.
+        await verifier.send(
+            deployer.getSender(),
+            { value: toNano('0.05') },
+            { $$type: 'SetTrustedIndexer', indexer: indexer.address }
+        );
     });
 
     describe('Register Snapshot', () => {
@@ -188,6 +211,14 @@ describe('SnapshotVerifier - Eligibility Verification', () => {
             { $$type: 'Deploy', queryId: 0n }
         );
 
+        // Sender authentication (Issue #370): authorize the off-chain indexer as
+        // the trusted writer before any RegisterSnapshot is sent.
+        await verifier.send(
+            deployer.getSender(),
+            { value: toNano('0.05') },
+            { $$type: 'SetTrustedIndexer', indexer: indexer.address }
+        );
+
         // Register a snapshot
         const eligibleNfts: Map<bigint, boolean> = new Map();
         eligibleNfts.set(1n, true);
@@ -235,14 +266,15 @@ describe('SnapshotVerifier - Eligibility Verification', () => {
             expect(await verifier.getIsEligible(-1n, 1n)).toBe(false);
         });
 
-        it('should use fallback for proposals without snapshot', async () => {
-            // Proposal 999 has no snapshot registered
-            // Fallback: all valid NFT IDs (1-222) are eligible
-            expect(await verifier.getIsEligible(999n, 1n)).toBe(true);
-            expect(await verifier.getIsEligible(999n, 100n)).toBe(true);
-            expect(await verifier.getIsEligible(999n, 222n)).toBe(true);
+        it('denies eligibility for proposals without a snapshot (fail-closed)', async () => {
+            // CONTRACTS-LOW / L-2: a missing snapshot must DENY eligibility rather
+            // than treat every valid Diamond NFT as eligible. Proposal 999 has no
+            // snapshot, so every NFT — valid or not — is ineligible.
+            expect(await verifier.getIsEligible(999n, 1n)).toBe(false);
+            expect(await verifier.getIsEligible(999n, 100n)).toBe(false);
+            expect(await verifier.getIsEligible(999n, 222n)).toBe(false);
 
-            // But invalid IDs are still rejected
+            // Invalid IDs are likewise rejected.
             expect(await verifier.getIsEligible(999n, 0n)).toBe(false);
             expect(await verifier.getIsEligible(999n, 223n)).toBe(false);
         });
@@ -297,6 +329,14 @@ describe('SnapshotVerifier - Correctness Tests', () => {
             deployer.getSender(),
             { value: toNano('0.05') },
             { $$type: 'Deploy', queryId: 0n }
+        );
+
+        // Sender authentication (Issue #370): authorize the off-chain indexer as
+        // the trusted writer before any RegisterSnapshot is sent.
+        await verifier.send(
+            deployer.getSender(),
+            { value: toNano('0.05') },
+            { $$type: 'SetTrustedIndexer', indexer: indexer.address }
         );
     });
 

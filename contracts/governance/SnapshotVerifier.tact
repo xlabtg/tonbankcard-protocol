@@ -6,6 +6,21 @@
 // - Trigger contract calls
 // - Execute changes
 // - Enforce outcomes
+//
+// SENDER AUTHENTICATION (Issue #370 / PC-01 — HIGH, blocks mainnet):
+// - The eligibility roll is the single source of truth ProposalRegistry
+//   consults when deciding whether an NFT may vote. The state-mutating
+//   `receive(msg: RegisterSnapshot)` handler therefore accepts a snapshot
+//   ONLY from the trusted indexer configured by the deployer. Until that
+//   indexer is configured the handler fails closed (rejects every snapshot),
+//   so a forged eligibility roll can never be injected — not even in the
+//   window between deployment and indexer configuration.
+// - The `deployer` is a CONFIGURATION authority only: it designates which
+//   off-chain indexer address may register snapshots and performs the
+//   one-time `set_registry` binding. It CANNOT itself forge a snapshot — it
+//   never appears in the `RegisterSnapshot` authorization check unless it is
+//   also explicitly named as the trusted indexer. In production the deployer
+//   MUST be the governance multi-sig (see docs/governance/E1-activation/).
 
 import "@stdlib/deploy";
 
@@ -29,11 +44,19 @@ struct Snapshot {
     eligible_count: Int as uint64;        // Number of eligible voters at snapshot
 }
 
-// Register snapshot message (called by off-chain indexer)
+// Register snapshot message (called ONLY by the trusted indexer — Issue #370)
 message RegisterSnapshot {
     proposal_id: Int as uint64;           // Proposal ID
     timestamp: Int as uint64;             // Snapshot timestamp
     eligible_nfts: map<Int, Bool>;        // Map of NFT IDs eligible to vote
+}
+
+// Deployer-only configuration message (Issue #370): designate / rotate the
+// off-chain indexer address authorized to send RegisterSnapshot. This does
+// NOT register any snapshot itself — it only (re)assigns the trusted-writer
+// slot (mirrors ProposalRegistry.SetSnapshotVerifier).
+message SetTrustedIndexer {
+    indexer: Address;                     // Address allowed to register snapshots
 }
 
 // Verify eligibility request
@@ -66,12 +89,31 @@ message SnapshotRegistered {
     eligible_count: Int as uint64;
 }
 
+// Emitted whenever the trusted-indexer slot is (re)assigned (Issue #370) so
+// off-chain indexers can audit the authorization history.
+message TrustedIndexerUpdated {
+    indexer: Address;
+    timestamp: Int as uint32;
+}
+
 // ==================== CONTRACT ====================
 
 contract SnapshotVerifier with Deployable {
 
     // TBC Diamonds NFT collection address
     const DIAMONDS_COLLECTION: Address = address("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c");
+
+    // Configuration authority captured at init() (the deployer / governance
+    // multi-sig). It can ONLY designate the trusted indexer and perform the
+    // one-time set_registry binding — it can never forge a snapshot itself
+    // (Issue #370).
+    deployer: Address;
+
+    // Off-chain indexer authorized to register snapshots. Starts null so the
+    // RegisterSnapshot handler fails closed until the deployer configures it
+    // (Issue #370). Until then NO address — not even the deployer — can
+    // register a snapshot.
+    trusted_indexer: Address?;
 
     // Proposal registry address (for cross-contract verification)
     proposal_registry: Address?;
@@ -83,23 +125,62 @@ contract SnapshotVerifier with Deployable {
     eligibility: map<Int, Bool>;
 
     init() {
+        // Sender authentication (Issue #370): record the deployer as the
+        // configuration authority and leave the indexer slot unset so the
+        // RegisterSnapshot handler fails closed until it is wired up.
+        self.deployer = sender();
+        self.trusted_indexer = null;
         self.proposal_registry = null;
     }
 
     // ==================== CONFIGURATION ====================
 
-    // Set proposal registry address (one-time setup)
+    // Designate / rotate the off-chain indexer authorized to register
+    // snapshots (Issue #370). Deployer-only. Intentionally updatable (no
+    // "already set" guard) so a compromised or rotated indexer key can be
+    // replaced without redeploying the verifier; in production the deployer is
+    // the governance multi-sig and any rotation is timelocked at that layer.
+    receive(msg: SetTrustedIndexer) {
+        require(sender() == self.deployer, "Only deployer can set trusted indexer");
+        self.trusted_indexer = msg.indexer;
+        emit(TrustedIndexerUpdated{
+            indexer: msg.indexer,
+            timestamp: now()
+        }.toCell());
+    }
+
+    // Set proposal registry address (one-time setup). Deployer-only so the
+    // binding can no longer be claimed by an arbitrary first caller (Issue
+    // #370); the write-once guard preserves the irreversible E1 activation
+    // semantics (RUNBOOK §4 / gate G-9).
     receive("set_registry") {
+        require(sender() == self.deployer, "Only deployer can set registry");
         require(self.proposal_registry == null, "Registry already set");
         self.proposal_registry = sender();
     }
 
+    // ==================== SENDER AUTHENTICATION GUARD (Issue #370) ====================
+
+    // Fail-closed: if the indexer slot is still null (not yet configured) the
+    // snapshot is rejected, so a forged eligibility roll can never be injected —
+    // not even in the window between deployment and indexer configuration. Once
+    // configured, only the exact authorized address may register snapshots.
+    fun requireTrustedIndexer() {
+        require(self.trusted_indexer != null, "Unauthorized: trusted indexer not configured");
+        require(sender() == self.trusted_indexer!!, "Unauthorized: only trusted indexer");
+    }
+
     // ==================== REGISTER SNAPSHOT ====================
 
-    // Register a snapshot of eligible voters for a proposal
-    // NOTE: In production, this would be called by a trusted indexer
-    // that captures NFT ownership state at the voting start time
+    // Register a snapshot of eligible voters for a proposal.
+    // Called ONLY by the trusted indexer (configured via SetTrustedIndexer),
+    // which captures NFT ownership state at the voting start time.
     receive(msg: RegisterSnapshot) {
+        // Sender authentication (Issue #370): only the configured indexer.
+        // Enforced first so an unauthorized caller is rejected before any
+        // state is read or written.
+        self.requireTrustedIndexer();
+
         // Validate proposal ID
         require(msg.proposal_id > 0, "Invalid proposal ID");
 
@@ -213,6 +294,18 @@ contract SnapshotVerifier with Deployable {
     // Get proposal registry address
     get fun getProposalRegistry(): Address? {
         return self.proposal_registry;
+    }
+
+    // Get the configuration authority (deployer / governance multi-sig) that
+    // designates the trusted indexer and performs the set_registry binding.
+    get fun getDeployer(): Address {
+        return self.deployer;
+    }
+
+    // Get the trusted indexer authorized to register snapshots (null until the
+    // deployer configures it; while null every RegisterSnapshot fails closed).
+    get fun getTrustedIndexer(): Address? {
+        return self.trusted_indexer;
     }
 
     // ==================== HELPER FUNCTIONS ====================
