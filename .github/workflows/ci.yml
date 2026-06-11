@@ -41,6 +41,12 @@ jobs:
       - name: Verify compose Redis hardening
         run: scripts/tooling/check-compose-redis-hardening.sh
 
+      # PC-08: Dockerfiles whose build context ships a committed lockfile must
+      # COPY package-lock.json and install with npm ci, so images are built from
+      # the audited dependency tree instead of a freshly re-resolved one.
+      - name: Verify Dockerfiles install with npm ci
+        run: scripts/tooling/check-dockerfile-npm-ci.sh
+
       # DEVOPS-LOW: keep the low-severity DevOps hardening backlog closed.
       - name: Verify DEVOPS-LOW hardening backlog
         run: scripts/tooling/check-devops-low-hardening.sh
