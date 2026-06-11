@@ -46,11 +46,64 @@ Reproduction confirmed: two payloads differing only in `metadata.orderId` produc
 - Use a stable canonical serialization that recurses into nested objects (deep key sort) instead of the replacer-array shortcut, e.g. a small `canonicalize(obj)` that sorts keys at every level, then hash that.
 - Add a regression test asserting that payloads differing only in nested metadata produce different keys, and identical payloads produce identical keys regardless of key order.
 
+## Resolution
+
+**RESOLVED ✅ (Issue #373 / PC-04)** — PR
+[#387](https://github.com/xlabtg/tonbankcard-protocol/pull/387), branch
+`issue-373-7158f5ed25fa`.
+
+A new exported helper `canonicalize(value)`
+(`api/src/utils/helpers.ts:53-83`) replaces the replacer-array shortcut. It
+recurses into nested objects, **sorting keys at every level** (arrays keep their
+order), with `JSON.stringify` semantics for values that have no JSON form
+(`undefined`/function/symbol are omitted from objects, rendered as `null` inside
+arrays):
+
+```ts
+const record = value as Record<string, unknown>;
+const parts: string[] = [];
+for (const key of Object.keys(record).sort()) {
+  const serialized = canonicalize(record[key]);
+  if (serialized === undefined) continue;          // drop undefined props
+  parts.push(`${JSON.stringify(key)}:${serialized}`);
+}
+return `{${parts.join(',')}}`;
+```
+
+`generateIdempotencyKey` (`:122`) now hashes `canonicalize(data)` instead of
+`JSON.stringify(data, Object.keys(data).sort())`, so nested `metadata.*`
+differences survive and two requests differing only inside `metadata` no longer
+collide. The key stays **invariant to metadata key ordering**, so genuine
+idempotent retries still de-duplicate.
+
+`hashMetadata` (`:142`) was migrated to the same `canonicalize` so the buggy
+replacer-array pattern lives nowhere in the codebase. For the **flat** metadata
+it hashes, `canonicalize` is **byte-for-byte identical** to the previous
+`JSON.stringify(metadata, sortedKeys)` (verified across primitives, integer-like
+keys, `undefined` values, and special characters), so on-chain payload-hash
+matching is unchanged — pinned by a golden-vector regression test.
+
+**Regression coverage:**
+
+- CI-enforced suite (`api/tests/helpers.test.ts`, job *Test API*) — 13 tests:
+  distinct keys for every differing nested field (`order_id`, `description`,
+  `customer_email`, arbitrary/numeric/boolean fields), key-order invariance
+  (metadata and top-level), key-id/`expires_at` scoping, `canonicalize` unit
+  tests (recursive sort, nested-difference survival with a buggy-pattern
+  counter-example, array order, `undefined`→omit/`null`, flat-object
+  byte-equivalence), and a `hashMetadata` golden vector
+  (`89f36b35…551f9bf5`) proving no behavioural change.
+- Standalone before/after reproduction
+  (`experiments/issue-373-idempotency-key/idempotency-key-collision.repro.spec.ts`,
+  5 tests) inlines the exact pre-fix implementation (collision + proof that
+  `metadata` serialises to `{}`) and drives the real fixed code (distinct keys,
+  order invariance).
+
 ## Acceptance Criteria
 
-- [ ] Requests differing in any nested field (including `metadata.*`) produce distinct idempotency keys.
-- [ ] Requests identical up to key ordering produce the same key.
-- [ ] Regression test covers nested-difference and key-order-invariance.
+- [x] Requests differing in any nested field (including `metadata.*`) produce distinct idempotency keys.
+- [x] Requests identical up to key ordering produce the same key.
+- [x] Regression test covers nested-difference and key-order-invariance.
 
 ## References
 
