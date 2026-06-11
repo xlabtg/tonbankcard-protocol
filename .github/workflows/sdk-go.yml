@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'sdk-go/**'
+      - 'tests/fixtures/**'
       - '.github/workflows/sdk-go.yml'
   pull_request:
     branches: [main]
     paths:
       - 'sdk-go/**'
+      - 'tests/fixtures/**'
       - '.github/workflows/sdk-go.yml'
 
 # Least-privilege default: this workflow only reads the repo to test/build.
