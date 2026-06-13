@@ -73,7 +73,8 @@
     "follow-redirects": "^1.16.0",
     "picomatch": "^2.3.2",
     "rollup": "^4.60.4",
-    "ajv": "^6.15.0"
+    "ajv": "^6.15.0",
+    "esbuild": "^0.28.1"
   },
   "files": [
     "dist",
