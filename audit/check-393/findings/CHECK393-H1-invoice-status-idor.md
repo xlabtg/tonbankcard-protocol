@@ -132,3 +132,5 @@ authentication-but-no-authorization.
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/393
 - Related but distinct: `audit/findings/API-H4-public-invoice-endpoint-pii-leak.md` (#253)
 - `audit/THREAT_MODEL.md`, `audit/INVARIANTS.md`
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/395

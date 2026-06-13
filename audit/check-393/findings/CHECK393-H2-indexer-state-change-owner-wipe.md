@@ -124,3 +124,5 @@ ownership writer, then ingests one state-change event, and observes
 - Related but distinct: `audit/findings/INDEXER-C1-reorg-rollback-stale-account-snapshots.md`,
   `audit/findings/INDEXER-M5-transparency-insert-or-ignore-drops-corrections.md`
 - `audit/INVARIANTS.md`
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/396

@@ -72,3 +72,5 @@ issue rather than individual issues).
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/393
 - Related: `PC-09` / `FRONTEND-LOW-L3` (startsWith HTTPS pattern), `DEVOPS-M2`
   (npm ci policy), `PC-08` (lockfile-scope exclusions)
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/399

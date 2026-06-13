@@ -20,15 +20,14 @@ implement step by step.
 
 | ID | Issue | Severity | Stage | Area | Title |
 |----|-------|----------|-------|------|-------|
-| [CHECK393-H1](./findings/CHECK393-H1-invoice-status-idor.md) | _TBD_ | High | 2-high | api | `GET /v1/invoice/:id/status` authenticates the key but never binds it to the invoice owner (cross-merchant IDOR) |
-| [CHECK393-H2](./findings/CHECK393-H2-indexer-state-change-owner-wipe.md) | _TBD_ | High | 2-high | backend/indexer | `insertAccountStateChange` 4-column `INSERT OR REPLACE` wipes `current_owner`/`last_transfer_block` to NULL on every state-change |
-| [CHECK393-M1](./findings/CHECK393-M1-merchant-hub-missing-account-registration.md) | _TBD_ | Medium | 3-medium | contracts | Deployable `MerchantPaymentHub` has no account-registration handler → every payment fails (incomplete #363) |
-| [CHECK393-L1](./findings/CHECK393-L1-update-lending-intent-missing-state-guard.md) | _TBD_ | Low | 4-low | contracts | `UpdateLendingIntent` has no state guard → resurrects a CANCELLED intent to ACTIVE |
-| [CHECK393-L2](./findings/CHECK393-L2-offchain-tooling-backlog.md) | _TBD_ | Low | 4-low | tooling | Off-chain/tooling backlog: manifest HTTPS parsing, docs-site `npm install` drift |
+| [CHECK393-H1](./findings/CHECK393-H1-invoice-status-idor.md) | [#395](https://github.com/xlabtg/tonbankcard-protocol/issues/395) | High | 2-high | api | `GET /v1/invoice/:id/status` authenticates the key but never binds it to the invoice owner (cross-merchant IDOR) |
+| [CHECK393-H2](./findings/CHECK393-H2-indexer-state-change-owner-wipe.md) | [#396](https://github.com/xlabtg/tonbankcard-protocol/issues/396) | High | 2-high | backend/indexer | `insertAccountStateChange` 4-column `INSERT OR REPLACE` wipes `current_owner`/`last_transfer_block` to NULL on every state-change |
+| [CHECK393-M1](./findings/CHECK393-M1-merchant-hub-missing-account-registration.md) | [#397](https://github.com/xlabtg/tonbankcard-protocol/issues/397) | Medium | 3-medium | contracts | Deployable `MerchantPaymentHub` has no account-registration handler → every payment fails (incomplete #363) |
+| [CHECK393-L1](./findings/CHECK393-L1-update-lending-intent-missing-state-guard.md) | [#398](https://github.com/xlabtg/tonbankcard-protocol/issues/398) | Low | 4-low | contracts | `UpdateLendingIntent` has no state guard → resurrects a CANCELLED intent to ACTIVE |
+| [CHECK393-L2](./findings/CHECK393-L2-offchain-tooling-backlog.md) | [#399](https://github.com/xlabtg/tonbankcard-protocol/issues/399) | Low | 4-low | tooling | Off-chain/tooling backlog: manifest HTTPS parsing, docs-site `npm install` drift |
 
 Severity legend follows the existing audit taxonomy; stages map to the
-`stage:1-critical` … `stage:4-low` labels. The `_TBD_` issue numbers are filled
-in once the tracking issues are filed.
+`stage:1-critical` … `stage:4-low` labels.
 
 ## Also fixed in this PR
 

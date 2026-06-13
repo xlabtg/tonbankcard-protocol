@@ -88,3 +88,5 @@ Because there is no `require(existing == null || existing.intent_state == ACTIVE
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/393
 - Related but distinct: `CONTRACTS-M4` (Cancel-path guard)
 - `audit/INVARIANTS.md`
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/398

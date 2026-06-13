@@ -132,3 +132,5 @@ the deployable `MerchantPaymentHub`.
   `contracts/payment-hub/non-production-stubs.spec.ts`)
 - Sibling reference: `contracts/CollateralSignal.tact:398-401`
 - `audit/INVARIANTS.md`
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/397
