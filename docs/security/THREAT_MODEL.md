@@ -147,7 +147,7 @@ reproduction in `experiments/issue-371-paymenthub-create-once/`.
 #### 2.1.3 Merchant Payment Hub (Tact) — `contracts/MerchantPaymentHub.tact`
 
 **Purpose:** On-chain merchant payment settlement in TBC.
-**Lines:** 288
+**Lines:** 681
 **Status:** Implemented, not yet deployed to mainnet
 
 **Validation sequence for `MerchantPaymentRequest`:**
@@ -177,6 +177,21 @@ reproduction in `experiments/issue-371-paymenthub-create-once/`.
   `CancelWhitelistCollection`).
 A CI regression guard (`contracts/payment-hub/non-production-stubs.spec.ts`) fails
 the build if any of the removed handlers reappears in the production source.
+
+**Account registration (Issue #397 — RESOLVED):** #363 removed the admin bootstrap
+but the resolver-driven registration path it documented was never implemented, so a
+freshly deployed hub had permanently empty `nft_owners` / `account_states` and every
+`MerchantPaymentRequest` short-circuited to `ERROR_PAYER_NOT_EXISTS` /
+`ERROR_MERCHANT_NOT_EXISTS` (audit CHECK393-M1). The hub now stores an immutable
+`nft_resolver` (set at `init`, alongside `account_locks_contract`) and registers
+accounts ONLY through the resolver-gated, write-once `ResolveNFTOwner` handler —
+`require(sender() == self.nft_resolver, ...)` plus
+`require(self.nft_owners.get(msg.nft_address) == null, ...)` — which binds
+`nft_owners` and seeds `account_states` to `ACCOUNT_STATE_ACTIVE`, mirroring
+CollateralSignal (Issue #364). It seeds ownership/state only: balances are still
+funded by the on-chain TBC settlement flow, never minted locally (invariant I3 /
+audit C-MPH-C1). The same CI guard asserts the handler stays resolver-gated and
+write-once.
 
 #### 2.1.4 Account Locks (FunC) — `contracts/payments/account-locks.fc`
 
@@ -597,6 +612,7 @@ This section defines the adversary classes the protocol must defend against. Eac
 | MerchantPaymentHub.tact | `SetAccountState` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
 | MerchantPaymentHub.tact | `SetAccountBalance` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
 | MerchantPaymentHub.tact | `ApplyAccountLock` (replaces `SetAccountLock`, Issue #363) | `account_locks_contract` | Yes ✅ |
+| MerchantPaymentHub.tact | `ResolveNFTOwner` (account registration, Issue #397) | `nft_resolver` (immutable on-chain NFT Account Resolver) — write-once binding | Yes ✅ |
 | CollateralSignal.tact | `ResolveNFTOwner` (replaces `RegisterNFTOwner`, Issue #364) | `nft_resolver` (immutable on-chain NFT Account Resolver) | Yes ✅ |
 | TransparencyRegistry.tact | `RecordProposal` | `proposal_registry` writer (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
 | TransparencyRegistry.tact | `RecordVotingResult` | `proposal_registry` writer (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
