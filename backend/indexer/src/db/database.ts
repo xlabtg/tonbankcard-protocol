@@ -455,12 +455,20 @@ export class IndexerDatabase {
         event.newState
       );
 
-    // Update account snapshot with new state
+    // Update account snapshot with new state.
+    // Use an UPSERT (not INSERT OR REPLACE) so that current_owner and
+    // last_transfer_block are preserved on conflict. INSERT OR REPLACE deletes
+    // the existing row and re-inserts only the listed columns, which would wipe
+    // current_owner / last_transfer_block to NULL on every state-change event.
     const now = Math.floor(Date.now() / 1000);
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO account_snapshots (nft_address, current_state, last_state_change_block, last_updated)
-         VALUES (?, ?, ?, ?)`
+        `INSERT INTO account_snapshots (nft_address, current_state, last_state_change_block, last_updated)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(nft_address) DO UPDATE SET
+           current_state = excluded.current_state,
+           last_state_change_block = excluded.last_state_change_block,
+           last_updated = excluded.last_updated`
       )
       .run(nftAddress, event.newState, event.blockNumber, now);
 
