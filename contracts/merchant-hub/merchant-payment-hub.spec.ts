@@ -45,6 +45,7 @@ describe('MerchantPaymentHub — production hardening (Issue #363)', () => {
     let blockchain: Blockchain;
     let deployer: SandboxContract<TreasuryContract>; // initial admin
     let locksContract: SandboxContract<TreasuryContract>; // the dedicated Account Locks contract authority
+    let nftResolver: SandboxContract<TreasuryContract>; // the trusted NFT Account Resolver authority (Issue #397)
     let payerOwner: SandboxContract<TreasuryContract>;
     let merchantOwner: SandboxContract<TreasuryContract>;
     let attacker: SandboxContract<TreasuryContract>;
@@ -86,6 +87,7 @@ describe('MerchantPaymentHub — production hardening (Issue #363)', () => {
         blockchain.now = 1_700_000_000;
         deployer = await blockchain.treasury('deployer');
         locksContract = await blockchain.treasury('locksContract');
+        nftResolver = await blockchain.treasury('nftResolver');
         payerOwner = await blockchain.treasury('payerOwner');
         merchantOwner = await blockchain.treasury('merchantOwner');
         attacker = await blockchain.treasury('attacker');
@@ -93,9 +95,17 @@ describe('MerchantPaymentHub — production hardening (Issue #363)', () => {
         payerNft = (await blockchain.treasury('payerNft')).address;
         merchantNft = (await blockchain.treasury('merchantNft')).address;
 
-        // Deploy: admin = deployer, account_locks_contract = locksContract (immutable).
+        // Deploy: admin = deployer, account_locks_contract = locksContract,
+        // nft_resolver = nftResolver (all immutable). These harness tests seed state
+        // via the test-only SetAccountState/SetAccountBalance handlers; the deployable
+        // resolver-gated registration path (ResolveNFTOwner) is covered end-to-end in
+        // merchant-payment-hub-deployable.spec.ts (Issue #397).
         hub = blockchain.openContract(
-            await MerchantPaymentHubHarness.fromInit(deployer.address, locksContract.address),
+            await MerchantPaymentHubHarness.fromInit(
+                deployer.address,
+                locksContract.address,
+                nftResolver.address,
+            ),
         );
         // First message auto-attaches the init state (no Deployable trait needed).
         await setAccountState(deployer, payerNft, ACCOUNT_STATE_ACTIVE, payerOwner.address);

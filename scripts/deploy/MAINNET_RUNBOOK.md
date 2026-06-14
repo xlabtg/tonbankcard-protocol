@@ -34,7 +34,7 @@ In scope for the mainnet deployment governed by this runbook (issue #118 §3):
 2. `contracts/payments/PaymentHub.tact` — Core payment routing.
 3. `contracts/payments/account-locks.fc` — Account-lock flags (initialised by `PaymentHub`).
 4. `contracts/collateral-lookup/PublicCollateralLookup.tact`.
-5. `contracts/MerchantPaymentHub.tact` — Depends on `PaymentHub` address.
+5. `contracts/MerchantPaymentHub.tact` — `init()` takes the `AccountLocks` **and** `NFTAccountResolver` addresses (both deployed earlier in the order). The resolver is the only authority that can register NFT accounts via `ResolveNFTOwner`; without it `nft_owners` / `account_states` stay empty and every payment fails (Issues #363, #397).
 6. Governance contracts (`ProposalRegistry`, `SnapshotVerifier`, `TransparencyRegistry`) — deployed only after Phase 2 contracts are stable in production and observed for ≥ 7 days without Critical findings (see §10).
 
 **Explicitly out of scope** of this runbook (issue #118 §4):
@@ -155,7 +155,7 @@ Phase 2 deploys exactly one contract per signing ceremony. The ceremony is fully
 3. AccountStateMachine     (depends on AccountLocks)
 4. PaymentHub              (depends on AccountLocks, NFTAccountResolver, AccountStateMachine)
 5. PublicCollateralLookup  (depends on CollateralSignal — deployed at step 6 of B1; mainnet uses the deployed address)
-6. MerchantPaymentHub      (depends on PaymentHub)
+6. MerchantPaymentHub      (init() takes the AccountLocks + NFTAccountResolver addresses — both deployed earlier; the resolver registers NFT accounts via ResolveNFTOwner. Issues #363, #397)
 ```
 
 > The issue lists `contracts/payments/account-locks.fc` separately from `contracts/nft-resolver/`. Internally the deploy script enforces `AccountLocks` first (no deps) and treats `account-locks` initialisation as the first ceremony so that downstream init parameters resolve cleanly. `PublicCollateralLookup` requires `CollateralSignal` which is deployed in the same ceremony chain to satisfy issue scope item §3(4).
@@ -210,10 +210,12 @@ For every deployed contract:
 
 After the full Phase 2 deploy:
 
-1. Mint a fresh NFT card from the official Series-7777 testnet collection (test environment only — production users are NOT used as guinea pigs).
-2. Use the [Merchant SDK](../../sdk/) to issue a low-value (≤ 0.1 TBC) invoice against the freshly deployed `MerchantPaymentHub`.
-3. Pay the invoice from a hardware-wallet-controlled NFT card account.
-4. Observe the indexer (`backend/indexer`) records the settlement and the merchant API returns `paid` status.
+1. Mint a fresh NFT card from the official Series-7777 testnet collection (test environment only — production users are NOT used as guinea pigs). Mint (or reuse) a second card for the merchant account.
+2. Confirm the **NFT Account Resolver registers both the payer and merchant NFT accounts** in `MerchantPaymentHub` via `ResolveNFTOwner` (binds `nft_owners` and marks `account_states = ACTIVE`, write-once). Until this runs the hub returns `ERROR_PAYER_NOT_EXISTS` / `ERROR_MERCHANT_NOT_EXISTS` and every payment fails (Issue #397). Verify with the `accountExists` / `getNFTResolver` get-methods.
+3. Fund the payer account's TBC balance through the on-chain settlement / ledger flow (the hub never mints balances — Invariant I3 / audit C-MPH-C1).
+4. Use the [Merchant SDK](../../sdk/) to issue a low-value (≤ 0.1 TBC) invoice against the freshly deployed `MerchantPaymentHub`.
+5. Pay the invoice from a hardware-wallet-controlled NFT card account.
+6. Observe the indexer (`backend/indexer`) records the settlement and the merchant API returns `paid` status.
 
 The test transaction hash is recorded in [`VERIFICATION_PLAN.md`](../../docs/deployments/B2-mainnet/VERIFICATION_PLAN.md) §4 and required by issue #118 §5.3 ("At least one test transaction executed on mainnet before public announcement").
 

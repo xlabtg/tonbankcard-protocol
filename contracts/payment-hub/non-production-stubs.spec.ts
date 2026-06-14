@@ -198,6 +198,53 @@ describe('Issue #363: MerchantPaymentHub ships without test-only bootstrap handl
   });
 });
 
+describe('Issue #397: MerchantPaymentHub registers accounts only via the trusted resolver', () => {
+  // #363 removed the test-only SetAccountState / SetAccountBalance bootstrap from
+  // the deployable contract and DOCUMENTED — but never implemented — a real
+  // registration path, so a freshly deployed hub had permanently empty
+  // nft_owners / account_states maps and every MerchantPaymentRequest failed with
+  // ERROR_PAYER_NOT_EXISTS / ERROR_MERCHANT_NOT_EXISTS (audit CHECK393-M1). #397
+  // ships that path: a resolver-gated, write-once ResolveNFTOwner handler that
+  // mirrors CollateralSignal (#364). The behavioural reproduction + fix tests live
+  // in contracts/merchant-hub/merchant-payment-hub-deployable.spec.ts; these
+  // static assertions are the CI lock that the handler stays resolver-gated and
+  // write-once (the merchant-hub Tact suite runs in a separate CI job).
+  const PRODUCTION = 'contracts/MerchantPaymentHub.tact';
+  const source = read(PRODUCTION);
+
+  it('keeps the production MerchantPaymentHub in the deployable map', () => {
+    // Like #364 (and unlike #363's removed handlers), registration now has a real
+    // production path, so the contract itself stays deployable.
+    const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
+    expect(deployable).toContain(PRODUCTION);
+  });
+
+  it('registers NFT ownership + ACTIVE state only through the resolver-gated ResolveNFTOwner handler', () => {
+    // Ownership and the initial account state are pushed by the immutable, trusted
+    // on-chain NFT Account Resolver — never by the admin/deployer (INVARIANT I3).
+    expect(source).toContain('nft_resolver: Address');
+    expect(source).toContain('receive(msg: ResolveNFTOwner)');
+    expect(source).toContain('sender() == self.nft_resolver');
+    expect(source).toContain('Unauthorized: only NFT resolver');
+    // The handler binds the owner AND marks the account ACTIVE (the step #363 missed).
+    expect(source).toContain('self.account_states.set(msg.nft_address, ACCOUNT_STATE_ACTIVE)');
+  });
+
+  it('keeps the write-once owner binding guard (CONTRACTS-M1 / #279)', () => {
+    expect(source).toContain('NFT owner already registered');
+    expect(source).toMatch(/self\.nft_owners\.get\(msg\.nft_address\)\s*==\s*null/);
+  });
+
+  it('does not register accounts through an admin/deployer or test-only path', () => {
+    // The registration authority is the resolver, NOT the admin: the production
+    // source must carry no test-only bootstrap and no admin-gated registration.
+    expect(source).not.toContain('(test-only)');
+    expect(source).not.toContain('receive(msg: SetAccountState)');
+    // The resolver getter lets deploy/verify tooling confirm the sole authority.
+    expect(source).toContain('getNFTResolver');
+  });
+});
+
 describe('Issue #364: CollateralSignal binds NFT ownership only via the trusted resolver', () => {
   const PRODUCTION = 'contracts/CollateralSignal.tact';
 

@@ -69,7 +69,9 @@ Contracts must be deployed in this order (dependencies first):
 2. NFTAccountResolver (no dependencies)
 3. AccountStateMachine (depends on AccountLocks)
 4. PaymentHub        (depends on AccountLocks, NFTAccountResolver, AccountStateMachine)
-5. MerchantPaymentHub (depends on PaymentHub)
+5. MerchantPaymentHub (depends on AccountLocks + NFTAccountResolver — its init() takes the
+   account-locks and resolver addresses; the resolver registers NFT accounts via
+   ResolveNFTOwner, without which every payment fails. Issues #363, #397)
 6. CollateralSignal  (depends on NFTAccountResolver — its init() takes the resolver address; Issue #364)
 7. PublicCollateralLookup (depends on CollateralSignal)
 ```
