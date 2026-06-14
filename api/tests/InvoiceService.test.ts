@@ -308,6 +308,53 @@ describe('InvoiceService', () => {
       ).rejects.toThrow(ValidationError);
     });
 
+    // Regression for audit finding CHECK393-H1 (issue #395): the status
+    // endpoint authenticated the key but never bound it to the invoice owner,
+    // letting any merchant read another merchant's settlement record (IDOR).
+    it("should reject a valid key that does not own the invoice", async () => {
+      keyService.registerKey(OTHER_API_KEY, OTHER_MERCHANT_NFT);
+
+      const created = await service.createInvoice(
+        {
+          merchant_nft: TEST_MERCHANT_NFT,
+          amount_tbc: '1000000000',
+          currency: 'TBC',
+        },
+        TEST_API_KEY,
+      );
+
+      let caught: unknown;
+      try {
+        await service.getInvoiceStatus(created.invoice_id, OTHER_API_KEY);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(ValidationError);
+      expect((caught as ValidationError).code).toBe('UNAUTHORIZED_MERCHANT');
+    });
+
+    it('should allow the owning key to read its own invoice status', async () => {
+      keyService.registerKey(OTHER_API_KEY, OTHER_MERCHANT_NFT);
+
+      const created = await service.createInvoice(
+        {
+          merchant_nft: TEST_MERCHANT_NFT,
+          amount_tbc: '1000000000',
+          currency: 'TBC',
+        },
+        TEST_API_KEY,
+      );
+
+      const status = await service.getInvoiceStatus(
+        created.invoice_id,
+        TEST_API_KEY,
+      );
+
+      expect(status.invoice_id).toBe(created.invoice_id);
+      expect(status.status).toBe('pending');
+    });
+
     it('should include settlement when settled', async () => {
       const createRequest: CreateInvoiceRequest = {
         merchant_nft: TEST_MERCHANT_NFT,

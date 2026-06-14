@@ -121,11 +121,33 @@ authentication-but-no-authorization.
 
 ## Acceptance Criteria
 
-- [ ] `getInvoiceStatus` rejects a valid key that does not own the invoice.
-- [ ] A key that *does* own the invoice still receives the status + settlement.
-- [ ] Regression test: merchant A's key requesting merchant B's invoice
+- [x] `getInvoiceStatus` rejects a valid key that does not own the invoice.
+- [x] A key that *does* own the invoice still receives the status + settlement.
+- [x] Regression test: merchant A's key requesting merchant B's invoice
       `/status` is rejected; merchant A's key on its own invoice succeeds.
-- [ ] No commented-out authorization TODO remains in the handler.
+- [x] No commented-out authorization TODO remains in the handler.
+
+## Resolution
+
+Fixed in `api/src/services/InvoiceService.ts`. `getInvoiceStatus` now loads the
+invoice via the shared `getInvoice` helper (id validation, not-found and expiry
+transition) and then enforces the same object-level authorization as the
+sibling `getInvoiceDetail`:
+
+```ts
+if (!this.apiKeyService.isAuthorizedMerchant(merchantApiKey, invoice.merchant_nft)) {
+  throw new ValidationError(
+    ErrorCode.UNAUTHORIZED_MERCHANT,
+    'API key not authorized for this invoice',
+  );
+}
+```
+
+The misleading commented-out `TODO: In production, validate merchantApiKey`
+block was removed — the control is now real, not aspirational. Regression
+coverage was added in `api/tests/InvoiceService.test.ts` (`getInvoiceStatus`
+describe block): merchant A's key reading merchant B's invoice `/status` is
+rejected with `UNAUTHORIZED_MERCHANT`, while the owning key still succeeds.
 
 ## References
 
