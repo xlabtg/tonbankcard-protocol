@@ -596,6 +596,46 @@ describe('IndexerDatabase', () => {
       const count = db.getEventCount();
       expect(count).toBe(2); // 1 transfer + 1 payment
     });
+
+    // Regression coverage for #396: a state-change event must not wipe
+    // current_owner / last_transfer_block on the account snapshot.
+    it('should preserve current_owner and last_transfer_block on state change', () => {
+      // Establish ownership (sets current_owner) ...
+      db.insertNFTOwnershipChange({
+        blockNumber: 1,
+        transactionHash: 'tx_own',
+        logIndex: 5,
+        timestamp: 1000,
+        nftAddress: 'EQA...',
+        collectionAddress: 'EQC...',
+        oldOwner: null,
+        newOwner: 'EQD...',
+      });
+
+      // ... a transfer at block 2 (sets last_transfer_block) was already
+      // recorded by the merchant payment in beforeEach (block 2).
+      const before = db.getAccountSnapshot('EQA...');
+      expect(before?.current_owner).toBe('EQD...');
+      expect(before?.last_transfer_block).toBe(2);
+
+      // A subsequent state-change event must keep owner / transfer block intact.
+      db.insertBlock(3, 'hash3', 'hash2', 3000, 1);
+      db.insertAccountStateChange({
+        blockNumber: 3,
+        transactionHash: 'tx_state',
+        logIndex: 0,
+        timestamp: 3000,
+        nftAddress: 'EQA...',
+        oldState: AccountState.ACTIVE,
+        newState: AccountState.FROZEN,
+      });
+
+      const after = db.getAccountSnapshot('EQA...');
+      expect(after?.current_state).toBe(AccountState.FROZEN);
+      expect(after?.last_state_change_block).toBe(3);
+      expect(after?.current_owner).toBe('EQD...'); // preserved
+      expect(after?.last_transfer_block).toBe(2); // preserved
+    });
   });
 
   // Regression coverage for INDEXER-C1: a reorg rollback must reconcile
