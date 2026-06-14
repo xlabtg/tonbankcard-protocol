@@ -444,50 +444,38 @@ export class InvoiceService {
    * Get invoice status
    *
    * Returns settlement status and on-chain verification.
-   * Requires merchant authentication.
+   *
+   * Like {@link getInvoiceDetail}, the presented API key must be valid, active,
+   * and bound to the invoice's `merchant_nft`; otherwise an
+   * `UNAUTHORIZED_MERCHANT` error is thrown so one merchant cannot read another
+   * merchant's settlement record (payer/merchant NFT, amount, tx hash, payload
+   * hash, on-chain verification URL). Authenticating the key is not enough —
+   * object-level authorization must bind the caller to the invoice owner.
    *
    * @param invoiceId - Invoice ID
    * @param merchantApiKey - Merchant API key (for authorization)
    * @returns Invoice status
-   * @throws ValidationError if invoice not found
+   * @throws ValidationError if invoice not found or the key is not authorized
+   *   for the invoice's merchant
+   * @see https://github.com/xlabtg/tonbankcard-protocol/issues/395
    */
   async getInvoiceStatus(
     invoiceId: string,
     merchantApiKey: string,
   ): Promise<GetInvoiceStatusResponse> {
-    // TODO: In production, validate merchantApiKey
-    // if (!this.isValidApiKey(merchantApiKey)) {
-    //   throw new ValidationError(
-    //     ErrorCode.INVALID_API_KEY,
-    //     'Invalid API key'
-    //   );
-    // }
+    const invoice = await this.getInvoice(invoiceId);
 
-    validateInvoiceId(invoiceId);
-
-    const invoice = await this.invoiceStorage.get(invoiceId);
-
-    if (!invoice) {
+    if (
+      !this.apiKeyService.isAuthorizedMerchant(
+        merchantApiKey,
+        invoice.merchant_nft,
+      )
+    ) {
       throw new ValidationError(
-        ErrorCode.INVOICE_NOT_FOUND,
-        'Invoice not found',
-        { invoice_id: invoiceId },
+        ErrorCode.UNAUTHORIZED_MERCHANT,
+        'API key not authorized for this invoice',
       );
     }
-
-    // Check if expired
-    if (isExpired(invoice.expires_at) && invoice.status === 'pending') {
-      invoice.status = 'expired';
-      await this.invoiceStorage.set(invoice);
-    }
-
-    // TODO: In production, verify settlement on-chain
-    // const settlement = await this.verifySettlementOnChain(invoice);
-    // if (settlement) {
-    //   invoice.status = 'settled';
-    //   invoice.settlement = settlement;
-    //   await this.invoiceStorage.set(invoice);
-    // }
 
     return {
       invoice_id: invoice.invoice_id,
