@@ -86,6 +86,20 @@ message LendingIntentUpdated {
 // ============================================
 // INTENT STATE CONSTANTS
 // ============================================
+//
+// LENDING INTENT STATE MACHINE (audit finding CHECK393-L1, issue #398):
+//
+//     NONE ──RegisterLendingIntent──▶ ACTIVE ──CancelLendingIntent──▶ CANCELLED
+//      ▲                               │   ▲                              │
+//      │                               │   └──UpdateLendingIntent─────────┘ (self-loop)
+//      └───────────────────────────────┴──RegisterLendingIntent───────────┘
+//
+// - RegisterLendingIntent is the (re)creation path: it may move NONE or a
+//   terminal CANCELLED intent to ACTIVE (a fresh intent with new metadata).
+// - UpdateLendingIntent only mutates an already-ACTIVE intent (ACTIVE → ACTIVE).
+//   It MUST NOT create a NONE intent or resurrect a CANCELLED one.
+// - CancelLendingIntent only terminates an ACTIVE intent (ACTIVE → CANCELLED).
+//   CANCELLED is terminal until a new RegisterLendingIntent.
 
 const LENDING_INTENT_NONE: Int = 0;
 const LENDING_INTENT_ACTIVE: Int = 1;
@@ -262,17 +276,24 @@ contract LendingProtocolCoordinator {
             return;
         }
 
-        // Get existing intent
-        let existing: LendingIntentInfo = self.getLendingIntentInfo(msg.nft_address);
+        // Get existing intent and enforce the state-transition guard:
+        // an update may only mutate an ACTIVE intent. Without this check an
+        // UpdateLendingIntent would silently materialize a never-registered
+        // intent or resurrect a CANCELLED one back to ACTIVE.
+        let existing: LendingIntentInfo? = self.lending_intents.get(msg.nft_address);
+        require(existing != null, "No lending intent");
+
+        let i: LendingIntentInfo = existing!!;
+        require(i.intent_state == LENDING_INTENT_ACTIVE, "Lending intent is not active");
 
         let current_time: Int = now();
 
-        // Create updated intent info
+        // Create updated intent info (creation metadata is preserved)
         let updated_info: LendingIntentInfo = LendingIntentInfo{
             intent_state: LENDING_INTENT_ACTIVE,
             collateral_signal_amount: msg.collateral_signal_amount,
             target_lender: msg.target_lender,
-            created_at: existing.created_at == 0 ? current_time : existing.created_at,
+            created_at: i.created_at,
             updated_at: current_time
         };
 
