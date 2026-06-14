@@ -18,10 +18,26 @@ export interface ManifestValidationResult {
   readonly errors: readonly string[];
 }
 
-const HTTPS = 'https://';
-
+/**
+ * Returns true only when `url` parses as an absolute HTTPS URL.
+ *
+ * A literal `startsWith('https://')` prefix check is **not** a substitute for
+ * parsing: it is case-sensitive (so it wrongly rejects the case-insensitive
+ * `HTTPS://` scheme that wallets accept), it ignores leading whitespace that a
+ * real URL parser strips, and — most importantly — it accepts host-less
+ * strings such as `https://` or `https://#frag` that no wallet can resolve.
+ * Parsing with the WHATWG `URL` constructor mirrors what downstream wallets do
+ * and keeps this gate aligned with the wallet-ui validator.
+ */
 function isHttps(url: string | undefined): boolean {
-  return typeof url === 'string' && url.startsWith(HTTPS);
+  if (typeof url !== 'string' || url.length === 0) {
+    return false;
+  }
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 export function validateManifest(manifest: TonConnectManifest): ManifestValidationResult {

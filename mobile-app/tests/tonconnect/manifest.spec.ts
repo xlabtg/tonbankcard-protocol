@@ -45,6 +45,31 @@ describe('validateManifest', () => {
     );
   });
 
+  it('accepts a case-insensitive HTTPS scheme (real URL parsing, not prefix match)', () => {
+    const result = validateManifest({
+      url: 'HTTPS://tonbankcard.app',
+      name: 'TONBANKCARD',
+      iconUrl: 'Https://tonbankcard.app/icon.png',
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('rejects host-less https:// strings that a literal prefix check would accept', () => {
+    const result = validateManifest({
+      url: 'https://',
+      name: 'TONBANKCARD',
+      iconUrl: 'https://#icon',
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        'manifest.url must use HTTPS',
+        'manifest.iconUrl must use HTTPS',
+      ]),
+    );
+  });
+
   it('rejects non-HTTPS optional URLs when provided', () => {
     const result = validateManifest({
       url: 'https://tonbankcard.app',
