@@ -1,0 +1,4 @@
+# SDK findings
+- MEDIUM (confirmed by 3-way execution): TS canonicalJson (sdk/src/utils.ts:106-107) sorts object keys with default Array.sort → UTF-16 code-unit order. Go (encoding/json, UTF-8 byte) and Python (sort_keys, code point) sort by code point. Astral-plane keys (e.g. U+1F600 😀 vs U+E000) sort differently → divergent canonical bytes → divergent SHA-256 in createPayloadHash. Fix: explicit code-point comparator in TS.
+- LOW: TS webhook.ts:95-98 compares hex signature case-sensitively (constantTimeEqual against lowercase digest); Go/Python case-insensitive. Uppercase v1= accepted by Go/Py, rejected by TS.
+- INFO: TS generateInvoiceId/createPayloadHash (utils.ts:157-161) lacks amount validation that Go (ValidateAmount) and Python (validate_amount) enforce; out-of-contract inputs (negative amount) hashed in TS, rejected elsewhere.

@@ -66,10 +66,14 @@ export interface TonConnectRequest {
 }
 
 /**
- * Throws if the supplied address is empty or contains characters not
- * allowed in a TON user-friendly / raw address.
+ * Throws if the supplied address is empty or is not a parseable TON
+ * user-friendly / raw address.
+ *
+ * Exported so callers that build deep links from a configured address (e.g.
+ * `WalletApp.generateConnectLink`) can validate it up front instead of
+ * interpolating an unvalidated string into a `ton://` URL.
  */
-function assertValidAddress(address: string): void {
+export function assertValidAddress(address: string): void {
   if (typeof address !== 'string' || address.length === 0) {
     throw new Error('address is required');
   }

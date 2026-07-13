@@ -661,9 +661,13 @@ export class InvoiceService {
         continue;
       }
 
+      // Spread metadata FIRST so the canonical invoice_id always wins — a
+      // metadata key literally named `invoice_id` (rejected at creation by
+      // validateMetadata, but defended here too) can never shadow the real id
+      // in the hashed payload.
       const expectedHash = hashMetadata({
-        invoice_id: invoice.invoice_id,
         ...invoice.metadata,
+        invoice_id: invoice.invoice_id,
       });
 
       if (expectedHash !== event.payload_hash) {

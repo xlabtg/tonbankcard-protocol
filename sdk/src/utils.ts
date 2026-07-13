@@ -5,6 +5,8 @@
 import { Address } from '@ton/core';
 import { sha256_sync } from '@ton/crypto';
 
+import { MAX_TBC_NANOCOINS } from './amount';
+
 export { formatTBC, parseTBC } from './amount';
 
 /**
@@ -42,6 +44,35 @@ function encodeCanonicalString(value: string): string {
   return JSON.stringify(value)
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Compare two strings by Unicode code point.
+ *
+ * `Array.prototype.sort` with no comparator orders by UTF-16 code unit, which
+ * disagrees with code-point order for astral-plane characters (U+10000+,
+ * encoded as surrogate pairs). The Go SDK (`encoding/json`, UTF-8 byte order)
+ * and the Python SDK (`json.dumps(sort_keys=True)`, code-point order) both sort
+ * by code point, and UTF-8 byte order equals code-point order. Using this
+ * comparator keeps the TS canonical bytes — and therefore the SHA-256 hashes —
+ * identical across all three SDKs even when an object key contains an
+ * astral-plane character.
+ */
+function compareByCodePoint(a: string, b: string): number {
+  const aCodePoints = Array.from(a);
+  const bCodePoints = Array.from(b);
+  const length = Math.min(aCodePoints.length, bCodePoints.length);
+
+  for (let i = 0; i < length; i++) {
+    const diff =
+      (aCodePoints[i].codePointAt(0) as number) -
+      (bCodePoints[i].codePointAt(0) as number);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+
+  return aCodePoints.length - bCodePoints.length;
 }
 
 /**
@@ -104,7 +135,7 @@ export function canonicalJson(value: unknown): string {
 
     const objectValue = value as Record<string, unknown>;
     return `{${Object.keys(objectValue)
-      .sort()
+      .sort(compareByCodePoint)
       .map(
         (key) => `${encodeCanonicalString(key)}:${canonicalJson(objectValue[key])}`
       )
@@ -112,6 +143,33 @@ export function canonicalJson(value: unknown): string {
   }
 
   throw new TypeError(`Canonical JSON does not support ${typeof value} values`);
+}
+
+/**
+ * Validate a TBC nanocoin amount before it is hashed into an invoice id.
+ *
+ * Mirrors the sibling SDKs (Go `ValidateAmount`, Python `validate_amount`): the
+ * amount must be a positive integer no greater than the on-chain maximum of
+ * `2^120 - 1`. Because `amountTbc` is already a `bigint` here, `toString()` is
+ * always canonical decimal, so only the range needs checking. Rejecting
+ * out-of-range amounts up front keeps the TS SDK from minting ids for values the
+ * rest of the protocol (and the chain) would refuse — an id no other SDK could
+ * reproduce (CHECK405-L2).
+ */
+function validateInvoiceAmount(amountTbc: bigint): void {
+  if (typeof amountTbc !== 'bigint') {
+    throw new TypeError('amount_tbc must be a bigint (nanocoins)');
+  }
+  if (amountTbc <= 0n) {
+    throw new RangeError(
+      `Invalid amount_tbc: ${amountTbc.toString()} — expected a positive integer of nanocoins`
+    );
+  }
+  if (amountTbc > MAX_TBC_NANOCOINS) {
+    throw new RangeError(
+      `amount_tbc exceeds maximum of 2^120 - 1: ${amountTbc.toString()}`
+    );
+  }
 }
 
 function canonicalTimestamp(timestamp: number | bigint): string {
@@ -131,6 +189,8 @@ function canonicalTimestamp(timestamp: number | bigint): string {
  */
 export function canonicalInvoiceIdPayload(params: InvoiceIdParams): string {
   const { merchantNft, amountTbc, orderId, timestamp } = params;
+
+  validateInvoiceAmount(amountTbc);
 
   return canonicalJson({
     amount_tbc: amountTbc.toString(),

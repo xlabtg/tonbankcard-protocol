@@ -161,11 +161,43 @@ export class PostgresInvoiceStorage implements IInvoiceStorage {
       amount_tbc:  row['amount_tbc']  as string,
       currency:    'TBC',
       status:      row['status']      as Invoice['status'],
-      metadata:    row['metadata']    ? JSON.parse(row['metadata'] as string) : undefined,
-      settlement:  row['settlement']  ? JSON.parse(row['settlement'] as string) : undefined,
-      created_at:  row['created_at']  as string,
-      expires_at:  row['expires_at']  as string,
+      metadata:    parseJsonbColumn(row['metadata'])   as Invoice['metadata'],
+      settlement:  parseJsonbColumn(row['settlement']) as Invoice['settlement'],
+      created_at:  toIsoString(row['created_at']),
+      expires_at:  toIsoString(row['expires_at']),
       payment_url: row['payment_url'] as string,
     };
   }
+}
+
+/**
+ * Read a `jsonb`/`json` column value. The `pg` driver already deserialises
+ * `jsonb` columns into JavaScript values, so calling `JSON.parse` on them would
+ * coerce the object to the string `"[object Object]"` and throw. We therefore
+ * return objects as-is and only `JSON.parse` the legacy case where a column was
+ * stored as raw `text`.
+ */
+function parseJsonbColumn(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    // Legacy/text storage — parse to an object.
+    return JSON.parse(value);
+  }
+  // Already-parsed jsonb object/array.
+  return value;
+}
+
+/**
+ * Normalise a `timestamptz` column to an ISO-8601 string. The `pg` driver
+ * returns `timestamptz` as a JavaScript `Date`, but the in-memory backend and
+ * the API surface use ISO strings, so we convert to keep both backends
+ * consistent.
+ */
+function toIsoString(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return value as string;
 }

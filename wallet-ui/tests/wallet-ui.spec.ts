@@ -143,6 +143,31 @@ describe('TonbankcardWalletUI', () => {
       expect(link).toContain(testConfig.paymentHubAddress);
       expect(link).toContain('text=');
     });
+
+    it('rejects a malformed paymentHubAddress at construction (CHECK405-M3)', () => {
+      // A payment hub address carrying injection characters must never reach the
+      // deep-link builder; construction fails fast instead.
+      expect(
+        () =>
+          new TonbankcardWalletUI({
+            ...testConfig,
+            paymentHubAddress:
+              'EQinjected/../evil?amount=999999999&text=pwned',
+          })
+      ).toThrow(/invalid TON address/);
+    });
+
+    it('does not let the address inject extra query params into the link (CHECK405-M3)', () => {
+      const wallet = new TonbankcardWalletUI(testConfig);
+      const link = wallet.generateConnectLink();
+      // Exactly one query separator, and it introduces the text param — no
+      // smuggled `amount`/`&`/path segments from the address.
+      expect(link.split('?')).toHaveLength(2);
+      expect(link).not.toContain('amount=');
+      expect(link.startsWith(`ton://transfer/${testConfig.paymentHubAddress}?`)).toBe(
+        true
+      );
+    });
   });
 
   describe('getCurrentView', () => {

@@ -1,0 +1,170 @@
+#405: Check via Claude
+#399: Off-chain & tooling hardening backlog (round 3): manifest HTTPS parsing, docs-site npm install drift
+#398: UpdateLendingIntent has no state-transition guard and silently resurrects a CANCELLED intent to ACTIVE
+#397: Deployable MerchantPaymentHub has no account-registration handler → nft_owners/account_states stay empty and every payment fails (incomplete #363)
+#396: insertAccountStateChange uses 4-column INSERT OR REPLACE and wipes current_owner / last_transfer_block to NULL on every state-change event
+#395: GET /v1/invoice/:id/status authenticates the API key but never binds it to the invoice owner (cross-merchant IDOR)
+#393: Check via Claude
+#378: [PC-09] Mobile client hardening — URL encoding, HTTPS check, Android autoVerify
+#377: [PC-08] API & indexer Dockerfiles run npm install and ignore the committed lockfile
+#376: [PC-07] Redis published on all interfaces without auth (prod & sandbox compose)
+#375: [PC-06] Cross-SDK canonical JSON diverges on U+2028/U+2029 and float formatting
+#374: [PC-05] PaymentWidget builds ton:// deep link from raw, unencoded inputs (query injection)
+#373: [PC-04] generateIdempotencyKey ignores nested metadata → idempotency key collisions
+#372: [PC-03] NOWPayments adapter verifies callbacks with a placeholder HMAC (forgeable IPN)
+#371: [PC-02] PaymentHub.InitializeAccount overwrites existing owner/balance, enabling fund drain
+#370: [PC-01] SnapshotVerifier accepts unauthenticated RegisterSnapshot — anyone can forge the governance eligibility roll
+#368: Pre-check via Claude Fable
+#367: [HIGH] Implement Account Locks integration and balance mutations in payment-hub.fc
+#366: [HIGH] Implement proper NFT ownership verification in ProposalRegistry governance
+#365: [HIGH] Add sender authentication to TransparencyRegistry record functions
+#364: [HIGH] Add access control to RegisterNFTOwner in CollateralSignal.tact
+#363: [HIGH] Remove test-only functions from MerchantPaymentHub.tact before mainnet
+#302: 🛡️ Аудит всей логики протокола: сводный план устранения находок (Epic, issue #241)
+#301: [SDK-LOW] SDK hardening backlog (Low / Info findings)
+#300: [FRONTEND-LOW] Hardening backlog (Low findings)
+#299: [DEVOPS-LOW] DevOps hardening backlog
+#298: [CONTRACTS-LOW] Contracts hardening backlog (Low / Info findings)
+#297: [INDEXER-LOW] Indexer hardening backlog (L1-L7)
+#296: [API-LOW] Hardening backlog (Low / Info findings)
+#295: [SDK-M5] generateInvoiceId/createPayloadHash use non-canonical serialization, breaking cross-SDK hash matching
+#294: [SDK-M4] generateWalletLink places the TBC token amount into the TON native-amount field
+#293: [SDK-M3] TypeScript createInvoice does not enforce the documented 2^120-1 upper bound on amount
+#292: [SDK-M2] parseTBC/formatTBC lose precision by routing amounts through JS float
+#291: [SDK-M1] Go and Python address regex rejects standard base64 and skips the CRC16 checksum
+#290: [FRONTEND-M4] HttpsClient certificate pinning validates the configured pin against itself
+#289: [FRONTEND-M3] BiometricAuthenticator interface declared but never used
+#288: [FRONTEND-M2] SendPaymentScreen never enforces the documented biometric gate
+#287: [FRONTEND-M1] Float precision loss in money formatting/parsing
+#286: [DEVOPS-M4] Sandbox API_KEY_SECRET hardcoded to a default value
+#285: [DEVOPS-M3] Postgres default credentials and host-exposed port in compose
+#284: [DEVOPS-M2] CI uses npm install instead of npm ci
+#283: [DEVOPS-M1] Third-party actions pinned to mutable tags, not commit SHAs
+#282: [CONTRACTS-M4] CancelLendingIntent does not verify intent existence and resets created_at
+#281: [CONTRACTS-M3] Governance quorum mismatch: resolver computes 23, registry uses 22
+#280: [CONTRACTS-M2] LendingProtocolCoordinator references undefined message RegisterNFTOwner
+#279: [CONTRACTS-M1] CollateralSignal allows owner re-binding (missing write-once guard)
+#278: [INDEXER-M6] Config numeric parsing accepts garbage with no validation
+#277: [INDEXER-M5] Transparency UNIQUE + INSERT OR IGNORE silently drops corrected periods
+#276: [INDEXER-M4] invalidateHistoryCache prefix match is ambiguous across addresses
+#275: [INDEXER-M3] History cache is unbounded and not invalidated on reorg or NFT changes
+#274: [INDEXER-M2] getAccountHistory totalCount and keyset pagination interact incorrectly
+#273: [INDEXER-M1] Account history limit is unbounded and abusable
+#272: [API-M4] CORS rejections surface as generic 500s
+#271: [API-M3] helmet declared as a dependency but never applied
+#270: [API-M2] Idempotency key omits expires_at and is not scoped to the API key
+#269: [API-M1] Webhook signing secret stored in plaintext, contradicting its own contract
+#268: [SDK-H3] isValidAddress is a no-op that accepts any address
+#267: [SDK-H2] Confirmations computed as latestSeqno minus transaction lt is dimensionally invalid
+#266: [SDK-H1] verifySettlement never checks the payment against the invoice (matchesInvoice hardcoded true)
+#265: [FRONTEND-H2] Query-parameter injection in mobile PaymentService.generatePaymentLink
+#264: [FRONTEND-H1] Query-parameter injection in dashboard generateInvoiceLink
+#263: [DEVOPS-H3] Five GitHub Actions workflows lack least-privilege permissions
+#262: [DEVOPS-H2] Docker host-port publishing bypasses the UFW firewall
+#261: [DEVOPS-H1] .env.sandbox is not gitignored — risk of committing sandbox secrets
+#260: [CONTRACTS-H3] Non-functional FunC stubs (payment-hub, nft_account_resolver) ship in deployable set
+#259: [CONTRACTS-H2] MultiSig approved payments have no execution path; PaymentProposalExecuted is dead
+#258: [CONTRACTS-H1] Additive composite map keys can collide across NFT accounts
+#257: [INDEXER-H4] Tangled transaction parsing/routing: synthesized destination, wrong block, two timestamps
+#256: [INDEXER-H3] getMasterchainInfo().latestSeqno is undefined; sync never advances
+#255: [INDEXER-H2] fetchContractTransactions ignores block number; events mis-attributed
+#254: [INDEXER-H1] markBlocksConfirmed double-subtracts the confirmation depth
+#253: [API-H4] Public invoice endpoint leaks merchant data / PII with no authentication
+#252: [API-H3] processSettlementEvent can mark invoices settled without finality, making the API a source of truth
+#251: [API-H2] trust proxy is never configured on the production app
+#250: [API-H1] API_KEY_SECRET silently falls back to a hardcoded default
+#249: [SDK-C1] Go and Python webhook verifiers use a different signature scheme than the server, rejecting every real webhook
+#248: [CONTRACTS-C1] Governance voting and proposal submission lack on-chain NFT ownership verification
+#247: [INDEXER-C3] processBlock is non-atomic; events can be silently lost
+#246: [INDEXER-C2] Reorg detection never fires for already-indexed blocks
+#245: [INDEXER-C1] Reorg rollback leaves account_snapshots permanently stale
+#244: [API-C2] Webhook delivery has no SSRF protection
+#243: [API-C1] key_id collides for every live/test key, breaking revocation correctness
+#241: We need to check all the logic
+#143: [D6] Acton Toolchain Evaluation
+#142: [F7] Analytics & Reporting
+#141: [F6] Additional DEX Integrations
+#140: [F5] Multi-Sig Card Activation
+#139: [F4] Recurring Payments Activation
+#138: [F3] Cross-Chain Bridge Production Readiness
+#137: [F2] Mobile App Wrapper
+#136: [F1] TON Connect Deep Integration
+#135: [E4] On-Chain Transparency Reporting
+#134: [E3] Risk Authority Decentralization
+#133: [E2] Protocol Parameter Governance
+#132: [E1] DAO Governance Activation
+#131: [D5] Dependency Audit and Updates
+#130: [D4] Rate Limiting & DDoS Protection
+#129: [D3] Error Handling Standardization
+#128: [D2] Contract Gas Optimization
+#127: [D1] Test Coverage Improvements
+#126: [C5] SDK Client Libraries for Other Languages
+#125: [C4] Developer Quickstart Improvements
+#124: [C3] Test Sandbox Environment
+#123: [C2] SDK Developer Experience Improvements
+#122: [C1] Public Documentation Site
+#121: [B5] Database Migration Strategy
+#120: [B4] Infrastructure as Code
+#119: [B3] Production Monitoring & Alerting
+#118: [B2] Mainnet Deployment Plan
+#117: [B1] Testnet Deployment & Validation
+#116: [A5] Bug Bounty Program
+#115: [A4] Penetration Testing — Off-Chain Services
+#114: [A3] Formal Verification of Protocol Invariants
+#113: [A2] Formal Security Audit — Phase 4 Contracts
+#112: [A1] Formal Security Audit — Core Contracts
+#110: Критическая проверка всех смарт-контрактов на соответствие безопасности и логике работы
+#99: 🟡 MEDIUM: Missing Error Handling in Indexer Transaction Fetches
+#98: 🟡 MEDIUM: Inefficient Account History Query - Performance Issues
+#97: 🟡 MEDIUM: Missing Input Validation on Merchant NFT Address
+#96: 🔴 CRITICAL: Hardcoded Deployer Authority - Single Point of Failure
+#95: 🟡 HIGH: Indexer API Uses In-Memory Rate Limiting (Single-Instance Only)
+#94: 🟡 HIGH: Event Parser Implementation Incomplete - Production Blocking
+#93: 🟡 HIGH: Merchant Authorization Not Validated
+#92: 🔴 CRITICAL: CORS Wildcard Allows Any Origin
+#91: 🔴 CRITICAL: In-Memory Storage Causes Data Loss & Scalability Issues
+#90: 🔴 CRITICAL: API Authentication Bypass - Any API Key Accepted
+#88: The next stages of development
+#86: Analyze repository
+#84: update README.md
+#82: Phase 4: Advanced Features
+#80: Phase 3: User Experience
+#78: Phase 2: Payment Infrastructure
+#76: Continuation of work
+#74: Improvements
+#72: Improvements
+#70: Full CI/CD configuration for the repository
+#68: ✅ Issue 10.8 — Security Cross-Reference Integration
+#66: ✅ Issue 10.7 — Responsible Disclosure Policy
+#64: ✅ Issue 10.6 — Implement Security Chapter v1 (Unified Framework)
+#62: ✅ Issue 10.5 — Security Documentation Structure (Repository Implementation)
+#60: Issue 10.4 — Key Management & Operational Security (Formalized)
+#56: Issue 10.3 — Incident Response & Emergency Governance (Formalized)
+#55: Issue 10.2 — Audit Readiness (Formalized, Tooling + Process)
+#54: Issue 10.1 — Security Architecture & Threat Model (Protocol-Level, Formalized)
+#52: Issue X — Litepaper v1 (Public Protocol Overview)
+#50: Issue 9.2 — Merchant Onboarding Guide (Non-Technical, Trust-Minimized)
+#48: Issue 9.1 — Public Protocol Registry (Read-Only, Verifiable, Canonical)
+#46: Issue 8.3 — External Integration Guarantees (Backward Compatibility &amp; Trust Boundaries)
+#44: Issue 8.2 — Network Deployment Matrix (Immutable Deployment Registry)
+#42: Issue 8.1 — Protocol Versioning & Deployment Policy (Immutable-First)
+#40: Issue 7.3 — Governance Transparency & Public Records (Read-Only)
+#38: Issue 7.2 — Governance Process & Proposal Registry (Non-Executable)
+#36: Issue 7.1 — Governance DAO (TBC Diamonds, NFT-Based, 222 Supply)
+#34: Issue 6.3 — Public Collateral Status Lookup (Privacy-Preserving)
+#32: Issue 6.2 — Lending Adapter (CoinRabbit Integration, Non-Custodial)
+#30: Issue 6.1 — Collateral Signal Contract (TON-Based, Non-Custodial)
+#28: Issue 5.3 — Payment Status Indexer (Read-Only On-Chain Observer)
+#26: Issue 5.2 — Merchant SDK (Non-Custodial Integration Library)
+#24: Issue 5.1 — Merchant API (Non-Custodial Payment Orchestration)
+#22: Issue 4.3 — Audit Readiness Checklist & Scope Definition
+#20: Issue 4.2 — Threat Model & Attack Surface Analysis
+#18: Issue 4.1 — Formal Invariants & Protocol Guarantees
+#9: Issue 3.6 — External Payment Providers Adapter (ChangeNOW / NOWPayments)
+#8: Issue 3.5 Payment Hub — Merchant Payments (On-Chain Settlement in TBC)
+#7: Issue 3.4 Payment Hub — Account Locks & Risk Flags (Anti-Fraud / Collateral)
+#6: Issue 3.3 Payment Hub — Internal TBC Transfers Between NFT Accounts
+#5: Issue 3.2 Payment Hub — Account State Machine & Internal Ledger
+#4: Issue 3.1 — NFT Account Resolver (Core Account Abstraction)
+#3: Payment Hub Contract — Core Banking Logic
+#2: Protocol Repository Initialization & Architecture Baseline

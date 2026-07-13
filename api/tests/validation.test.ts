@@ -147,6 +147,46 @@ describe('Validation Utilities', () => {
         'Amount exceeds maximum allowed value',
       );
     });
+
+    // CHECK405-L1: BigInt() silently accepts hex/octal/binary/whitespace/sign/
+    // leading-zeros; the raw string is stored verbatim and later exact-string
+    // compared to the on-chain (plain-decimal) amount, so any non-canonical
+    // form would make the invoice permanently un-settleable. The canonical
+    // decimal guard must reject all of these before the BigInt parse.
+    it('should reject non-canonical amount strings that BigInt would accept (CHECK405-L1)', () => {
+      // These parse to a valid positive BigInt but are NOT canonical decimal,
+      // so they are caught by the canonical guard with its dedicated message.
+      const parseOkButNonCanonical = [
+        '0x10', // hex
+        '0o17', // octal
+        '0b101', // binary
+        ' 16 ', // surrounding whitespace
+        '16 ', // trailing whitespace
+        ' 16', // leading whitespace
+        '+16', // leading sign
+        '007', // leading zeros
+      ];
+      for (const value of parseOkButNonCanonical) {
+        expect(() => validateAmount(value)).toThrow(ValidationError);
+        expect(() => validateAmount(value)).toThrow(
+          'canonical positive decimal integer',
+        );
+      }
+    });
+
+    it('should reject malformed numeric forms (CHECK405-L1)', () => {
+      // Exponent, decimal point, and numeric separators are rejected outright
+      // by the BigInt parse — the key point is they never validate.
+      for (const value of ['1e3', '10.0', '1_000']) {
+        expect(() => validateAmount(value)).toThrow(ValidationError);
+      }
+    });
+
+    it('should still accept plain canonical decimals (CHECK405-L1)', () => {
+      expect(() => validateAmount('16')).not.toThrow();
+      expect(() => validateAmount('1000000000')).not.toThrow();
+      expect(() => validateAmount((2n ** 120n - 1n).toString())).not.toThrow();
+    });
   });
 
   describe('validateMetadata', () => {
@@ -207,6 +247,19 @@ describe('Validation Utilities', () => {
 
       expect(() => validateMetadata(metadata)).toThrow(ValidationError);
       expect(() => validateMetadata(metadata)).toThrow('Metadata size exceeds');
+    });
+
+    // CHECK405-L1: a metadata key literally named `invoice_id` would otherwise
+    // pass the alphanumeric key regex and, spread into the hashed payload,
+    // shadow the canonical invoice id — decoupling the on-chain payload hash
+    // from the real id. It must be rejected as a reserved key.
+    it('should reject the reserved metadata key "invoice_id" (CHECK405-L1)', () => {
+      expect(() => validateMetadata({ invoice_id: 'attacker-chosen' })).toThrow(
+        ValidationError,
+      );
+      expect(() => validateMetadata({ invoice_id: 'attacker-chosen' })).toThrow(
+        "Metadata key 'invoice_id' is reserved",
+      );
     });
   });
 

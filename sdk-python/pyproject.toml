@@ -98,3 +98,13 @@ files = ["src/tonbankcard_merchant"]
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+# anyio (a transitive dependency of httpx) ships `py.typed`, so mypy follows
+# imports into its source. Recent anyio releases use `match` statements, which
+# mypy rejects while type-checking against `python_version = "3.9"`
+# ("Pattern matching is only supported in Python 3.10 and greater [syntax]"),
+# aborting the whole run. We keep targeting 3.9 to catch syntax our own code
+# must not use, and skip descending into anyio's third-party implementation.
+[[tool.mypy.overrides]]
+module = "anyio.*"
+follow_imports = "skip"

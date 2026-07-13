@@ -88,6 +88,23 @@ export const RATE_LIMIT_INVOICE_READ = envNumber(
  */
 export const RATE_LIMIT_PUBLIC_PER_MIN = envNumber('RATE_LIMIT_PUBLIC_PER_MIN', 10);
 
+/**
+ * Per-IP cap for *failed* requests on protected routes (CHECK405-L1).
+ *
+ * The per-key limiters only run *after* `authenticateWithPermission`, which
+ * short-circuits on failure without calling `next()`. That left the API-key
+ * validation path completely un-throttled — an attacker could brute-force keys
+ * (each attempt doing a key-hash lookup) without ever tripping a limiter. This
+ * limiter sits *in front* of auth and, thanks to `skipSuccessfulRequests`,
+ * counts only requests that end in an error response, so legitimate
+ * authenticated traffic (which flows at the far higher per-key rates) is never
+ * penalised while failed-auth probes are capped per IP.
+ */
+export const RATE_LIMIT_AUTH_FAIL_PER_MIN = envNumber(
+  'RATE_LIMIT_AUTH_FAIL_PER_MIN',
+  10,
+);
+
 /* ------------------------------------------------------------------ */
 /* Shared handler                                                      */
 /* ------------------------------------------------------------------ */
@@ -141,6 +158,26 @@ export const publicIpRateLimiter: RateLimitRequestHandler = rateLimit({
   max: RATE_LIMIT_PUBLIC_PER_MIN,
   standardHeaders: 'draft-7',
   legacyHeaders: true,
+  handler: rateLimitHandler,
+});
+
+/**
+ * Per-IP limiter for the authentication step on protected routes.
+ *
+ * Mounted *before* `authenticateWithPermission` so failed-auth requests are
+ * throttled regardless of outcome. `skipSuccessfulRequests: true` makes the
+ * limiter decrement the counter for any response with status < 400, so only
+ * error responses (401/403 on bad keys, 400 on malformed input) accrue against
+ * the per-IP budget. A merchant making thousands of *successful* authenticated
+ * calls from one IP is unaffected; an attacker hammering invalid keys is capped
+ * at `RATE_LIMIT_AUTH_FAIL_PER_MIN` failures per window. See CHECK405-L1.
+ */
+export const authFailureRateLimiter: RateLimitRequestHandler = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_AUTH_FAIL_PER_MIN,
+  standardHeaders: 'draft-7',
+  legacyHeaders: true,
+  skipSuccessfulRequests: true,
   handler: rateLimitHandler,
 });
 

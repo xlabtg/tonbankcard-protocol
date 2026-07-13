@@ -36,6 +36,7 @@ import {
 import { requestIdMiddleware } from '../middleware/requestId';
 import {
   publicIpRateLimiter,
+  authFailureRateLimiter,
   invoiceCreateRateLimiter,
   invoiceStatusRateLimiter,
   invoiceReadRateLimiter,
@@ -264,9 +265,13 @@ export function setupInvoiceRoutes(app: any): void {
   // Public endpoint: per-IP rate limit (defeats cheap enumeration).
   app.get('/v1/invoice/:invoice_id', publicIpRateLimiter, getInvoice);
 
-  // Protected endpoints: authenticate first, then enforce per-key limit.
+  // Protected endpoints: throttle failed-auth per IP FIRST (CHECK405-L1), then
+  // authenticate, then enforce the per-key limit. `authFailureRateLimiter`
+  // skips successful requests, so only error responses count against the
+  // per-IP budget and legitimate authenticated traffic is unaffected.
   app.post(
     '/v1/invoice/create',
+    authFailureRateLimiter,
     authenticateWithPermission('invoice:create'),
     invoiceCreateRateLimiter,
     createInvoice,
@@ -274,6 +279,7 @@ export function setupInvoiceRoutes(app: any): void {
 
   app.get(
     '/v1/invoice/:invoice_id/status',
+    authFailureRateLimiter,
     authenticateWithPermission('invoice:status'),
     invoiceStatusRateLimiter,
     getInvoiceStatus,
@@ -284,6 +290,7 @@ export function setupInvoiceRoutes(app: any): void {
   // `/detail` sub-path so it does not collide with the public route above.
   app.get(
     '/v1/invoice/:invoice_id/detail',
+    authFailureRateLimiter,
     authenticateWithPermission('invoice:read'),
     invoiceReadRateLimiter,
     getInvoiceDetail,

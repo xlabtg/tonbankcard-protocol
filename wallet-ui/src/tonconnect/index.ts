@@ -34,6 +34,7 @@ export {
 } from './manifest';
 
 export {
+  assertValidAddress,
   buildTonTransferLink,
   buildWalletConnectLink,
   buildWalletTransferLink,

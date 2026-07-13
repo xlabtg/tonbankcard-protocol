@@ -32,6 +32,31 @@ describe('SDK webhook verification', () => {
     expect(result).toEqual({ valid: true });
   });
 
+  // CHECK405-L2: the Go SDK decodes both hex sides to bytes before `hmac.Equal`
+  // and the Python SDK lowercases both before `compare_digest`, so an
+  // uppercase-hex `v1=` signature is accepted there. The TS SDK must match that
+  // parity instead of rejecting it with a spurious `signature_mismatch`.
+  it('accepts an uppercase-hex v1= signature (cross-SDK parity)', () => {
+    const now = 1_700_000_000;
+    const sig = computeWebhookSignature(SECRET, String(now), BODY);
+    const header = buildHeader(now, sig.toUpperCase());
+    expect(verifyWebhook(SECRET, BODY, header, { now })).toEqual({
+      valid: true,
+    });
+  });
+
+  it('still rejects a same-length but wrong uppercase-hex signature', () => {
+    const now = 1_700_000_000;
+    const sig = computeWebhookSignature(SECRET, String(now), BODY);
+    // Flip the first hex nibble so the signature is wrong but still valid hex
+    // of the correct length, then upper-case it.
+    const flipped = (sig[0] === '0' ? '1' : '0') + sig.slice(1);
+    const header = buildHeader(now, flipped.toUpperCase());
+    expect(verifyWebhook(SECRET, BODY, header, { now }).reason).toBe(
+      'signature_mismatch',
+    );
+  });
+
   it('reports missing_signature for null / undefined / empty input', () => {
     expect(verifyWebhook(SECRET, BODY, undefined).valid).toBe(false);
     expect(verifyWebhook(SECRET, BODY, null).reason).toBe('missing_signature');

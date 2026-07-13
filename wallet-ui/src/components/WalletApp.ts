@@ -34,6 +34,7 @@ import {
   TonConnectConnector,
   generateQRSvg,
   buildTonTransferLink,
+  assertValidAddress,
   type TonConnectManifest,
   type TonTransferParams,
   type ConnectionState,
@@ -91,6 +92,9 @@ export class TonbankcardWalletUI {
     if (!config.paymentHubAddress) {
       throw new Error('paymentHubAddress is required');
     }
+    // Reject a malformed payment hub address up front so it can never be
+    // interpolated into a ton:// deep link (see generateConnectLink).
+    assertValidAddress(config.paymentHubAddress);
 
     this.config = {
       theme: 'light',
@@ -212,8 +216,14 @@ export class TonbankcardWalletUI {
    * @returns ton:// deep link URL
    */
   generateConnectLink(): string {
-    const text = encodeURIComponent('TONBANKCARD Wallet Connection');
-    return `ton://transfer/${this.config.paymentHubAddress}?text=${text}`;
+    // Build through buildTonTransferLink so the configured address is validated
+    // (Address.parse) and URL-encoded rather than interpolated verbatim into the
+    // ton:// URL. This prevents a malformed/hostile paymentHubAddress from
+    // injecting extra path segments or query parameters into the deep link.
+    return buildTonTransferLink({
+      address: this.config.paymentHubAddress,
+      text: 'TONBANKCARD Wallet Connection',
+    });
   }
 
   /**

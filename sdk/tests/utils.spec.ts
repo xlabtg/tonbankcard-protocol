@@ -190,6 +190,47 @@ describe('Utils', () => {
         })
       ).toThrow();
     });
+
+    // CHECK405-L2: the Go SDK (`ValidateAmount`) and Python SDK
+    // (`validate_amount`) reject non-positive and over-max amounts before
+    // hashing. The TS SDK must match so it never mints an id for an amount the
+    // rest of the protocol (and the chain) would refuse.
+    it('should reject non-positive amounts (cross-SDK parity)', () => {
+      for (const amountTbc of [0n, -1n, -10_000_000_000n]) {
+        expect(() =>
+          generateInvoiceId({
+            merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+            amountTbc,
+            orderId: '',
+            timestamp: sdkM5Fixture.invoice.timestamp,
+          })
+        ).toThrow('positive integer');
+      }
+    });
+
+    it('should reject amounts over the on-chain maximum (cross-SDK parity)', () => {
+      const overMax = 2n ** 120n; // MAX_TBC_NANOCOINS + 1
+      expect(() =>
+        canonicalInvoiceIdPayload({
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+          amountTbc: overMax,
+          orderId: '',
+          timestamp: sdkM5Fixture.invoice.timestamp,
+        })
+      ).toThrow('exceeds maximum of 2^120 - 1');
+    });
+
+    it('should accept the on-chain maximum amount (boundary)', () => {
+      const max = 2n ** 120n - 1n; // MAX_TBC_NANOCOINS
+      expect(() =>
+        generateInvoiceId({
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+          amountTbc: max,
+          orderId: '',
+          timestamp: sdkM5Fixture.invoice.timestamp,
+        })
+      ).not.toThrow();
+    });
   });
 
   describe('createPayloadHash', () => {
@@ -253,6 +294,26 @@ describe('Utils', () => {
       );
       expect(() => createPayloadHash({ memo: undefined })).toThrow(
         'undefined values'
+      );
+    });
+
+    it('sorts object keys by Unicode code point, not UTF-16 code unit (CHECK405-M2)', () => {
+      // U+1F600 (astral) sorts AFTER U+E000 (BMP private-use) by code point,
+      // matching Go/Python. The default Array.sort() (UTF-16 code unit) would
+      // instead place U+1F600 first, because its lead surrogate U+D83D (55357)
+      // is numerically smaller than U+E000 (57344).
+      const input = {
+        b: 'x',
+        '\u{E000}': 'pua',
+        '\u{1F600}': 'emoji',
+        a: 'z',
+      };
+      expect(canonicalJson(input)).toBe(
+        '{"a":"z","b":"x","\u{E000}":"pua","\u{1F600}":"emoji"}'
+      );
+      // Cross-SDK golden digest shared with Go/Python.
+      expect(hashToHex(createPayloadHash(input))).toBe(
+        '1cb38a113019bb558dce8e76f241a090ba7ec52602baa1e87fbf6ae7fdc8520c'
       );
     });
   });
