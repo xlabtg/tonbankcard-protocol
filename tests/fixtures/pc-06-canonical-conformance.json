@@ -21,25 +21,25 @@
     },
     {
       "name": "line_separator_u2028",
-      "input": "before\u2028after",
+      "input": "before after",
       "canonical": "\"before\\u2028after\"",
       "sha256": "f359e42300db83b45419990c2559ac4e3eb4d0bc6c1c83c35c6699ce2e98b7f7"
     },
     {
       "name": "paragraph_separator_u2029",
-      "input": "before\u2029after",
+      "input": "before after",
       "canonical": "\"before\\u2029after\"",
       "sha256": "02840f0ea233bc59731154e21ecb51dcc351879a69291cf09055eafec55b73b8"
     },
     {
       "name": "both_separators",
-      "input": "\u2028\u2029",
+      "input": "  ",
       "canonical": "\"\\u2028\\u2029\"",
       "sha256": "b36c0076c7e28a52a8a9cb89306b164f887df89d715680d7b1ca8a858a8f3d33"
     },
     {
       "name": "separators_amid_text",
-      "input": "a\u2028b\u2029c",
+      "input": "a b c",
       "canonical": "\"a\\u2028b\\u2029c\"",
       "sha256": "24f86ea030d13aa0ad7f530c4f0cfdbfd3eb38b9ed526a9eebbebfd37f7b661f"
     },
@@ -69,20 +69,20 @@
     },
     {
       "name": "del_0x7f_raw",
-      "input": "x\u007fy",
-      "canonical": "\"x\u007fy\"",
+      "input": "xy",
+      "canonical": "\"xy\"",
       "sha256": "6a3be647df18dab6393c77c9e11c6c3de0085cc5fe2d0d8d178219b985b7eda1"
     },
     {
       "name": "non_ascii_passthrough",
-      "input": "\u00e9\u4e2d\ud83d\ude00",
-      "canonical": "\"\u00e9\u4e2d\ud83d\ude00\"",
+      "input": "é中😀",
+      "canonical": "\"é中😀\"",
       "sha256": "53a6f80d1698e3fd26110153d41dfab9d190ad14be744e2d10eaec25ded28f06"
     },
     {
       "name": "separators_next_to_emoji",
-      "input": "\ud83d\ude00\u2028\ud83d\ude00\u2029\ud83d\ude00",
-      "canonical": "\"\ud83d\ude00\\u2028\ud83d\ude00\\u2029\ud83d\ude00\"",
+      "input": "😀 😀 😀",
+      "canonical": "\"😀\\u2028😀\\u2029😀\"",
       "sha256": "91009d3331c55d2c6aa3975176029d5caddbefdc7568f1d91575ee3221417c9a"
     }
   ],
@@ -121,8 +121,8 @@
     {
       "name": "separator_in_value",
       "input": {
-        "memo": "line\u2028break",
-        "note": "para\u2029graph"
+        "memo": "line break",
+        "note": "para graph"
       },
       "canonical": "{\"memo\":\"line\\u2028break\",\"note\":\"para\\u2029graph\"}",
       "sha256": "ca3df3735453f439f242853c70adf5b6932a56cebb7110748f1fb509626787d9"
@@ -130,8 +130,8 @@
     {
       "name": "separator_in_key",
       "input": {
-        "k\u2028": "line",
-        "k\u2029": "para",
+        "k ": "line",
+        "k ": "para",
         "k": "plain"
       },
       "canonical": "{\"k\":\"plain\",\"k\\u2028\":\"line\",\"k\\u2029\":\"para\"}",
@@ -149,11 +149,11 @@
     {
       "name": "non_ascii_values",
       "input": {
-        "city": "Z\u00e9rich",
-        "cjk": "\u4e2d",
-        "emoji": "\ud83d\ude00"
+        "city": "Zérich",
+        "cjk": "中",
+        "emoji": "😀"
       },
-      "canonical": "{\"city\":\"Z\u00e9rich\",\"cjk\":\"\u4e2d\",\"emoji\":\"\ud83d\ude00\"}",
+      "canonical": "{\"city\":\"Zérich\",\"cjk\":\"中\",\"emoji\":\"😀\"}",
       "sha256": "c267c3463375926ee38a75210a8c13ed22ecb88c8941f6257f897675ef9618a5"
     },
     {
@@ -183,7 +183,7 @@
       "name": "key_sort_unicode_bmp",
       "input": {
         "b": "x",
-        "a\u2028": "sep",
+        "a ": "sep",
         "a": "z",
         "Z": "upper"
       },
@@ -192,7 +192,25 @@
       "input_reordered": {
         "Z": "upper",
         "a": "z",
-        "a\u2028": "sep",
+        "a ": "sep",
+        "b": "x"
+      }
+    },
+    {
+      "name": "key_sort_unicode_astral",
+      "description": "Astral-plane (U+10000+) key must sort by Unicode code point, not UTF-16 code unit. The emoji U+1F600 sorts after the BMP private-use U+E000 by code point (matching Go/Python), even though its UTF-16 lead surrogate is numerically smaller.",
+      "input": {
+        "b": "x",
+        "": "pua",
+        "😀": "emoji",
+        "a": "z"
+      },
+      "canonical": "{\"a\":\"z\",\"b\":\"x\",\"\":\"pua\",\"😀\":\"emoji\"}",
+      "sha256": "1cb38a113019bb558dce8e76f241a090ba7ec52602baa1e87fbf6ae7fdc8520c",
+      "input_reordered": {
+        "😀": "emoji",
+        "a": "z",
+        "": "pua",
         "b": "x"
       }
     }

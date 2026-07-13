@@ -255,6 +255,26 @@ describe('Utils', () => {
         'undefined values'
       );
     });
+
+    it('sorts object keys by Unicode code point, not UTF-16 code unit (CHECK405-M2)', () => {
+      // U+1F600 (astral) sorts AFTER U+E000 (BMP private-use) by code point,
+      // matching Go/Python. The default Array.sort() (UTF-16 code unit) would
+      // instead place U+1F600 first, because its lead surrogate U+D83D (55357)
+      // is numerically smaller than U+E000 (57344).
+      const input = {
+        b: 'x',
+        '\u{E000}': 'pua',
+        '\u{1F600}': 'emoji',
+        a: 'z',
+      };
+      expect(canonicalJson(input)).toBe(
+        '{"a":"z","b":"x","\u{E000}":"pua","\u{1F600}":"emoji"}'
+      );
+      // Cross-SDK golden digest shared with Go/Python.
+      expect(hashToHex(createPayloadHash(input))).toBe(
+        '1cb38a113019bb558dce8e76f241a090ba7ec52602baa1e87fbf6ae7fdc8520c'
+      );
+    });
   });
 
   describe('formatTBC', () => {
