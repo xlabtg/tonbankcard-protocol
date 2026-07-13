@@ -90,13 +90,37 @@ remediation.
    (canonical id wins) and/or reject a metadata key named `invoice_id` in
    `validateMetadata`.
 
+## Resolution (this PR)
+
+1. **Auth path throttled.** Added `authFailureRateLimiter` (per-IP, configurable
+   via `RATE_LIMIT_AUTH_FAIL_PER_MIN`, default 10) mounted *in front of*
+   `authenticateWithPermission` on all three protected routes. It uses
+   `skipSuccessfulRequests: true`, so only error responses accrue against the
+   per-IP budget — failed-auth brute-force is capped while legitimate
+   high-volume authenticated traffic (which flows at the far higher per-key
+   rates) is never penalised.
+2. **Canonical amounts enforced.** `validateAmount` now rejects any value that
+   is not `^[1-9][0-9]*$` (after the existing parse/positivity/max checks, so
+   `0`/`abc` keep their friendlier messages). `0x10`/`0o17`/`0b101`/`" 16 "`/
+   `+16`/`007` are rejected, guaranteeing the stored string equals the plain
+   decimal the settlement path compares against.
+3. **`invoice_id` metadata key reserved.** `validateMetadata` rejects a metadata
+   key literally named `invoice_id`, and the settlement hash is built as
+   `{ ...invoice.metadata, invoice_id: invoice.invoice_id }` so the canonical id
+   always wins even for legacy data (defense-in-depth). Existing golden-vector
+   hashes are unchanged because `canonicalize` sorts keys.
+
+Regression tests: `api/tests/validation.test.ts` (canonical amounts + reserved
+key), `api/tests/rateLimiter.test.ts` (failures throttled, successes skipped).
+Full API suite: 313 tests pass.
+
 ## Acceptance Criteria
 
-- [ ] Repeated failed-auth requests are rate-limited.
-- [ ] `validateAmount` rejects `0x10`/`0o17`/`" 16 "`/`007` (or the stored value
+- [x] Repeated failed-auth requests are rate-limited.
+- [x] `validateAmount` rejects `0x10`/`0o17`/`" 16 "`/`007` (or the stored value
       is normalised to decimal), and settlement matching still works.
-- [ ] A metadata `invoice_id` key cannot override the canonical id in the hash.
-- [ ] Regression tests cover all three.
+- [x] A metadata `invoice_id` key cannot override the canonical id in the hash.
+- [x] Regression tests cover all three.
 
 ## References
 

@@ -152,6 +152,23 @@ export function validateAmount(amountTbc: string): boolean {
     );
   }
 
+  // Require a canonical positive-decimal form. `BigInt` silently accepts hex
+  // (`0x10`), octal (`0o17`), binary (`0b101`), a leading `+`, surrounding
+  // whitespace, and leading zeros (`007`) — all of which parse to a valid
+  // positive number above but do NOT equal their canonical decimal string.
+  // Because the raw `amountTbc` is stored verbatim and later compared
+  // byte-for-byte against the on-chain settlement amount (always plain
+  // decimal), any non-canonical form would make the invoice permanently
+  // un-settleable. This gate runs last so the friendlier "greater than zero" /
+  // "valid integer" messages still cover 0 and non-numeric input (CHECK405-L1).
+  if (!/^[1-9][0-9]*$/.test(amountTbc)) {
+    throw new ValidationError(
+      ErrorCode.INVALID_AMOUNT,
+      'Amount must be a canonical positive decimal integer (no signs, whitespace, leading zeros, or 0x/0o/0b prefixes)',
+      { amountTbc, constraint: '^[1-9][0-9]*$' },
+    );
+  }
+
   return true;
 }
 
@@ -196,6 +213,17 @@ export function validateMetadata(metadata?: InvoiceMetadata): boolean {
         ErrorCode.INVALID_METADATA,
         'Metadata keys must be alphanumeric with underscores',
         { invalidKey: key, pattern: 'a-zA-Z0-9_' },
+      );
+    }
+    // `invoice_id` is injected into the hashed payload from the canonical
+    // invoice id; a metadata key with the same name would otherwise shadow it
+    // and decouple the on-chain payload hash from the real id. Reject it up
+    // front so the reserved key can never enter the payload.
+    if (key === 'invoice_id') {
+      throw new ValidationError(
+        ErrorCode.INVALID_METADATA,
+        "Metadata key 'invoice_id' is reserved and cannot be used",
+        { invalidKey: key },
       );
     }
   }

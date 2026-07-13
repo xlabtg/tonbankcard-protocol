@@ -88,6 +88,88 @@ describe('publicIpRateLimiter', () => {
   });
 });
 
+// The auth-failure limiter sits in FRONT of authentication. Because auth
+// short-circuits on failure without calling next(), the per-key limiter never
+// runs for failed requests — leaving the key-validation path un-throttled.
+// This limiter closes that gap while `skipSuccessfulRequests` guarantees
+// legitimate authenticated traffic is never penalised. The two behaviours are
+// tested on independent limiter instances so an exhausted failure budget in
+// one test cannot pre-empt the other.
+function buildAuthApp(limiter: express.RequestHandler): Express {
+  const app = express();
+  app.set('trust proxy', true);
+  // `?fail=1` mimics a failed auth (401); anything else mimics a successful
+  // authenticated call (200). The limiter is mounted FIRST, exactly as on the
+  // real protected routes.
+  app.get('/auth', limiter, (req: Request, res: Response) => {
+    if (req.query.fail === '1') {
+      res.status(401).json({ error: { code: 'INVALID_API_KEY' } });
+      return;
+    }
+    res.status(200).json({ ok: true });
+  });
+  return app;
+}
+
+describe('authFailureRateLimiter — throttles failures (CHECK405-L1)', () => {
+  let server: http.Server;
+  let baseUrl: string;
+
+  beforeAll(async () => {
+    const { authFailureRateLimiter } = await loadRateLimiter({
+      RATE_LIMIT_WINDOW_MS: '60000',
+      RATE_LIMIT_AUTH_FAIL_PER_MIN: '2',
+    });
+    ({ server, baseUrl } = await startApp(buildAuthApp(authFailureRateLimiter)));
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  it('throttles repeated failed-auth requests per IP', async () => {
+    // Two failures are allowed, the third trips the limiter.
+    for (let i = 0; i < 2; i++) {
+      const failed = await fetch(`${baseUrl}/auth?fail=1`);
+      expect(failed.status).toBe(401);
+      await failed.text();
+    }
+    const blocked = await fetch(`${baseUrl}/auth?fail=1`);
+    expect(blocked.status).toBe(429);
+    const body = (await blocked.json()) as { error: { code: string } };
+    expect(body.error.code).toBe(ErrorCode.RATE_LIMIT_EXCEEDED);
+  });
+});
+
+describe('authFailureRateLimiter — skips successes (CHECK405-L1)', () => {
+  let server: http.Server;
+  let baseUrl: string;
+
+  beforeAll(async () => {
+    const { authFailureRateLimiter } = await loadRateLimiter({
+      RATE_LIMIT_WINDOW_MS: '60000',
+      RATE_LIMIT_AUTH_FAIL_PER_MIN: '2',
+    });
+    ({ server, baseUrl } = await startApp(buildAuthApp(authFailureRateLimiter)));
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  it('never throttles successful authenticated requests (skipSuccessfulRequests)', async () => {
+    // Far beyond the failure cap of 2: successful requests decrement the
+    // counter on finish, so legitimate high-volume traffic is never blocked.
+    // Bodies are consumed so the server-side `finish` decrement is observed
+    // before the next request increments.
+    for (let i = 0; i < 6; i++) {
+      const ok = await fetch(`${baseUrl}/auth`);
+      expect(ok.status).toBe(200);
+      await ok.text();
+    }
+  });
+});
+
 describe('createApiKeyRateLimiter', () => {
   let server: http.Server;
   let baseUrl: string;
