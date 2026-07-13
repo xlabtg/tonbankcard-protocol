@@ -1,0 +1,4 @@
+# Indexer findings
+- HIGH: backend/indexer/src/api/server.ts:181-231 rate-limit middleware catch block treats ALL rejections from RateLimiterRedis.consume() as rate-limit hits → 429. With enableOfflineQueue:false (server.ts:113) and no insuranceLimiter, a Redis outage rejects with Error, mis-served as 429 for EVERY request incl /health → self-DoS. Comment says "don't let Redis outage take API down" but code does opposite. Fix: distinguish store error (fail-open + next()) from RateLimiterRes, or configure insuranceLimiter RateLimiterMemory.
+- MINOR M-A: routes.ts:164-173 /health blocksBehind ~ confirmationBlocks even when caught up (latestBlockIndexed lags head by confirmationBlocks). Naive lag alerts trip.
+- MINOR M-B (low conf): nowpayments.ts:333-336 IPN canonicalization round-trips numbers through JSON.parse/stringify. Likely matches provider recipe.
