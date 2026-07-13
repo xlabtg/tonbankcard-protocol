@@ -168,7 +168,14 @@ export function verifyWebhook(
     parsed.timestamp.toString(),
     rawBody
   );
-  if (!constantTimeEqual(provided, expected)) {
+  // Compare hex case-insensitively for cross-SDK parity. `computeWebhookSignature`
+  // returns lowercase hex, but a sender may legitimately emit uppercase hex — the
+  // Go SDK decodes both sides to bytes before `hmac.Equal`, and the Python SDK
+  // lowercases both before `compare_digest`. Without normalisation the TS SDK
+  // alone would reject an uppercase `v1=` signature with a spurious
+  // `signature_mismatch`. Lowercasing `provided` keeps the length check and the
+  // constant-time `timingSafeEqual` intact (CHECK405-L2).
+  if (!constantTimeEqual(provided.toLowerCase(), expected)) {
     return { valid: false, reason: 'signature_mismatch' };
   }
 

@@ -74,12 +74,41 @@ Two low-severity cross-SDK parity gaps in the TypeScript SDK.
    (and document `createPayloadHash` expectations), mirroring Go `ValidateAmount`
    / Python `validate_amount` (positive, `<= 2^120 - 1`).
 
+## Resolution (this PR)
+
+1. **Case-insensitive hex webhook compare.** `verifyWebhook` now lowercases the
+   provided signature (`provided.toLowerCase()`) before the constant-time
+   `constantTimeEqual` against the already-lowercase computed digest. The length
+   check and `crypto.timingSafeEqual` call are unchanged, so the compare stays
+   constant-time. This matches the Go SDK (decodes both hex sides to bytes before
+   `hmac.Equal`) and the Python SDK (lowercases both before `compare_digest`),
+   so an uppercase-hex `v1=` signature is now accepted by all three SDKs while a
+   same-length wrong signature is still rejected.
+2. **Amount validated before hashing.** `canonicalInvoiceIdPayload` (and thus
+   `generateInvoiceId`) now calls a new `validateInvoiceAmount(amountTbc)` guard
+   that rejects non-`bigint`, non-positive (`<= 0`), and over-max
+   (`> 2^120 - 1`, i.e. `MAX_TBC_NANOCOINS`) amounts, mirroring Go
+   `ValidateAmount` / Python `validate_amount`. Because `amountTbc` is already a
+   `bigint`, `toString()` is inherently canonical decimal, so only the range is
+   checked. The TS SDK can no longer mint an id for an amount the rest of the
+   protocol would refuse.
+
+Regression tests: `sdk/tests/webhook.spec.ts` (uppercase-hex `v1=` accepted;
+wrong same-length uppercase-hex still rejected), `sdk/tests/utils.spec.ts`
+(non-positive and over-max amounts rejected; boundary `2^120 - 1` accepted).
+Full SDK suite: 187 tests pass; build + lint clean (pre-existing warnings only).
+
+`createPayloadHash` is intentionally left unguarded: it hashes an arbitrary
+caller-supplied payload object (order id / memo), not a protocol amount, so a
+range check does not apply. Its expectation (canonical-JSON-serialisable input)
+is documented by `canonicalJson`'s own type checks.
+
 ## Acceptance Criteria
 
-- [ ] An uppercase-hex `v1=` signature that Go/Python accept is accepted by TS.
-- [ ] `generateInvoiceId` rejects non-positive / over-max amounts, matching
+- [x] An uppercase-hex `v1=` signature that Go/Python accept is accepted by TS.
+- [x] `generateInvoiceId` rejects non-positive / over-max amounts, matching
       Go/Python.
-- [ ] Regression tests cover both.
+- [x] Regression tests cover both.
 
 ## References
 

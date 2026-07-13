@@ -5,6 +5,8 @@
 import { Address } from '@ton/core';
 import { sha256_sync } from '@ton/crypto';
 
+import { MAX_TBC_NANOCOINS } from './amount';
+
 export { formatTBC, parseTBC } from './amount';
 
 /**
@@ -143,6 +145,33 @@ export function canonicalJson(value: unknown): string {
   throw new TypeError(`Canonical JSON does not support ${typeof value} values`);
 }
 
+/**
+ * Validate a TBC nanocoin amount before it is hashed into an invoice id.
+ *
+ * Mirrors the sibling SDKs (Go `ValidateAmount`, Python `validate_amount`): the
+ * amount must be a positive integer no greater than the on-chain maximum of
+ * `2^120 - 1`. Because `amountTbc` is already a `bigint` here, `toString()` is
+ * always canonical decimal, so only the range needs checking. Rejecting
+ * out-of-range amounts up front keeps the TS SDK from minting ids for values the
+ * rest of the protocol (and the chain) would refuse — an id no other SDK could
+ * reproduce (CHECK405-L2).
+ */
+function validateInvoiceAmount(amountTbc: bigint): void {
+  if (typeof amountTbc !== 'bigint') {
+    throw new TypeError('amount_tbc must be a bigint (nanocoins)');
+  }
+  if (amountTbc <= 0n) {
+    throw new RangeError(
+      `Invalid amount_tbc: ${amountTbc.toString()} — expected a positive integer of nanocoins`
+    );
+  }
+  if (amountTbc > MAX_TBC_NANOCOINS) {
+    throw new RangeError(
+      `amount_tbc exceeds maximum of 2^120 - 1: ${amountTbc.toString()}`
+    );
+  }
+}
+
 function canonicalTimestamp(timestamp: number | bigint): string {
   if (typeof timestamp === 'bigint') {
     return timestamp.toString();
@@ -160,6 +189,8 @@ function canonicalTimestamp(timestamp: number | bigint): string {
  */
 export function canonicalInvoiceIdPayload(params: InvoiceIdParams): string {
   const { merchantNft, amountTbc, orderId, timestamp } = params;
+
+  validateInvoiceAmount(amountTbc);
 
   return canonicalJson({
     amount_tbc: amountTbc.toString(),

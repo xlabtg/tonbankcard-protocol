@@ -190,6 +190,47 @@ describe('Utils', () => {
         })
       ).toThrow();
     });
+
+    // CHECK405-L2: the Go SDK (`ValidateAmount`) and Python SDK
+    // (`validate_amount`) reject non-positive and over-max amounts before
+    // hashing. The TS SDK must match so it never mints an id for an amount the
+    // rest of the protocol (and the chain) would refuse.
+    it('should reject non-positive amounts (cross-SDK parity)', () => {
+      for (const amountTbc of [0n, -1n, -10_000_000_000n]) {
+        expect(() =>
+          generateInvoiceId({
+            merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+            amountTbc,
+            orderId: '',
+            timestamp: sdkM5Fixture.invoice.timestamp,
+          })
+        ).toThrow('positive integer');
+      }
+    });
+
+    it('should reject amounts over the on-chain maximum (cross-SDK parity)', () => {
+      const overMax = 2n ** 120n; // MAX_TBC_NANOCOINS + 1
+      expect(() =>
+        canonicalInvoiceIdPayload({
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+          amountTbc: overMax,
+          orderId: '',
+          timestamp: sdkM5Fixture.invoice.timestamp,
+        })
+      ).toThrow('exceeds maximum of 2^120 - 1');
+    });
+
+    it('should accept the on-chain maximum amount (boundary)', () => {
+      const max = 2n ** 120n - 1n; // MAX_TBC_NANOCOINS
+      expect(() =>
+        generateInvoiceId({
+          merchantNft: sdkM5Fixture.invoice.merchant_nft_friendly,
+          amountTbc: max,
+          orderId: '',
+          timestamp: sdkM5Fixture.invoice.timestamp,
+        })
+      ).not.toThrow();
+    });
   });
 
   describe('createPayloadHash', () => {
