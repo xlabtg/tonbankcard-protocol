@@ -46,6 +46,8 @@ jobs:
             path: mobile
           - name: dashboard
             path: dashboard
+          - name: faucet
+            path: scripts/faucet
     steps:
       - uses: actions/checkout@v6
 

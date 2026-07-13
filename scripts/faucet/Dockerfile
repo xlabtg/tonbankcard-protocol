@@ -13,8 +13,8 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src
@@ -24,8 +24,8 @@ FROM node:20-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund \
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund \
  && addgroup -S faucet \
  && adduser -S faucet -G faucet
 

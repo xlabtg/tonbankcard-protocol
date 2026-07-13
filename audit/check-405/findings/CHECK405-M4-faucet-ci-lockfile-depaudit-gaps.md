@@ -84,13 +84,38 @@ and the lockfile-tamper check never run for them.
 - Add `faucet`, `docs-site`, and `mobile-app` to the `dependency-audit.yml`
   matrix.
 
+## Resolution (this PR)
+
+- `scripts/faucet/package-lock.json` committed; verified idempotent
+  (`npm install --package-lock-only` produces no diff).
+- Both `scripts/faucet/Dockerfile` stages now `COPY package.json
+  package-lock.json ./` + `npm ci`; the PC-08 guard reports it as one of the
+  locked Dockerfiles instead of skipping it.
+- A `build-faucet` job plus faucet `Install`/`Test` steps were added to
+  `ci.yml`, so the faucet is built and its 35 tests run on every PR.
+- The faucet's `@typescript-eslint/*`, `eslint`, and `typescript` devDependencies
+  were aligned to the sibling-workspace pins (`8.59.4` / `8.57.1` / `5.9.3`),
+  clearing the six transitive `minimatch` ReDoS advisories so `npm audit
+  --audit-level=high` reports **0 vulnerabilities**.
+- **Only `faucet` was added to the `dependency-audit.yml` matrix.** `docs-site`
+  (3 High + 1 Critical advisories at the time of writing) and `mobile-app`
+  (committed lockfile is stale relative to its `package.json` — regenerating it
+  would pull in `eslint@10`/`typescript@6`, a dependency-tree change out of
+  scope for this file-hardening finding) each require their own remediation
+  before they can be gated on `npm audit`/lockfile-idempotence without
+  breaking CI. They are tracked as follow-up work rather than silently added
+  to a gate they would immediately fail.
+
 ## Acceptance Criteria
 
-- [ ] `scripts/faucet/package-lock.json` is committed and `npm ci` succeeds in it.
-- [ ] The faucet Dockerfile installs with `npm ci` and is no longer skipped by
+- [x] `scripts/faucet/package-lock.json` is committed and `npm ci` succeeds in it.
+- [x] The faucet Dockerfile installs with `npm ci` and is no longer skipped by
       `check-dockerfile-npm-ci.sh`.
-- [ ] A CI job builds and runs the faucet tests.
-- [ ] `dependency-audit.yml` runs `npm audit` for faucet, docs-site, mobile-app.
+- [x] A CI job builds and runs the faucet tests.
+- [x] `dependency-audit.yml` runs `npm audit` for the faucet (clean: 0 High/Critical).
+- [ ] `docs-site` and `mobile-app` audit coverage deferred to follow-up
+      remediation (see Resolution) — they cannot be gated until their existing
+      advisories / lockfile drift are fixed.
 
 ## References
 
