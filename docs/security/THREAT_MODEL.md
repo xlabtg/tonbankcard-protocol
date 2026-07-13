@@ -167,8 +167,10 @@ reproduction in `experiments/issue-371-paymenthub-create-once/`.
 - `SetAccountState` / `SetAccountBalance` (admin-mint / admin-register backdoors,
   audit C-MPH-C1 / C-MPH-H1) now exist ONLY in the non-deployable test harness
   `contracts/merchant-hub/test/MerchantPaymentHubHarness.tact`. In production,
-  account registration is performed by the NFT Account Resolver and balances are
-  funded by the on-chain TBC ledger/settlement flow.
+  account registration is performed by the NFT Account Resolver. No production
+  handler currently funds `account_balances`; this liveness gap is tracked by
+  Issue #414 and blocks a successful fresh-account payment until a separately
+  reviewed non-custodial funding design is implemented.
 - `SetAccountLock` is replaced by `ApplyAccountLock`, which is accepted ONLY from
   the dedicated Account Locks contract (`account_locks_contract`, immutable, set at
   `init`). The admin cannot apply locks (invariant I3).
@@ -188,10 +190,12 @@ accounts ONLY through the resolver-gated, write-once `ResolveNFTOwner` handler �
 `require(sender() == self.nft_resolver, ...)` plus
 `require(self.nft_owners.get(msg.nft_address) == null, ...)` — which binds
 `nft_owners` and seeds `account_states` to `ACCOUNT_STATE_ACTIVE`, mirroring
-CollateralSignal (Issue #364). It seeds ownership/state only: balances are still
-funded by the on-chain TBC settlement flow, never minted locally (invariant I3 /
-audit C-MPH-C1). The same CI guard asserts the handler stays resolver-gated and
-write-once.
+CollateralSignal (Issue #364). It seeds ownership/state only. Because no other
+production handler credits a fresh payer, every payment still reaches
+`ERROR_INSUFFICIENT_BALANCE`; Issue #414 records that unresolved liveness gap.
+Choosing a deposit/settlement credit mechanism changes protocol economics and
+requires a dedicated contract review (invariant I3 / audit C-MPH-C1). The same CI
+guard asserts the registration handler stays resolver-gated and write-once.
 
 #### 2.1.4 Account Locks (FunC) — `contracts/payments/account-locks.fc`
 
@@ -320,7 +324,7 @@ on-chain NFT Account Resolver:
 **Lines:** 330
 **Status:** Implemented, not yet deployed to mainnet
 
-**Sender authentication (Issue #370 / PC-01 — RESOLVED ✅):** `RegisterSnapshot` previously performed **no** `sender()` check, so any external address could forge the governance eligibility roll for any `proposal_id`. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that writer via `SetTrustedIndexer` (deployer-only, rotatable). The companion `set_registry` binding was hardened from first-caller-wins to deployer-only in the same change. Forged eligibility rolls can no longer be written. See §4.5.2; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
+**Sender authentication (Issue #370 / PC-01 — RESOLVED ✅):** `RegisterSnapshot` previously performed **no** `sender()` check, so any external address could forge the governance eligibility roll for any `proposal_id`. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that writer via `SetTrustedIndexer` (deployer-only, rotatable). The companion registry binding is deployer-only and write-once; Issue #414 replaces its unusable string message with typed `SetProposalRegistry`, so it stores the actual registry address. Forged eligibility rolls can no longer be written. See §4.5.2; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
 
 **Eligibility default (audit L-2):** `isEligible` is **fail-closed** — when no snapshot exists for a proposal it returns `false` for every NFT (there is no "all NFTs eligible" fallback).
 
@@ -800,7 +804,7 @@ The lock mirror is fed only by `op::apply_account_lock` from the trusted `accoun
 **Applicable to:** SnapshotVerifier.
 
 **Analysis:**
-- **Unauthenticated snapshot registration (Issue #370 / PC-01 — RESOLVED ✅).** Previously `RegisterSnapshot` had no `sender()` check, so any external address could register or overwrite the eligibility roll for any `proposal_id`, forging which NFTs may vote. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that indexer via `SetTrustedIndexer` (deployer-only, rotatable). The `set_registry` binding was hardened to deployer-only in the same change. Forged snapshots can no longer be written; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
+- **Unauthenticated snapshot registration (Issue #370 / PC-01 — RESOLVED ✅).** Previously `RegisterSnapshot` had no `sender()` check, so any external address could register or overwrite the eligibility roll for any `proposal_id`, forging which NFTs may vote. The handler now requires `sender() == trusted_indexer` and **fails closed** until the deployer (governance multi-sig) designates that indexer via `SetTrustedIndexer` (deployer-only, rotatable). The companion `SetProposalRegistry` binding is deployer-only, write-once, and carries the actual registry address (Issue #414). Forged snapshots can no longer be written; regression coverage in `contracts/governance/SnapshotVerifier.spec.ts`.
 - **No permissive fallback (audit L-2).** `isEligible` is **fail-closed**: if no snapshot exists for a `proposal_id` it returns `false` for every NFT (the historical "all NFTs eligible" branch was removed). Timing a governance action when no snapshot exists therefore admits **zero** voters, not all of them — the proposal cannot reach quorum. The runbook still requires `hasSnapshot == true` before `SubmitProposal` as defence-in-depth so legitimate voters are not denied.
 - Snapshot recording in TransparencyRegistry is also access-controlled (Issue #365): `RecordSnapshot` is accepted only from the configured `snapshot_verifier` writer and fails closed until that writer is set, so false snapshots can no longer be injected into the transparency layer.
 
@@ -1001,7 +1005,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Access control bypass** (4.1.5) | MerchantPaymentHub.tact | Test-only functions (`SetAccountState`, `SetAccountBalance`) removed from the production contract and moved to `MerchantPaymentHubHarness` (test-only); `SetAccountLock` replaced by `ApplyAccountLock`, accepted ONLY from `account_locks_contract` (Issue #363) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | CollateralSignal.tact | Test-only `RegisterNFTOwner` removed from the production contract; ownership is registered ONLY via `ResolveNFTOwner`, accepted from the immutable `nft_resolver` (on-chain NFT Account Resolver), and remains write-once (CONTRACTS-M1) (Issue #364) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | ProposalRegistry.tact | `SubmitProposal`/`CastVote` confirm ownership asynchronously via a trusted on-chain resolver before recording, failing closed until configured (Issue #248); the resolver/verifier addresses are governed by an M-of-N multi-sig + 7-day timelock + code-hash verification, with a recovery path for misconfiguration (Issue #366) | RESOLVED ✅ (pre-mainnet) — covered by `ProposalRegistry.spec.ts` |
-| **Access control bypass** (4.1.5) | SnapshotVerifier.tact | `RegisterSnapshot` (the governance eligibility-oracle writer consumed by `ProposalRegistry`) verifies `sender() == trusted_indexer`; the slot starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; `set_registry` hardened from first-caller-wins to deployer-only + write-once (Issue #370 / PC-01) | RESOLVED ✅ (pre-mainnet) — covered by `SnapshotVerifier.spec.ts` |
+| **Access control bypass** (4.1.5) | SnapshotVerifier.tact | `RegisterSnapshot` (the governance eligibility-oracle writer consumed by `ProposalRegistry`) verifies `sender() == trusted_indexer`; the slot starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; typed `SetProposalRegistry` is deployer-only + write-once and stores its `registry` payload (Issues #370, #414) | RESOLVED ✅ (pre-mainnet) — covered by `SnapshotVerifier.spec.ts` |
 | **Admin account hijack** (4.1.5) | PaymentHub.tact | `InitializeAccount` is now **write-once** (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`): a compromised admin can no longer re-initialize a funded slot to reassign `owner` and drain it via `TransferInternalRequest`. The account read path (`getAccountOrDefault`) was made side-effect free so a free `GetAccountStateRequest` query cannot squat a slot and DoS its first init (Issue #371 / PC-02) | RESOLVED ✅ (pre-mainnet) — grep gate in `non-production-stubs.spec.ts`; repro in `experiments/issue-371-paymenthub-create-once/` |
 
 ### 6.2 Economic Threat Mitigations
@@ -1037,7 +1041,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | Threat | Component | Mitigation | Residual Risk |
 |--------|-----------|------------|---------------|
 | **Proposal flooding** (4.5.1) | ProposalRegistry | Gas costs provide economic rate limiting; non-executable proposals limit impact | LOW |
-| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | `RegisterSnapshot` requires `sender() == trusted_indexer`, fail-closed until the deployer (governance multi-sig) sets that writer via deployer-only `SetTrustedIndexer`; `set_registry` hardened to deployer-only; eligibility oracle fails closed (returns `false`, no permissive fallback — audit L-2) (Issue #370 / PC-01); TransparencyRegistry `RecordSnapshot` restricted to the configured `snapshot_verifier` writer (Issue #365) | LOW — On-chain snapshot forgery blocked ✅; fail-closed; residual exposure limited to a compromised rotatable trusted-indexer key |
+| **Snapshot manipulation** (4.5.2) | SnapshotVerifier | `RegisterSnapshot` requires `sender() == trusted_indexer`, fail-closed until the deployer (governance multi-sig) sets that writer via deployer-only `SetTrustedIndexer`; `SetProposalRegistry` is deployer-only + write-once; eligibility oracle fails closed (returns `false`, no permissive fallback — audit L-2) (Issues #370, #414); TransparencyRegistry `RecordSnapshot` restricted to the configured `snapshot_verifier` writer (Issue #365) | LOW — On-chain snapshot forgery blocked ✅; fail-closed; residual exposure limited to a compromised rotatable trusted-indexer key |
 | **Off-chain misinformation** (4.5.3) | Governance communication | On-chain proposal data is authoritative record | LOW for protocol; MEDIUM for social context |
 | **False record injection** (4.5.4) | TransparencyRegistry | **RESOLVED ✅ (Issue #365)** — every record handler authenticates `sender()` against a deployer-configured per-domain writer and fails closed until configured | LOW — Only the designated writers can append records; regression-tested |
 
@@ -1419,7 +1423,7 @@ This checklist enables an external auditor to systematically verify the protocol
 
 - [ ] **CRITICAL: Verify `SubmitProposal` and `CastVote` verify Diamond NFT ownership** — currently unverified
 - [x] **CRITICAL: Verify TransparencyRegistry record messages have access control** — RESOLVED ✅ (Issue #365): all six record handlers authenticate `sender()` against deployer-configured per-domain writers and fail closed; covered by `contracts/governance/TransparencyRegistry.spec.ts`
-- [x] **CRITICAL: Verify `SnapshotVerifier.RegisterSnapshot` has access control** — RESOLVED ✅ (Issue #370 / PC-01): the eligibility-oracle writer authenticates `sender() == trusted_indexer`, starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; `set_registry` hardened to deployer-only + write-once; covered by `contracts/governance/SnapshotVerifier.spec.ts`
+- [x] **CRITICAL: Verify `SnapshotVerifier.RegisterSnapshot` has access control** — RESOLVED ✅ (Issue #370 / PC-01): the eligibility-oracle writer authenticates `sender() == trusted_indexer`, starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; typed `SetProposalRegistry` is deployer-only + write-once and stores the actual registry address (Issue #414); covered by `contracts/governance/SnapshotVerifier.spec.ts`
 - [ ] Verify ProposalRegistry double-vote prevention (composite key `proposal_id * 1000 + nft_id`)
 - [x] Verify SnapshotVerifier eligibility default is fail-closed — RESOLVED ✅: `isEligible` returns `false` when no authorized snapshot is registered (audit L-2, no permissive "all NFTs eligible" fallback); on-chain forgery is blocked by trusted-indexer authentication (Issue #370 / PC-01)
 - [ ] Confirm governance proposals are non-executable

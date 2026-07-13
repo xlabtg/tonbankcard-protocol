@@ -31,8 +31,11 @@
 //     Issue #363 documented this registration path but never implemented it, so a
 //     freshly deployed hub had permanently empty maps and every payment failed
 //     with ERROR_PAYER_NOT_EXISTS / ERROR_MERCHANT_NOT_EXISTS (audit CHECK393-M1).
-//   * Balances are funded by the on-chain TBC ledger / settlement flow, NOT minted
-//     by an admin handler (removes the admin-mint backdoor C-MPH-C1).
+//   * Balance funding remains an explicit pre-production backlog item (Issue
+//     #414): after removal of the admin-mint backdoor C-MPH-C1, no production
+//     handler can credit a freshly registered payer. A non-custodial deposit or
+//     settlement design requires protocol-economics review and is intentionally
+//     NOT invented in this audit fix.
 //   * Account locks are applied ONLY by the dedicated Account Locks contract
 //     (`account_locks_contract`), which enforces its own risk-authority + timelock
 //     rules. See `receive(msg: ApplyAccountLock)`.

@@ -212,10 +212,11 @@ After the full Phase 2 deploy:
 
 1. Mint a fresh NFT card from the official Series-7777 testnet collection (test environment only — production users are NOT used as guinea pigs). Mint (or reuse) a second card for the merchant account.
 2. Confirm the **NFT Account Resolver registers both the payer and merchant NFT accounts** in `MerchantPaymentHub` via `ResolveNFTOwner` (binds `nft_owners` and marks `account_states = ACTIVE`, write-once). Until this runs the hub returns `ERROR_PAYER_NOT_EXISTS` / `ERROR_MERCHANT_NOT_EXISTS` and every payment fails (Issue #397). Verify with the `accountExists` / `getNFTResolver` get-methods.
-3. Fund the payer account's TBC balance through the on-chain settlement / ledger flow (the hub never mints balances — Invariant I3 / audit C-MPH-C1).
-4. Use the [Merchant SDK](../../sdk/) to issue a low-value (≤ 0.1 TBC) invoice against the freshly deployed `MerchantPaymentHub`.
-5. Pay the invoice from a hardware-wallet-controlled NFT card account.
-6. Observe the indexer (`backend/indexer`) records the settlement and the merchant API returns `paid` status.
+3. **Stop unless Issue #414's dedicated contract follow-up has shipped and been reviewed.** The current contract has no production handler that can credit a freshly registered payer; describing an external settlement/ledger flow here does not make one exist on-chain. The approved replacement must preserve Invariant I3 and be recorded in this runbook before deployment.
+4. Through that approved non-custodial path, fund the payer with ≤ 0.1 TBC and record the funding transaction hash.
+5. Use the [Merchant SDK](../../sdk/) to issue a low-value (≤ 0.1 TBC) invoice against the freshly deployed `MerchantPaymentHub`.
+6. Pay the invoice from a hardware-wallet-controlled NFT card account.
+7. Observe the indexer (`backend/indexer`) records the settlement and the merchant API returns `paid` status.
 
 The test transaction hash is recorded in [`VERIFICATION_PLAN.md`](../../docs/deployments/B2-mainnet/VERIFICATION_PLAN.md) §4 and required by issue #118 §5.3 ("At least one test transaction executed on mainnet before public announcement").
 

@@ -294,7 +294,7 @@ TBC Diamonds (governance NFT): Fixed supply of 222 tokens. Concentration risk ex
 **Remediation (this audit cycle):**
 - `RegisterSnapshot` now requires `sender() == trusted_indexer`. The `trusted_indexer` slot starts `null`, so the handler **fails closed** (rejects every registration) until the deployer designates the writer.
 - The trusted indexer is set by the deployer-only, **rotatable** `SetTrustedIndexer` message (`require(sender() == deployer)`), with the deployer being the governance multi-sig in production.
-- The companion `set_registry` binding was hardened from first-caller-wins to deployer-only (`require(sender() == deployer)`) while keeping the write-once guard.
+- The companion registry binding is deployer-only (`require(sender() == deployer)`) and write-once; Issue #414 replaces the old string receiver with typed `SetProposalRegistry`, whose payload carries the actual registry address.
 - The `isEligible` default remains **fail-closed**: it returns `false` when no authorised snapshot is registered (audit L-2 — there is no permissive "all NFTs eligible" fallback).
 
 Eligibility decisions therefore derive only from snapshots written by the authorised trusted indexer. Regression coverage: `contracts/governance/SnapshotVerifier.spec.ts` (non-indexer rejection, fail-closed-before-configuration, deployer-only configuration, authorised write, forged-overwrite rejection). Residual exposure is limited to a compromised trusted-indexer key, mitigated by the rotatable deployer-only setter and the multi-sig requirement (PARAMETERS.md PP-41).

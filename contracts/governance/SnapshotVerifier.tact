@@ -17,7 +17,7 @@
 //   window between deployment and indexer configuration.
 // - The `deployer` is a CONFIGURATION authority only: it designates which
 //   off-chain indexer address may register snapshots and performs the
-//   one-time `set_registry` binding. It CANNOT itself forge a snapshot — it
+//   one-time `SetProposalRegistry` binding. It CANNOT itself forge a snapshot — it
 //   never appears in the `RegisterSnapshot` authorization check unless it is
 //   also explicitly named as the trusted indexer. In production the deployer
 //   MUST be the governance multi-sig (see docs/governance/E1-activation/).
@@ -57,6 +57,13 @@ message RegisterSnapshot {
 // slot (mirrors ProposalRegistry.SetSnapshotVerifier).
 message SetTrustedIndexer {
     indexer: Address;                     // Address allowed to register snapshots
+}
+
+// Deployer-only, write-once binding to the actual ProposalRegistry contract.
+// The address must be carried in the message: using sender() here would always
+// persist the deployer/configuration authority instead of the registry.
+message SetProposalRegistry {
+    registry: Address;
 }
 
 // Verify eligibility request
@@ -105,7 +112,7 @@ contract SnapshotVerifier with Deployable {
 
     // Configuration authority captured at init() (the deployer / governance
     // multi-sig). It can ONLY designate the trusted indexer and perform the
-    // one-time set_registry binding — it can never forge a snapshot itself
+    // one-time SetProposalRegistry binding — it can never forge a snapshot itself
     // (Issue #370).
     deployer: Address;
 
@@ -149,14 +156,15 @@ contract SnapshotVerifier with Deployable {
         }.toCell());
     }
 
-    // Set proposal registry address (one-time setup). Deployer-only so the
-    // binding can no longer be claimed by an arbitrary first caller (Issue
-    // #370); the write-once guard preserves the irreversible E1 activation
-    // semantics (RUNBOOK §4 / gate G-9).
-    receive("set_registry") {
+    // Set the actual proposal registry address (one-time setup). Deployer-only
+    // so the binding cannot be claimed by an arbitrary first caller; the
+    // write-once guard preserves the irreversible E1 activation semantics
+    // (RUNBOOK §4 / gate G-9). Issue #414 replaces the old string receiver,
+    // which could only store sender() (the deployer), with this typed message.
+    receive(msg: SetProposalRegistry) {
         require(sender() == self.deployer, "Only deployer can set registry");
         require(self.proposal_registry == null, "Registry already set");
-        self.proposal_registry = sender();
+        self.proposal_registry = msg.registry;
     }
 
     // ==================== SENDER AUTHENTICATION GUARD (Issue #370) ====================
@@ -297,7 +305,7 @@ contract SnapshotVerifier with Deployable {
     }
 
     // Get the configuration authority (deployer / governance multi-sig) that
-    // designates the trusted indexer and performs the set_registry binding.
+    // designates the trusted indexer and performs the SetProposalRegistry binding.
     get fun getDeployer(): Address {
         return self.deployer;
     }
