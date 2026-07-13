@@ -8,7 +8,7 @@ import {
   RateLimiterAbstract,
   RateLimiterRes,
 } from 'rate-limiter-flexible';
-import { getClientIp } from '../src/api/server';
+import { getClientIp, isRateLimiterRes } from '../src/api/server';
 
 // Helper to make an HTTP request
 function makeRequest(
@@ -76,8 +76,15 @@ function buildApp(
       res.setHeader('X-RateLimit-Reset', Math.ceil(resetEpochMs / 1000));
       res.setHeader('X-RateLimit-Window', Math.ceil(windowMs / 1000));
       next();
-    } catch (rateLimiterRes: unknown) {
-      const rlRes = rateLimiterRes as RateLimiterRes;
+    } catch (rejection: unknown) {
+      // Mirror ApiServer.setupMiddleware(): fail open on a store error,
+      // 429 only on a genuine RateLimiterRes.
+      if (!isRateLimiterRes(rejection)) {
+        next();
+        return;
+      }
+
+      const rlRes = rejection;
       const secsToReset = Math.ceil((rlRes.msBeforeNext ?? windowMs) / 1000);
 
       res.setHeader('Retry-After', secsToReset);
@@ -208,6 +215,68 @@ describe('Rate Limiter Middleware (new implementation)', () => {
     // Forwarded IP B should still be allowed (different key in rate limiter)
     const allowedB = await makeRequest(server, '/test', '5.5.5.5', true);
     expect(allowedB.statusCode).toBe(200);
+  });
+
+  describe('Store-error handling (fail-open on Redis outage)', () => {
+    // A fake limiter that always rejects with a plain Error, simulating a Redis
+    // outage with `enableOfflineQueue: false` (RateLimiterRedis rejects with an
+    // Error, not a RateLimiterRes, when the store is unreachable).
+    function makeStoreErrorLimiter(): RateLimiterAbstract {
+      return {
+        consume: () => Promise.reject(new Error('Redis connection refused')),
+      } as unknown as RateLimiterAbstract;
+    }
+
+    // A fake limiter that always rejects with a genuine RateLimiterRes.
+    function makeOverLimitLimiter(): RateLimiterAbstract {
+      return {
+        consume: () =>
+          Promise.reject(new RateLimiterRes(0, 30000, 0, false)),
+      } as unknown as RateLimiterAbstract;
+    }
+
+    it('fails open (passes the request through) when the store rejects with an Error', async () => {
+      server = await startServer(
+        buildApp(makeStoreErrorLimiter(), 5, 60000)
+      );
+
+      const res = await makeRequest(server, '/test', '8.8.8.8');
+      expect(res.statusCode).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it('still returns 429 when the limiter rejects with a real RateLimiterRes', async () => {
+      server = await startServer(
+        buildApp(makeOverLimitLimiter(), 5, 60000)
+      );
+
+      const res = await makeRequest(server, '/test', '9.9.9.9');
+      expect(res.statusCode).toBe(429);
+      expect(res.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+    });
+  });
+
+  describe('isRateLimiterRes type guard', () => {
+    it('recognises a genuine RateLimiterRes instance', () => {
+      expect(isRateLimiterRes(new RateLimiterRes(0, 1000, 0, false))).toBe(true);
+    });
+
+    it('recognises a duck-typed RateLimiterRes-shaped object', () => {
+      expect(
+        isRateLimiterRes({ msBeforeNext: 1000, remainingPoints: 0 })
+      ).toBe(true);
+    });
+
+    it('rejects a plain Error (store failure)', () => {
+      expect(isRateLimiterRes(new Error('Redis down'))).toBe(false);
+    });
+
+    it('rejects null / undefined / primitives', () => {
+      expect(isRateLimiterRes(null)).toBe(false);
+      expect(isRateLimiterRes(undefined)).toBe(false);
+      expect(isRateLimiterRes('nope')).toBe(false);
+      expect(isRateLimiterRes(429)).toBe(false);
+    });
   });
 
   describe('Proxy IP extraction (trustProxy=true)', () => {

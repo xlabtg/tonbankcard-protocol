@@ -68,6 +68,30 @@ export function getClientIp(
   return remoteAddress;
 }
 
+/**
+ * Distinguish a genuine rate-limit rejection (`RateLimiterRes`) from a store
+ * error (`Error`). `rate-limiter-flexible` rejects `consume()` with a
+ * `RateLimiterRes` on a limit hit and with a plain `Error` when the backing
+ * store is unreachable; only the former should produce an HTTP 429.
+ *
+ * `RateLimiterRes` is a plain object (not an `Error`) exposing numeric
+ * `msBeforeNext` / `remainingPoints`, so we duck-type on those fields rather
+ * than rely on `instanceof` across module/bundler boundaries.
+ */
+export function isRateLimiterRes(value: unknown): value is RateLimiterRes {
+  if (value instanceof RateLimiterRes) {
+    return true;
+  }
+  if (value === null || typeof value !== 'object' || value instanceof Error) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.msBeforeNext === 'number' &&
+    typeof candidate.remainingPoints === 'number'
+  );
+}
+
 export class ApiServer {
   private app: express.Application;
   private server?: any;
@@ -123,6 +147,14 @@ export class ApiServer {
         keyPrefix: 'rl_indexer',
         points: maxRequests,
         duration: durationSec,
+        // If Redis is unreachable, fail over to an in-process limiter instead of
+        // rejecting every `consume()` with a store Error. Combined with the
+        // fail-open catch below this keeps the read API available during a
+        // Redis outage rather than self-DoSing with blanket 429s.
+        insuranceLimiter: new RateLimiterMemory({
+          points: maxRequests,
+          duration: durationSec,
+        }),
       });
 
       this.logger.info(
@@ -197,8 +229,28 @@ export class ApiServer {
         );
 
         next();
-      } catch (rateLimiterRes: unknown) {
-        const rlRes = rateLimiterRes as RateLimiterRes;
+      } catch (rejection: unknown) {
+        // `rate-limiter-flexible` rejects `consume()` with two different kinds
+        // of value: a `RateLimiterRes` when the caller is over the limit, and a
+        // plain `Error` when the backing store (Redis) is unreachable. Treating
+        // the latter as a 429 would take the whole API — including `/health` —
+        // offline on a Redis blip. Only emit 429 for a genuine limit hit; on a
+        // store error, log and fail open so the request proceeds.
+        if (!isRateLimiterRes(rejection)) {
+          this.logger.error(
+            {
+              requestId: req.requestId,
+              err: rejection,
+              ip,
+              path: req.path,
+            },
+            'Rate limiter store error – failing open'
+          );
+          next();
+          return;
+        }
+
+        const rlRes = rejection;
         const secsToReset = Math.ceil((rlRes.msBeforeNext ?? windowMs) / 1000);
 
         res.setHeader('Retry-After', secsToReset);
