@@ -9,6 +9,16 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [2.0.3] — 2026-07-13
+
+### Fixed — Canonical object keys use Unicode code-point order (Issue #409, CHECK405-M2)
+
+- `canonicalJson()` now sorts object keys by Unicode code point instead of
+  JavaScript's default UTF-16 code-unit order. This keeps canonical bytes and
+  SHA-256 hashes aligned with the Go and Python SDKs for astral-plane keys.
+- Added a regression vector combining U+E000 and U+1F600 that pins the
+  canonical order and payload hash while preserving existing BMP-only vectors.
+
 ## [2.0.2] — 2026-06-11
 
 ### Fixed — Cross-SDK canonical JSON converges on U+2028/U+2029 and the numeric policy (Issue #375, PC-06)
