@@ -102,3 +102,5 @@ remediation.
 
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/405
 - `api/src/middleware/rateLimiter.ts`, `audit/THREAT_MODEL.md`.
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/412

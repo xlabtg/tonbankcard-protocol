@@ -138,3 +138,5 @@ on the latter. Two complementary options (do at least the first):
 - `rate-limiter-flexible` docs — "Difference between block and consume
   rejections" / `insuranceLimiter`.
 - `audit/THREAT_MODEL.md`, `audit/INVARIANTS.md`
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/407

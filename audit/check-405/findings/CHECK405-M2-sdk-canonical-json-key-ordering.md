@@ -90,3 +90,5 @@ same input; Go and Python agreed with each other and disagreed with TS.
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/405
 - ECMAScript `Array.prototype.sort` default comparator (UTF-16 code units).
 - Go `encoding/json` map key ordering; Python `json.dumps(sort_keys=True)`.
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/409

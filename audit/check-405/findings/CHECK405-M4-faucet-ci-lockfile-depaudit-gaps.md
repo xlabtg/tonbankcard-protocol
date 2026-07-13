@@ -97,3 +97,5 @@ and the lockfile-tamper check never run for them.
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/405
 - PC-08 guard: `scripts/tooling/check-dockerfile-npm-ci.sh`.
 - Dependency-audit workflow: `.github/workflows/dependency-audit.yml` (issue #131).
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/411

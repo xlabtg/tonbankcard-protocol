@@ -21,18 +21,17 @@ implement step by step.
 
 | ID | Issue | Severity | Stage | Area | Title |
 |----|-------|----------|-------|------|-------|
-| [CHECK405-H1](./findings/CHECK405-H1-indexer-rate-limiter-fail-closed.md) | TBD | High | 2-high | backend/indexer | Rate-limit middleware treats every store error as a 429, so a Redis outage self-DoSes the whole read API |
-| [CHECK405-M1](./findings/CHECK405-M1-postgres-jsonb-double-parse.md) | TBD | Medium | 3-medium | api | `PostgresInvoiceStorage` double-parses JSONB columns, so every read of an invoice with metadata/settlement throws |
-| [CHECK405-M2](./findings/CHECK405-M2-sdk-canonical-json-key-ordering.md) | TBD | Medium | 3-medium | sdk | TS SDK `canonicalJson` sorts keys by UTF-16 code unit, diverging from Go/Python code-point order for astral-plane keys |
-| [CHECK405-M3](./findings/CHECK405-M3-wallet-ui-deeplink-injection.md) | TBD | Medium | 3-medium | wallet-ui | `generateConnectLink` interpolates `paymentHubAddress` into a `ton://` deep link without validation or encoding |
-| [CHECK405-M4](./findings/CHECK405-M4-faucet-ci-lockfile-depaudit-gaps.md) | TBD | Medium | 3-medium | tooling | Faucet ships no lockfile and is absent from all CI; dependency-audit matrix omits faucet, docs-site, mobile-app |
-| [CHECK405-L1](./findings/CHECK405-L1-api-hardening-backlog.md) | TBD | Low | 4-low | api | API hardening backlog: unthrottled auth path, non-canonical amount strings, metadata `invoice_id` shadowing |
-| [CHECK405-L2](./findings/CHECK405-L2-sdk-parity-backlog.md) | TBD | Low | 4-low | sdk | TS SDK parity backlog: case-sensitive hex webhook compare, missing amount validation in invoice hashing |
-| [CHECK405-L3](./findings/CHECK405-L3-contracts-backlog.md) | TBD | Low | 4-low | contracts | Contracts backlog (file-only): `set_registry` binds only to deployer; `MerchantPaymentHub` has no balance-funding path |
+| [CHECK405-H1](./findings/CHECK405-H1-indexer-rate-limiter-fail-closed.md) | [#407](https://github.com/xlabtg/tonbankcard-protocol/issues/407) | High | 2-high | backend/indexer | Rate-limit middleware treats every store error as a 429, so a Redis outage self-DoSes the whole read API |
+| [CHECK405-M1](./findings/CHECK405-M1-postgres-jsonb-double-parse.md) | [#408](https://github.com/xlabtg/tonbankcard-protocol/issues/408) | Medium | 3-medium | api | `PostgresInvoiceStorage` double-parses JSONB columns, so every read of an invoice with metadata/settlement throws |
+| [CHECK405-M2](./findings/CHECK405-M2-sdk-canonical-json-key-ordering.md) | [#409](https://github.com/xlabtg/tonbankcard-protocol/issues/409) | Medium | 3-medium | sdk | TS SDK `canonicalJson` sorts keys by UTF-16 code unit, diverging from Go/Python code-point order for astral-plane keys |
+| [CHECK405-M3](./findings/CHECK405-M3-wallet-ui-deeplink-injection.md) | [#410](https://github.com/xlabtg/tonbankcard-protocol/issues/410) | Medium | 3-medium | wallet-ui | `generateConnectLink` interpolates `paymentHubAddress` into a `ton://` deep link without validation or encoding |
+| [CHECK405-M4](./findings/CHECK405-M4-faucet-ci-lockfile-depaudit-gaps.md) | [#411](https://github.com/xlabtg/tonbankcard-protocol/issues/411) | Medium | 3-medium | tooling | Faucet ships no lockfile and is absent from all CI; dependency-audit matrix omits faucet, docs-site, mobile-app |
+| [CHECK405-L1](./findings/CHECK405-L1-api-hardening-backlog.md) | [#412](https://github.com/xlabtg/tonbankcard-protocol/issues/412) | Low | 4-low | api | API hardening backlog: unthrottled auth path, non-canonical amount strings, metadata `invoice_id` shadowing |
+| [CHECK405-L2](./findings/CHECK405-L2-sdk-parity-backlog.md) | [#413](https://github.com/xlabtg/tonbankcard-protocol/issues/413) | Low | 4-low | sdk | TS SDK parity backlog: case-sensitive hex webhook compare, missing amount validation in invoice hashing |
+| [CHECK405-L3](./findings/CHECK405-L3-contracts-backlog.md) | [#414](https://github.com/xlabtg/tonbankcard-protocol/issues/414) | Low | 4-low | contracts | Contracts backlog (file-only): `set_registry` binds only to deployer; `MerchantPaymentHub` has no balance-funding path |
 
 Severity legend follows the existing audit taxonomy; stages map to the
-`stage:1-critical` … `stage:4-low` labels. The `TBD` issue links are filled in
-once the GitHub issues are created.
+`stage:1-critical` … `stage:4-low` labels.
 
 ## Fixed in this PR
 

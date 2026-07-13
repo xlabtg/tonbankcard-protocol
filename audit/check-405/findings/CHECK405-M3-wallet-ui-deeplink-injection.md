@@ -90,3 +90,5 @@ no early error — the constructor accepts any non-empty string.
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/405
 - Prior art (same class, mobile): FRONTEND-H1 (#264), FRONTEND-H2 (#265).
 - Hardened helper: `wallet-ui/src/tonconnect/deepLink.ts`.
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/410

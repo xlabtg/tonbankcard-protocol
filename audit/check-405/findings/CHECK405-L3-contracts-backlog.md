@@ -100,3 +100,5 @@ schedule them into a dedicated contract PR with the appropriate review.
 - Related: #363 (admin setter removal), #397 (missing account registration),
   `TransparencyRegistry` typed-message pattern.
 - Non-custodial rules: `audit/INVARIANTS.md`.
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/414

@@ -102,3 +102,5 @@ versus the `InMemory` backend which stores ISO strings.
 
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/405
 - `node-postgres` type parsing — `json`/`jsonb` are parsed to objects by default.
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/408

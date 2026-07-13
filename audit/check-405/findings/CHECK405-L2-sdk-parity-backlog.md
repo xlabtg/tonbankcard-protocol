@@ -85,3 +85,5 @@ Two low-severity cross-SDK parity gaps in the TypeScript SDK.
 
 - Round umbrella: https://github.com/xlabtg/tonbankcard-protocol/issues/405
 - Go/Python SDK webhook + amount validation for parity.
+
+- Tracking issue: https://github.com/xlabtg/tonbankcard-protocol/issues/413
