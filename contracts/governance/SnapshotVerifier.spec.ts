@@ -407,12 +407,12 @@ describe('SnapshotVerifier sender authentication (Issue #370 / PC-01)', () => {
         expect(await verifier.getIsEligible(1n, 7n)).toBe(true);
     });
 
-    it('binds the proposal registry deployer-only and exactly once', async () => {
+    it('binds the actual proposal registry address deployer-only and exactly once', async () => {
         // A stranger cannot claim the registry binding (closes first-caller-wins).
         const hijack = await verifier.send(
             attacker.getSender(),
             { value: GAS },
-            'set_registry'
+            { $$type: 'SetProposalRegistry', registry: attacker.address }
         );
         expect(hijack.transactions).toHaveTransaction({
             from: attacker.address,
@@ -422,19 +422,28 @@ describe('SnapshotVerifier sender authentication (Issue #370 / PC-01)', () => {
         });
         expect(await verifier.getGetProposalRegistry()).toBeNull();
 
-        // The deployer can perform the one-time binding.
-        const bind = await verifier.send(deployer.getSender(), { value: GAS }, 'set_registry');
+        // The deployer can bind the actual ProposalRegistry address rather than
+        // accidentally persisting its own sender address.
+        const bind = await verifier.send(
+            deployer.getSender(),
+            { value: GAS },
+            { $$type: 'SetProposalRegistry', registry: requester.address }
+        );
         expect(bind.transactions).toHaveTransaction({
             from: deployer.address,
             to: verifier.address,
             success: true,
         });
         expect((await verifier.getGetProposalRegistry())!.toString()).toBe(
-            deployer.address.toString()
+            requester.address.toString()
         );
 
         // And it is irreversible: a second binding attempt is rejected.
-        const rebind = await verifier.send(deployer.getSender(), { value: GAS }, 'set_registry');
+        const rebind = await verifier.send(
+            deployer.getSender(),
+            { value: GAS },
+            { $$type: 'SetProposalRegistry', registry: attacker.address }
+        );
         expect(rebind.transactions).toHaveTransaction({
             from: deployer.address,
             to: verifier.address,

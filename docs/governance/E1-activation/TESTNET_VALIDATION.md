@@ -48,7 +48,7 @@ Each step records actor, expected event, and pass/fail criteria. The full report
 | Field | Value |
 |-------|-------|
 | Actor | Maintainer multi-sig |
-| Action | Send `set_registry` to testnet `SnapshotVerifier` |
+| Action | Send typed `SetProposalRegistry { registry: <testnet ProposalRegistry> }` to testnet `SnapshotVerifier` |
 | Expected | `getProposalRegistry()` returns the testnet `ProposalRegistry` address |
 | Pass | RPC read confirms binding |
 | Fail | Engagement re-cycles |

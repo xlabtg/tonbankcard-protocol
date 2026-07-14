@@ -74,16 +74,18 @@ This is the **only irreversible** mainnet on-chain action performed by E1. It bi
 
 ### 4.1 Why one transaction?
 
-`SnapshotVerifier.set_registry` is guarded by `require(sender() == self.deployer)` **and** `require(self.proposal_registry == null)` — Issue #370 / PC-01 hardened the previously unauthenticated, first-caller-wins handler to deployer-only. A successful call permanently freezes the binding. A failed call — wrong sender (anything other than the deploying B2 multi-sig) or a second attempt — is rejected by the contract and does not consume the slot.
+`SnapshotVerifier.SetProposalRegistry` is guarded by `require(sender() == self.deployer)` **and** `require(self.proposal_registry == null)`. The typed message carries the actual registry address (Issue #414), while the deployer-only and write-once guards permanently freeze a successful binding. A failed call — wrong sender (anything other than the deploying B2 multi-sig) or a second attempt — is rejected by the contract and does not consume the slot.
 
 ### 4.2 Construct the message
 
 ```ts
 // scripts/governance/build-set-registry.ts
-const cell = beginCell()
-  .storeUint(0, 32)         // op = empty (text comment)
-  .storeStringTail("set_registry")
-  .endCell();
+const body = storeSetProposalRegistry({
+  $$type: "SetProposalRegistry",
+  registry: Address.parse(PROPOSAL_REGISTRY_ADDRESS),
+});
+
+const cell = beginCell().store(body).endCell();
 
 const intent = {
   to:    SNAPSHOT_VERIFIER_ADDRESS,
@@ -101,9 +103,9 @@ Two of three B2 signers sign the intent on their hardware wallets following [`..
 
 Anti-foot-gun rules (mirrors B2 AF-1..AF-10):
 
-- AF-E1-1. The **sender** of `set_registry` must be the B2 multi-sig — which is the SnapshotVerifier **deployer** captured at `init()`. The contract now **enforces** `sender() == deployer` (Issue #370 / PC-01), so a stray EOA send is rejected on-chain, not merely by runbook discipline.
+- AF-E1-1. The **sender** of `SetProposalRegistry` must be the B2 multi-sig — which is the SnapshotVerifier **deployer** captured at `init()`. The contract enforces `sender() == deployer`, so a stray EOA send is rejected on-chain, not merely by runbook discipline.
 - AF-E1-2. The recipient address **must** equal `SNAPSHOT_VERIFIER_ADDRESS` from the B2 manifest. The runbook rejects any other address.
-- AF-E1-3. The intent body **must** be exactly `set_registry` (text comment). No additional bytes.
+- AF-E1-3. Decode the intent body before signing: it **must** be exactly `SetProposalRegistry { registry: PROPOSAL_REGISTRY_ADDRESS }` using the wrapper generated from the audited contract.
 - AF-E1-4. The value **must** be ≤ 0.1 TON. The runbook rejects larger.
 - AF-E1-5. The intent **must** not bundle other operations.
 
@@ -116,7 +118,7 @@ The signed transaction is broadcast via the operator's archive RPC. The runbook 
 | Check | Method | Expected |
 |-------|--------|----------|
 | Get-method `getProposalRegistry` returns `ProposalRegistry` address | RPC | `=` `PROPOSAL_REGISTRY_ADDRESS` |
-| A second `set_registry` send is rejected | RPC dry-run | `Registry already set` |
+| A second `SetProposalRegistry` send is rejected | RPC dry-run | `Registry already set` |
 | B3 alert silence | dashboard | No alert flips during the binding |
 
 ### 4.6 Activation manifest
@@ -174,7 +176,7 @@ After Phase 5, the following checks run continuously:
 | Indexer mirror lag | Continuous | B3 alert `R-014 GovernanceEventGap` (max 60 s) |
 | Audit script per proposal | On `ProposalFinalized` | `scripts/governance/audit-snapshot.ts <id>` |
 | Cooldown gate | On every PR | `scripts/governance/check-cooldown.ts` |
-| `set_registry` invariant | Daily | `scripts/governance/check-registry-binding.ts` — fails if `SnapshotVerifier.getProposalRegistry()` ≠ `PROPOSAL_REGISTRY_ADDRESS` |
+| `SetProposalRegistry` invariant | Daily | `scripts/governance/check-registry-binding.ts` — fails if `SnapshotVerifier.getProposalRegistry()` ≠ `PROPOSAL_REGISTRY_ADDRESS` |
 
 The checks have no side effects on the chain — they read state, emit alerts, and fail CI when they detect drift.
 
@@ -184,7 +186,7 @@ The checks have no side effects on the chain — they read state, emit alerts, a
 
 | Failure | Severity | Response |
 |---------|----------|----------|
-| §4 `set_registry` reverts (bad sender) | LOW | Re-sign with multi-sig; transaction is idempotent against contract state |
+| §4 `SetProposalRegistry` reverts (bad sender) | LOW | Re-sign with multi-sig; transaction is idempotent against contract state |
 | §4 confirmed but `getProposalRegistry()` returns wrong address | CRITICAL | Engagement aborts; cycle a new B2 deployment of `SnapshotVerifier` (binding is irreversible per contract) |
 | §5 `RegisterSnapshot` fails | LOW | Confirm `SetTrustedIndexer` ran and the send is from the authorised indexer wallet (Issue #370 / PC-01); investigate eligibility map; re-send; no state change on failure |
 | §5 `RegisterSnapshot` rejected — `trusted_indexer` unset or wrong sender | LOW | Run `SetTrustedIndexer` from the B2 multi-sig (the deployer), then re-send `RegisterSnapshot` from the authorised indexer wallet; no state change on failure |

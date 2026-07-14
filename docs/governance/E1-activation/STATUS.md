@@ -42,7 +42,7 @@ Mirror of [`ENGAGEMENT.md`](./ENGAGEMENT.md) §4. Activation may not proceed pas
 | G-6 | `PARAMETERS.md` / `SNAPSHOT.md` reviewed by second pair of eyes | ⏳ Pending | PR review of this engagement |
 | G-7 | Indexer governance pipeline live in staging | ⏳ Pending | B3 dashboard screenshot + alert attestation |
 | G-8 | `E1-PROP-001` 24-hour cool-down elapsed | ⏳ Pending | GitHub Discussions URL recorded in §3 |
-| G-9 | `SnapshotVerifier.set_registry` bound on mainnet (irreversible) | ⏳ Pending | Activation manifest §6 |
+| G-9 | `SnapshotVerifier.SetProposalRegistry` bound on mainnet (irreversible) | ⏳ Pending | Activation manifest §6 |
 | G-10 | Activation manifest committed + `network-matrix.md` atomic update | ⏳ Pending | PR URL recorded in §6 |
 
 ---
@@ -107,8 +107,8 @@ Report PDF: `audit/governance-snapshots/E1-PROP-000-testnet.json` (placeholder u
 | Mainnet `ProposalRegistry` address | TBD (from B2 manifest) |
 | Mainnet `SnapshotVerifier` address | TBD (from B2 manifest) |
 | Mainnet `TransparencyRegistry` address | TBD (from B2 manifest) |
-| `set_registry` tx hash | TBD |
-| `set_registry` signed by | TBD (≥ 2 of 3 hardware-wallet signers) |
+| `SetProposalRegistry` tx hash | TBD |
+| `SetProposalRegistry` signed by | TBD (≥ 2 of 3 hardware-wallet signers) |
 | Activation manifest path | `docs/governance/E1-activation/activations/<timestamp>.json` |
 | Manifest commit | TBD |
 | PR URL atomically updating `network-matrix.md` (governance group `activated: yes`) | TBD |

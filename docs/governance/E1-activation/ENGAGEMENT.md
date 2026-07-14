@@ -54,7 +54,7 @@ E1 does **not** redeploy any contract. It activates the inert governance group a
 
 Cross-contract wiring:
 
-- `SnapshotVerifier.proposal_registry` is bound to the mainnet `ProposalRegistry` address via the **one-time** `set_registry` handler. This is part of the activation runbook ([`RUNBOOK.md`](./RUNBOOK.md) §4 step 4-3).
+- `SnapshotVerifier.proposal_registry` is bound to the mainnet `ProposalRegistry` address via the **one-time** typed `SetProposalRegistry` message. This is part of the activation runbook ([`RUNBOOK.md`](./RUNBOOK.md) §4 step 4-3).
 - `TransparencyRegistry` consumes the events emitted by `ProposalRegistry` and `SnapshotVerifier` via the indexer. There is **no direct on-chain link** between them by design (one-way, advisory-only).
 
 ---
@@ -87,10 +87,10 @@ The engagement may begin once all rows below are ✅. The live state of each gat
 | G-6 | `PARAMETERS.md` and `SNAPSHOT.md` reviewed by a second pair of eyes | `@konard` + reviewer | GitHub PR review |
 | G-7 | Indexer governance pipeline live in staging (mirrors `ProposalSubmitted`, `VoteCast`, `ProposalFinalized`, `SnapshotRegistered` to `TransparencyRegistry`) | `@konard` | `backend/indexer/src/governance/` + B3 dashboard |
 | G-8 | First proposal `E1-PROP-001` drafted and 24-hour Phase-1 cool-down (per [`../SNAPSHOT.md`](../SNAPSHOT.md) §3.2) elapsed | `@konard` | GitHub Discussions thread URL recorded in [`STATUS.md`](./STATUS.md) §3 |
-| G-9 | `SnapshotVerifier.proposal_registry` bound (`set_registry`) — one-time, irreversible | Multi-sig signer #1 | On-chain `set_registry` transaction recorded in activation manifest |
+| G-9 | `SnapshotVerifier.proposal_registry` bound (`SetProposalRegistry`) — one-time, irreversible | Multi-sig signer #1 | On-chain binding transaction recorded in activation manifest |
 | G-10 | Activation manifest committed and `network-matrix.md` updated atomically | `@konard` | PR linking commit hash + manifest path |
 
-> Gate G-2 implies all of B2's own gates (G-1 … G-10 in `B2-mainnet/STATUS.md`) are ✅. Gate G-9 is irreversible because `SnapshotVerifier.set_registry` rejects further calls once `proposal_registry != null`.
+> Gate G-2 implies all of B2's own gates (G-1 … G-10 in `B2-mainnet/STATUS.md`) are ✅. Gate G-9 is irreversible because `SnapshotVerifier.SetProposalRegistry` rejects further calls once `proposal_registry != null`.
 
 ---
 
@@ -116,7 +116,7 @@ The engagement may begin once all rows below are ✅. The live state of each gat
 
 ### Phase 4 — Mainnet bind (one-time)
 
-- Multi-sig signs the `set_registry` transaction (G-9).
+- Multi-sig signs the typed `SetProposalRegistry` transaction (G-9).
 - Activation manifest written, `network-matrix.md` updated in the same PR.
 - Output: signed manifest + PR URL in [`STATUS.md`](./STATUS.md) §6.
 
@@ -145,7 +145,7 @@ The engagement may begin once all rows below are ✅. The live state of each gat
 
 Additional engagement-level hardening:
 
-- The `set_registry` transaction (G-9) is irreversible; the runbook treats accidental re-call as a CRITICAL incident and the contract correctly rejects it with `"Registry already set"` (write-once guard). The binding is also **sender-authenticated** — accepted only from `sender() == deployer` (Issue #370 / PC-01); the previously unguarded first-caller-wins handler is fixed.
+- The `SetProposalRegistry` transaction (G-9) is irreversible; the runbook treats accidental re-call as a CRITICAL incident and the contract correctly rejects it with `"Registry already set"` (write-once guard). The binding is also **sender-authenticated** — accepted only from `sender() == deployer` — and the typed payload stores the actual registry address (Issue #414).
 - **Eligibility-oracle writer authentication (Issue #370 / PC-01).** `SnapshotVerifier.RegisterSnapshot` is accepted **only** from the on-chain–authorised `trusted_indexer`; the slot starts `null`, so the handler **fails closed** until the deployer (governance multi-sig) designates the indexer wallet via deployer-only, rotatable `SetTrustedIndexer` (RUNBOOK §5 step 3). Forged eligibility rolls from arbitrary senders are rejected on-chain.
 - The `SnapshotVerifier.isEligible` default is **fail-closed**: it returns `false` for any NFT when no authorised snapshot is registered (audit L-2 — there is no permissive "all in-range NFTs eligible" fallback). The indexer additionally refuses to count votes unless `hasSnapshot == true`, so a missing or unauthorised snapshot can never enfranchise voters.
 - The activation does not enable any **mutable** state on the governance contracts beyond what the contracts themselves expose; there is no admin key, no upgrade path, no pause primitive.
@@ -156,7 +156,7 @@ Additional engagement-level hardening:
 
 | Requirement | Mapping |
 |-------------|---------|
-| Governance deploy uses same multi-sig deployer as B2 | Deployment is done by B2; the only mainnet write E1 performs (`set_registry`) uses the same multi-sig per [`RUNBOOK.md`](./RUNBOOK.md) §4 |
+| Governance deploy uses same multi-sig deployer as B2 | Deployment is done by B2; the only mainnet write E1 performs (`SetProposalRegistry`) uses the same multi-sig per [`RUNBOOK.md`](./RUNBOOK.md) §4 |
 | Voting period ≥ 7 days | P-3 fixed at 604 800 s |
 | Quorum high enough to prevent capture | P-4 fixed at 23 |
 | All governance actions logged via TransparencyRegistry | Indexer mirror enabled in Phase 3; the contract already emits events natively |
