@@ -22,15 +22,18 @@ failed. The historical seven-workspace matrix omitted `mobile-app` and
 | `mobile-app` | 0 vulnerabilities | High |
 | `dashboard` | 0 vulnerabilities | High |
 | `scripts/faucet` | 0 vulnerabilities | High |
-| `docs-site` | 21 total: 18 High, 3 Moderate, 0 Critical | Critical (temporary) |
+| `docs-site` | 19 Moderate, 0 High, 0 Critical | High |
 
-The remaining docs-site High chain has one root cause:
-`@docusaurus/mdx-loader` depends on `image-size@2.0.2`, the latest published
-version, and npm reports `fixAvailable=false` for both advisories. Critical
-findings still fail CI. Tracking issue
-[#429](https://github.com/xlabtg/tonbankcard-protocol/issues/429) owns removal
-of the temporary exception; every other workspace continues to fail on High or
-Critical findings.
+The docs-site High exception was removed in
+[#429](https://github.com/xlabtg/tonbankcard-protocol/issues/429).
+`image-size@2.0.2` had no patched release and its ICNS/JXL/HEIF parsers could
+loop forever on crafted input. The site now uses a vendored, MIT-licensed
+`@docusaurus/mdx-loader@3.10.2` with automatic image dimension parsing removed.
+Webpack still resolves and emits local assets, but the build never reads image
+bytes through `image-size`; that package is absent from the lockfile. The
+`docs-site/tests/image-safety.test.mjs` regression test checks both properties.
+The vendored loader should be removed when upstream Docusaurus no longer
+depends on a vulnerable image parser.
 
 The previously documented Dependabot control is **not currently present**:
 `.github/dependabot.yml` was deleted after the original D5 audit. Restoring it
@@ -197,7 +200,7 @@ code.
 
 | Control                                          | Where                                                              | Triggers on                                       |
 |--------------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------|
-| `npm audit` for all nine shipped locked workspaces | [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml) | every push to `main`, every PR, weekly cron; High threshold except temporary docs-site Critical threshold (#429) |
+| `npm audit` for all nine shipped locked workspaces | [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml) | every push to `main`, every PR, weekly cron; High threshold in every workspace |
 | Lockfile-tamper detection                        | same workflow, diff of regenerated `package-lock.json`              | every push / PR — fails CI on drift                |
 | Audit-matrix completeness guard                  | [`scripts/tooling/check-dependency-audit-coverage.sh`](../../scripts/tooling/check-dependency-audit-coverage.sh) | every CI run; fails if a shipped locked workspace is omitted |
 | Weekly dependency PRs                            | **Missing** — tracked by [#434](https://github.com/xlabtg/tonbankcard-protocol/issues/434) | no active Dependabot configuration |
