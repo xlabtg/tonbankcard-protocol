@@ -21,6 +21,7 @@ import type {
   LoanIntentResponse,
   CollateralVerificationResponse,
   LoanReference,
+  CoinRabbitChainGateway,
 } from '../../backend/adapters/types';
 
 describe('Lending Adapter (CoinRabbit)', () => {
@@ -30,10 +31,40 @@ describe('Lending Adapter (CoinRabbit)', () => {
   const COLLECTION_7777 = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le';
   const COLLECTION_8888 = 'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7';
 
+  const chainGateway: CoinRabbitChainGateway = {
+    getLatestSnapshot: jest.fn().mockImplementation(async (chainId: number) => ({
+      chainId,
+      blockSeqno: 100,
+      observedAt: new Date(),
+    })),
+    getNFTAccount: jest.fn().mockImplementation(async (nftAccountId: string) => {
+      if (!/^(7777|8888)\d+$/.test(nftAccountId)) return undefined;
+      return {
+        nftAccountId,
+        nftAddress: `EQD_nft_${nftAccountId}`,
+        collectionAddress: nftAccountId.startsWith('7777')
+          ? COLLECTION_7777
+          : COLLECTION_8888,
+        ownerAddress: 'EQD_test_owner_address',
+        initialized: true,
+      };
+    }),
+    getCollateralSignal: jest.fn().mockImplementation(async (signalId: string) => ({
+      signalId,
+      nftAccountId: '7777001',
+      nftAddress: 'EQD_nft_7777001',
+      assetType: 'TON',
+      signalAmount: '1',
+      isActive: true,
+      createdAt: new Date(),
+    })),
+  };
+
   beforeEach(() => {
     adapter = createCoinRabbitAdapter({
       affiliateId: 'test-affiliate',
       chainId: 1,
+      chainGateway,
     });
   });
 
@@ -292,15 +323,15 @@ describe('Lending Adapter (CoinRabbit)', () => {
         const longId = '7777' + '0'.repeat(100);
         const identity = await adapter.resolveBorrowerIdentity(longId);
 
-        // Should still be valid if starts with valid prefix
-        expect(identity.isValid).toBe(true);
+        expect(identity.isValid).toBe(false);
+        expect(identity.verificationStatus).toBe('invalid');
       });
 
       test('handles special characters in ID', async () => {
         const identity = await adapter.resolveBorrowerIdentity('7777001-special');
 
-        // Should extract numeric portion
-        expect(identity.isValid).toBe(true);
+        expect(identity.isValid).toBe(false);
+        expect(identity.verificationStatus).toBe('invalid');
         expect(identity.nftAccountId).toBe('7777001-special');
       });
 

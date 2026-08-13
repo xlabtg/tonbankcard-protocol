@@ -18,6 +18,7 @@ import type {
   LendingProtocolIntent,
   BorrowerIdentity,
   LoanIntentResponse,
+  CoinRabbitChainGateway,
 } from '../../backend/adapters/types';
 
 describe('Lending Protocol Integration (Phase 4)', () => {
@@ -27,12 +28,41 @@ describe('Lending Protocol Integration (Phase 4)', () => {
   const VALID_ACCOUNT_8888 = '8888042';
   const COLLECTION_7777 = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le';
   const COLLECTION_8888 = 'EQBedyJo8oEKJEmGUaxPELXM8dQUzXN3QYx7e8WBsfu9aVQ7';
+  const chainGateway: CoinRabbitChainGateway = {
+    getLatestSnapshot: jest.fn().mockImplementation(async (chainId: number) => ({
+      chainId,
+      blockSeqno: 200,
+      observedAt: new Date(),
+    })),
+    getNFTAccount: jest.fn().mockImplementation(async (nftAccountId: string) => {
+      if (!/^(7777|8888)\d+$/.test(nftAccountId)) return undefined;
+      return {
+        nftAccountId,
+        nftAddress: `EQD_nft_${nftAccountId}`,
+        collectionAddress: nftAccountId.startsWith('7777')
+          ? COLLECTION_7777
+          : COLLECTION_8888,
+        ownerAddress: 'EQD_owner',
+        initialized: true,
+      };
+    }),
+    getCollateralSignal: jest.fn().mockImplementation(async (signalId: string) => ({
+      signalId,
+      nftAccountId: VALID_ACCOUNT_7777,
+      nftAddress: `EQD_nft_${VALID_ACCOUNT_7777}`,
+      assetType: 'TON',
+      signalAmount: '1',
+      isActive: true,
+      createdAt: new Date(),
+    })),
+  };
 
   beforeEach(() => {
     adapter = createCoinRabbitAdapter({
       affiliateId: 'phase4-test',
       chainId: 1,
       collateralContractAddress: 'EQD_test_collateral_contract',
+      chainGateway,
     });
   });
 
