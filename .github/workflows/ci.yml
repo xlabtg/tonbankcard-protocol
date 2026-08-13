@@ -479,6 +479,14 @@ jobs:
           HUSKY: '0'
         run: npm install --ignore-scripts
 
+      - name: Install deployment-tooling dependencies
+        env:
+          HUSKY: '0'
+        run: npm ci --ignore-scripts
+
+      - name: Type-check deployment tooling
+        run: npm run deploy:check
+
       - name: Build payment-hub contracts
         working-directory: contracts/payment-hub
         run: npm run build

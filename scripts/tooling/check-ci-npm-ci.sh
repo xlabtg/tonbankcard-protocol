@@ -78,15 +78,24 @@ scan_workflow() {
     command="$(trim_yaml_value "${BASH_REMATCH[1]}")"
     lockfile="${REPO_ROOT}/${working_directory}/package-lock.json"
 
-    if [ ! -f "${lockfile}" ]; then
+    if [ ! -f "${lockfile}" ] ||
+       ! git -C "${REPO_ROOT}" ls-files --error-unmatch -- "${lockfile#"${REPO_ROOT}/"}" >/dev/null 2>&1; then
+      continue
+    fi
+
+    if [[ ! "${command}" =~ ^npm[[:space:]]+install([[:space:]].*)?$ ]]; then
+      locked_npm_steps=$((locked_npm_steps + 1))
+      continue
+    fi
+
+    # Global tool installations do not consume the workspace lockfile, so
+    # replacing them with npm ci would be both misleading and invalid.
+    if [[ " ${command} " =~ [[:space:]]-g[[:space:]] ]] ||
+       [[ " ${command} " =~ [[:space:]]--global[[:space:]] ]]; then
       continue
     fi
 
     locked_npm_steps=$((locked_npm_steps + 1))
-
-    if [[ ! "${command}" =~ ^npm[[:space:]]+install([[:space:]].*)?$ ]]; then
-      continue
-    fi
 
     location="${rel}:${line_no}"
     install_args="${command#npm install}"

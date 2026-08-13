@@ -1,149 +1,81 @@
-# TONBANKCARD Protocol — Deployment Scripts
+# Deployment tooling
 
-**Issue Reference:** [#74 — Improvements / Phase 14 — Production Readiness](https://github.com/xlabtg/tonbankcard-protocol/issues/74)
+The tooling is deliberately split into an offline preparation step and an
+independent on-chain verification step. It never accepts a mnemonic/private key
+and never broadcasts a transaction.
 
-This directory contains deterministic deployment and verification scripts for the TONBANKCARD protocol smart contracts.
+## 1. Compile and prepare init cells
 
----
-
-## Overview
-
-| Script | Purpose |
-|--------|---------|
-| `deploy.ts` | Deterministic contract deployment script |
-| `verify.ts` | Post-deployment verification script |
-
-All scripts are designed to be:
-- **Deterministic** — same inputs produce same deployment manifests
-- **Auditable** — every deployment is recorded in a manifest file
-- **Verifiable** — deployed contracts can be verified against source code
-
----
-
-## Prerequisites
-
-```bash
-# Node.js 18+
-node --version  # >= 18.0.0
-
-# Install dependencies
-npm ci
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your deployment configuration
-```
-
----
-
-## Deployment (deploy.ts)
-
-### Usage
-
-```bash
-# Dry run (no actual deployment, validate configuration only)
-npx ts-node scripts/deploy/deploy.ts --dry-run
-
-# Deploy to testnet
-npx ts-node scripts/deploy/deploy.ts --network testnet
-
-# Deploy to mainnet (requires confirmation)
-npx ts-node scripts/deploy/deploy.ts --network mainnet --confirm
-```
-
-### What It Does
-
-1. Loads contract build artifacts
-2. Validates configuration (admin key, risk authority, etc.)
-3. Calculates expected contract addresses deterministically
-4. Deploys contracts in correct dependency order
-5. Writes deployment manifest to `deployments/{network}/{timestamp}.json`
-6. Verifies deployed contracts match source code
-
-### Deployment Order
-
-Contracts must be deployed in this order (dependencies first):
-
-```
-1. AccountLocks     (no dependencies)
-2. NFTAccountResolver (no dependencies)
-3. AccountStateMachine (depends on AccountLocks)
-4. PaymentHub        (depends on AccountLocks, NFTAccountResolver, AccountStateMachine)
-5. MerchantPaymentHub (depends on AccountLocks + NFTAccountResolver — its init() takes the
-   account-locks and resolver addresses; the resolver registers NFT accounts via
-   ResolveNFTOwner, without which every payment fails. Issues #363, #397)
-6. CollateralSignal  (depends on NFTAccountResolver — its init() takes the resolver address; Issue #364)
-7. PublicCollateralLookup (depends on CollateralSignal)
-```
-
----
-
-## Verification (verify.ts)
-
-### Usage
-
-```bash
-# Verify against a deployment manifest
-npx ts-node scripts/deploy/verify.ts --manifest deployments/mainnet/2026-03-19T12-00-00Z.json
-
-# Verify a specific contract address
-npx ts-node scripts/deploy/verify.ts --address EQAjH... --contract PaymentHub
-```
-
-### What It Verifies
-
-1. Contract code hash matches compiled source
-2. Contract state is initialized correctly
-3. Admin addresses match deployment configuration
-4. Invariants I1–I7 are structurally satisfied (code inspection)
-
----
-
-## Deployment Manifest Format
-
-Each deployment creates a manifest in `deployments/{network}/{timestamp}.json`:
+Compile every contract with the compiler versions frozen for the B1/B2 cycle.
+Export each compiled code cell and fully encoded init-data cell as a single-root
+BOC. Create an operator-local input file (do not commit ceremony values):
 
 ```json
-{
-  "version": "1.0.0",
-  "network": "mainnet",
-  "timestamp": "2026-03-19T12:00:00Z",
-  "commit": "abc1234",
-  "deployer": "EQA...",
-  "contracts": {
-    "PaymentHub": {
-      "address": "EQA...",
-      "codeHash": "abc123...",
-      "deployTx": "tx_hash...",
-      "deployBlock": 123456
+[
+  {
+    "contract": "PaymentHub",
+    "codeBoc": "te6cckEBAQEA...",
+    "dataBoc": "te6cckEBAQEA...",
+    "workchain": 0,
+    "initParameters": {
+      "admin": "EQ..."
     }
-  },
-  "configuration": {
-    "adminAddress": "EQA...",
-    "riskAuthority": "EQA...",
-    "lendingAdapter": null
   }
-}
+]
 ```
 
----
+`codeBoc` and `dataBoc` are compiler/wrapper outputs. Keeping init encoding in
+the generated Blueprint/Tact wrapper avoids duplicating contract-specific state
+layouts in this security-sensitive script.
 
-## Security Checklist Before Deployment
+## 2. Build unsigned deploy BOCs
 
-- [ ] All pre-production fixes applied (see `docs/audit/FULL_SYSTEM_AUDIT.md` F-CRIT-1 to F-CRIT-5)
-- [ ] Admin key stored in hardware wallet (Ledger/Trezor)
-- [ ] risk_authority key stored in hardware wallet
-- [ ] Deployment key is cold storage (air-gapped)
-- [ ] Test deployment on testnet successful
-- [ ] Verification script passes on testnet deployment
-- [ ] Security audit completed
-- [ ] Deployment manifest reviewed by second person
+```bash
+ADMIN_ADDRESS=EQ... \
+RISK_AUTHORITY_ADDRESS=EQ... \
+npx ts-node scripts/deploy/deploy.ts \
+  --network testnet \
+  --artefacts /secure/path/artefacts.json \
+  --output deployments/testnet/2026-08-13T00-00-00Z.json
+```
 
----
+For mainnet add `--confirm`. The command writes deterministic addresses, code
+and init-data hashes, a serialized StateInit, and an unsigned external-in deploy
+message carrying StateInit. It does not sign, fund, or send anything. The
+operator wraps each `unsignedStateInitBoc` as a funded internal transfer in the
+deployment multi-sig ceremony; broadcasting the external BOC directly is not a
+deployment transaction.
 
-## References
+The prepared manifest has `artefactType = "prepared"` and
+`verificationBlock = null`. After every multi-sig deployment is confirmed, add
+each `deployTx`/`deployBlock`, choose a masterchain block at or after all deploy
+transactions, set it as `verificationBlock`, and change `artefactType` to
+`"live"`. Only then can the verifier attest the manifest.
 
-- **Deployment Matrix:** [`docs/deployments/network-matrix.md`](../../docs/deployments/network-matrix.md)
-- **Key Management:** [`docs/security/KEY_MANAGEMENT.md`](../../docs/security/KEY_MANAGEMENT.md)
-- **Audit Freeze Metadata:** [`audit/FREEZE_METADATA.md`](../../audit/FREEZE_METADATA.md)
-- **Full System Audit:** [`docs/audit/FULL_SYSTEM_AUDIT.md`](../../docs/audit/FULL_SYSTEM_AUDIT.md)
+## 3. Verify on-chain state
+
+```bash
+TON_RPC_ENDPOINT=https://your-archive-endpoint/jsonRPC \
+TONCENTER_API_KEY=... \
+npx ts-node scripts/deploy/verify.ts \
+  --manifest deployments/testnet/2026-08-13T00-00-00Z.json
+```
+
+The endpoint must support the `seqno` parameter for block-pinned
+`getAddressInformation` and `runGetMethod`, and must return `block_id.seqno`.
+A latest-state-only endpoint is
+rejected. Verification checks:
+
+- manifest JSON schema and `artefactType = live`;
+- active contract state at the requested block;
+- on-chain code cell hash;
+- complete on-chain data cell hash (the init-state attestation);
+- admin/risk-authority getter where the production contract exposes one;
+- existing forbidden source-pattern checks.
+
+Any missing field, unsupported historical query, block mismatch, hash mismatch,
+getter failure, or unknown source mapping makes `allPassed` false and exits
+non-zero. The report is written beside the manifest as `*.verification.json`.
+
+Dry-run placeholders are not valid live manifests. The canonical schema is
+[`docs/deployments/manifest.schema.json`](../../docs/deployments/manifest.schema.json).
