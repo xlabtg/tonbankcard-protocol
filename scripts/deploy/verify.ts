@@ -1,20 +1,12 @@
-/**
- * TONBANKCARD Protocol — Post-Deployment Verification Script
- *
- * Issue Reference: #74 — Improvements / Phase 14 — Production Readiness
- *
- * Verifies deployed contracts match source code and are correctly initialized.
- *
- * Usage:
- *   npx ts-node scripts/deploy/verify.ts --manifest deployments/mainnet/2026-03-19T12-00-00Z.json
- *   npx ts-node scripts/deploy/verify.ts --address EQAjH... --contract PaymentHub
- */
-
+/** Block-pinned, fail-closed verification of TON deployment manifests. */
+import { Address, Cell, contractAddress, loadStateInit } from '@ton/core';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DEPLOYABLE_CONTRACTS } from './deployable-contracts';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import {
+  type DeploymentManifest,
+  validateDeploymentManifest,
+} from './manifest';
 
 export interface VerificationResult {
   contract: string;
@@ -29,244 +21,187 @@ export interface VerificationReport {
   timestamp: string;
   network: string;
   manifestFile: string;
+  verificationBlock: number;
   allPassed: boolean;
   results: VerificationResult[];
 }
 
-// ─── Verification Checks ─────────────────────────────────────────────────────
-
-/**
- * Verify that a deployed contract's code hash matches the compiled source.
- *
- * In a real deployment, this would:
- * 1. Load the compiled contract from build/ directory
- * 2. Calculate SHA-256 hash of the compiled cell
- * 3. Query the deployed contract's code hash from the blockchain
- * 4. Compare the two hashes
- */
-export function verifyCodeHash(
-  address: string,
-  _expectedHash: string,
-  contractName: string
-): { passed: boolean; actual: string } {
-  // Placeholder: real implementation would query TON blockchain
-  // const client = new TonClient({ endpoint: rpcEndpoint });
-  // const codeCell = await client.getContractState(Address.parse(address));
-  // const actualHash = codeCell.code?.hash().toString('hex') ?? '';
-
-  console.log(`  🔍 ${contractName}: Verifying code hash at ${address.slice(0, 20)}...`);
-
-  // Fail closed until the blockchain query above is implemented. A dry-run
-  // marker is not evidence that deployed bytecode matches the local source.
-  return {
-    passed: false,
-    actual: '[Requires blockchain query - run after real deployment]',
-  };
+export interface ChainContractState {
+  block: number;
+  state: 'active' | 'uninitialized' | 'frozen';
+  code: Cell | null;
+  data: Cell | null;
+  adminAddress: string | null;
 }
 
-/**
- * Verify contract invariants are structurally enforced.
- *
- * This performs a static analysis of the contract source to confirm:
- * - No admin fund access functions exist
- * - NFT ownership checks are present in transfer paths
- * - Lock checks are present in transfer paths
- */
-function verifyInvariants(contractName: string): { passed: boolean; details: string[] } {
-  const details: string[] = [];
+export interface ChainStateProvider {
+  getContractState(address: Address, block: number, contractName: string): Promise<ChainContractState>;
+}
 
-  // Mainnet B2 scope (docs/deployments/B2-mainnet/IMMUTABILITY_VERIFICATION.md §3).
-  // Each contract resolves to one OR MORE source files; every file is scanned.
-  // Sourced from the single deployable-contract manifest so non-production FunC
-  // stubs (CONTRACTS-H3, #260) can never re-enter the verification set.
+interface RpcResult {
+  status: string;
+  code?: string;
+  data?: string;
+  block_id?: { seqno?: number };
+}
+
+interface RpcStackResult {
+  exit_code: number;
+  stack: Array<[string, unknown]>;
+  block_id?: { seqno?: number };
+}
+
+export class TonJsonRpcStateProvider implements ChainStateProvider {
+  constructor(private readonly endpoint: string, private readonly apiKey?: string) {}
+
+  async getContractState(address: Address, block: number, contractName: string): Promise<ChainContractState> {
+    const result = await this.call<RpcResult>('getAddressInformation', {
+      address: address.toString(), seqno: block,
+    });
+    const returnedBlock = result.block_id?.seqno;
+    if (!Number.isSafeInteger(returnedBlock)) throw new Error('TON endpoint did not attest a block seqno');
+
+    const code = result.code ? Cell.fromBase64(result.code) : null;
+    const data = result.data ? Cell.fromBase64(result.data) : null;
+    return {
+      block: returnedBlock!,
+      state: result.status === 'active' ? 'active' : result.status === 'frozen' ? 'frozen' : 'uninitialized',
+      code,
+      data,
+      adminAddress: await this.queryAuthority(address, block, contractName),
+    };
+  }
+
+  private async call<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    const response = await fetch(this.endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(this.apiKey ? { 'X-API-Key': this.apiKey } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method, params,
+      }),
+    });
+    if (!response.ok) throw new Error(`TON endpoint returned HTTP ${response.status}`);
+    const payload = await response.json() as { result?: T; error?: { message?: string } };
+    if (!payload.result) throw new Error(payload.error?.message ?? 'TON endpoint returned no result');
+    return payload.result;
+  }
+
+  private async queryAuthority(address: Address, block: number, contractName: string): Promise<string | null> {
+    const getter = contractName === 'AccountLocks' ? 'get_risk_authority' :
+      new Set(['PaymentHub', 'MerchantPaymentHub']).has(contractName) ? 'getAdmin' :
+      new Set(['ProposalRegistry', 'SnapshotVerifier', 'TransparencyRegistry']).has(contractName) ? 'getDeployer' : null;
+    if (!getter) return null;
+    const result = await this.call<RpcStackResult>('runGetMethod', {
+      address: address.toString(), method: getter, stack: [], seqno: block,
+    });
+    if (result.exit_code !== 0) throw new Error(`${getter} failed with exit code ${result.exit_code}`);
+    if (result.block_id?.seqno !== block) throw new Error(`${getter} was not executed at requested block ${block}`);
+    const entry = result.stack[0];
+    if (!entry || (entry[0] !== 'slice' && entry[0] !== 'cell')) throw new Error(`${getter} returned no address`);
+    const encoded = typeof entry[1] === 'string' ? entry[1] :
+      (entry[1] as { bytes?: string } | undefined)?.bytes;
+    if (!encoded) throw new Error(`${getter} returned an unsupported stack value`);
+    return Cell.fromBase64(encoded).beginParse().loadAddress().toString();
+  }
+}
+
+function verifyInvariants(contractName: string): string[] {
   const files = DEPLOYABLE_CONTRACTS[contractName];
-  if (!files || files.length === 0) {
-    details.push(`FAIL: Source file mapping not found for ${contractName}`);
-    return { passed: false, details };
-  }
-
-  const existingFiles = files.filter(f => fs.existsSync(f));
-  if (existingFiles.length === 0) {
-    details.push(`FAIL: No source files exist on disk for ${contractName}: ${files.join(', ')}`);
-    return { passed: false, details };
-  }
-
-  const source = existingFiles.map(f => fs.readFileSync(f, 'utf8')).join('\n');
-
-  // Check absence of dangerous patterns
-  const forbiddenPatterns = [
-    { pattern: /adminWithdraw/i, description: 'Admin withdrawal function' },
-    { pattern: /emergencyDrain/i, description: 'Emergency drain function' },
-    { pattern: /forcedTransfer/i, description: 'Forced transfer function' },
-    { pattern: /set_code\s*\(/i, description: 'Code upgrade function' },
-  ];
-
-  let passed = true;
-  for (const { pattern, description } of forbiddenPatterns) {
-    if (pattern.test(source)) {
-      details.push(`FAIL: Found forbidden pattern: ${description}`);
-      passed = false;
-    }
-  }
-
-  if (passed) {
-    details.push('No forbidden admin fund patterns found');
-  }
-
-  return { passed, details };
+  if (!files?.length) return [`Source mapping not found for ${contractName}`];
+  const repoRoot = path.resolve(__dirname, '../..');
+  const existing = files.map(file => path.resolve(repoRoot, file)).filter(file => fs.existsSync(file));
+  if (!existing.length) return [`No mapped source exists for ${contractName}`];
+  const source = existing.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+  const forbidden = [/adminWithdraw/i, /emergencyDrain/i, /forcedTransfer/i, /set_code\s*\(/i];
+  return forbidden.filter(pattern => pattern.test(source)).map(pattern => `Forbidden source pattern: ${pattern}`);
 }
 
-// ─── Main Verification ───────────────────────────────────────────────────────
-
-export function verifyFromManifest(manifestPath: string): VerificationReport {
-  if (!fs.existsSync(manifestPath)) {
-    console.error(`❌ Manifest file not found: ${manifestPath}`);
-    process.exit(1);
-  }
-
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  console.log(`\n📋 Verifying deployment manifest: ${manifestPath}`);
-  console.log(`   Network:    ${manifest.network}`);
-  console.log(`   Timestamp:  ${manifest.timestamp}`);
-  console.log(`   Commit:     ${manifest.commit}`);
-
-  const report: VerificationReport = {
-    timestamp: new Date().toISOString(),
-    network: manifest.network,
-    manifestFile: manifestPath,
-    allPassed: true,
-    results: [],
-  };
+export async function verifyManifest(
+  manifest: DeploymentManifest,
+  manifestFile: string,
+  provider: ChainStateProvider,
+): Promise<VerificationReport> {
+  validateDeploymentManifest(manifest, 'live');
+  const block = manifest.verificationBlock;
+  if (block === null) throw new Error('Live manifest requires verificationBlock');
+  const results: VerificationResult[] = [];
 
   for (const [contractName, deployment] of Object.entries(manifest.contracts)) {
-    const dep = deployment as { address: string; codeHash: string };
-    console.log(`\n  Contract: ${contractName}`);
-    console.log(`  Address:  ${dep.address}`);
-
-    const errors: string[] = [];
-
-    // 1. Verify code hash
-    const { passed: hashPassed, actual } = verifyCodeHash(
-      dep.address,
-      dep.codeHash,
-      contractName
-    );
-
-    // 2. Verify invariants via source analysis
-    const { passed: invariantsPassed, details } = verifyInvariants(contractName);
-
-    details.forEach(d => console.log(`    ${d.startsWith('FAIL') ? '❌' : '✅'} ${d}`));
-
-    if (!invariantsPassed) {
-      errors.push(...details.filter(d => d.startsWith('FAIL')));
-    }
-
-    if (!hashPassed) {
-      errors.push(`On-chain verification is not implemented: ${actual}`);
-    }
-
-    const result: VerificationResult = {
-      contract: contractName,
-      address: dep.address,
-      codeHashMatch: hashPassed,
-      stateValid: false, // Fail closed until checked against the blockchain
-      adminAddressMatch: false, // Fail closed until checked against the blockchain
-      errors,
-    };
-
-    report.results.push(result);
-
-    if (
-      errors.length > 0 ||
-      !hashPassed ||
-      !invariantsPassed ||
-      !result.stateValid ||
-      !result.adminAddressMatch
-    ) {
-      report.allPassed = false;
-    }
-  }
-
-  return report;
-}
-
-function printReport(report: VerificationReport): void {
-  console.log('\n\n═══════════════════════════════════════');
-  console.log('  VERIFICATION REPORT');
-  console.log('═══════════════════════════════════════');
-  console.log(`  Network:    ${report.network}`);
-  console.log(`  Manifest:   ${report.manifestFile}`);
-  console.log(`  Verified:   ${report.timestamp}`);
-  console.log('───────────────────────────────────────');
-
-  for (const result of report.results) {
-    const icon = result.errors.length === 0 ? '✅' : '❌';
-    console.log(`  ${icon} ${result.contract.padEnd(25)} ${result.address.slice(0, 20)}...`);
-  }
-
-  console.log('───────────────────────────────────────');
-  if (report.allPassed) {
-    console.log('  ✅ All verifications PASSED');
-  } else {
-    console.log('  ❌ Some verifications FAILED — review above');
-  }
-  console.log('═══════════════════════════════════════\n');
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
-function main(): void {
-  console.log('🔍 TONBANKCARD Protocol Verification Script');
-  console.log('============================================');
-
-  const args = process.argv.slice(2);
-
-  let manifestPath: string | undefined;
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--manifest') {
-      manifestPath = args[++i];
-    }
-  }
-
-  if (!manifestPath) {
-    // Find most recent manifest
-    const networks = ['mainnet', 'testnet'];
-    for (const network of networks) {
-      const dir = path.join('deployments', network);
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir)
-          .filter(f => f.endsWith('.json'))
-          .sort()
-          .reverse();
-        if (files.length > 0) {
-          manifestPath = path.join(dir, files[0]);
-          console.log(`\nUsing most recent manifest: ${manifestPath}`);
-          break;
-        }
+    const errors = verifyInvariants(contractName);
+    try {
+      const stateInit = loadStateInit(Cell.fromBase64(deployment.stateInitBoc).beginParse());
+      const compiledCodeHash = stateInit.code?.hash().toString('hex') ?? '';
+      const compiledDataHash = stateInit.data?.hash().toString('hex') ?? '';
+      if (compiledCodeHash !== deployment.codeHash) errors.push('Manifest codeHash does not match stateInitBoc');
+      if (compiledDataHash !== deployment.dataHash) errors.push('Manifest dataHash does not match stateInitBoc');
+      const compiledAddress = contractAddress(deployment.workchain, stateInit);
+      if (!compiledAddress.equals(Address.parse(deployment.address))) {
+        errors.push('Manifest address does not match stateInitBoc');
       }
+    } catch (error) {
+      errors.push(`Invalid compiled StateInit: ${(error as Error).message}`);
     }
+    if (deployment.deployBlock !== undefined && deployment.deployBlock > block) {
+      errors.push(`Verification block ${block} precedes deploy block ${deployment.deployBlock}`);
+    }
+    let codeHashMatch = false;
+    let stateValid = false;
+    let adminAddressMatch = false;
+    try {
+      const chain = await provider.getContractState(Address.parse(deployment.address), block, contractName);
+      if (chain.block !== block) errors.push(`Endpoint returned block ${chain.block}; requested block ${block}`);
+      if (chain.state !== 'active') errors.push(`Contract state is ${chain.state}, expected active`);
+      const actualCodeHash = chain.code?.hash().toString('hex') ?? '';
+      codeHashMatch = actualCodeHash === deployment.codeHash;
+      if (!codeHashMatch) errors.push(`Code hash mismatch: expected ${deployment.codeHash}, actual ${actualCodeHash || 'missing'}`);
+      const actualDataHash = chain.data?.hash().toString('hex') ?? '';
+      const dataHashMatch = actualDataHash === deployment.dataHash;
+      if (!dataHashMatch) errors.push(`Init state hash mismatch: expected ${deployment.dataHash}, actual ${actualDataHash || 'missing'}`);
+      stateValid = chain.block === block && chain.state === 'active' && dataHashMatch;
+
+      const expectedAdmin = deployment.initParameters.admin ?? deployment.initParameters.risk_authority;
+      if (typeof expectedAdmin === 'string') {
+        adminAddressMatch = chain.adminAddress !== null &&
+          Address.parse(chain.adminAddress).equals(Address.parse(expectedAdmin));
+        if (!adminAddressMatch) errors.push(`Admin address mismatch: expected ${expectedAdmin}, actual ${chain.adminAddress ?? 'unavailable'}`);
+      } else {
+        adminAddressMatch = true;
+      }
+    } catch (error) {
+      errors.push(`On-chain query failed: ${(error as Error).message}`);
+    }
+    results.push({ contract: contractName, address: deployment.address, codeHashMatch, stateValid, adminAddressMatch, errors });
   }
 
-  if (!manifestPath) {
-    console.error('❌ No deployment manifest found. Run deployment first.');
-    console.error('   Usage: npx ts-node scripts/deploy/verify.ts --manifest <path>');
-    process.exit(1);
-  }
+  return {
+    timestamp: new Date().toISOString(), network: manifest.network, manifestFile,
+    verificationBlock: block, allPassed: results.every(result => result.errors.length === 0), results,
+  };
+}
 
-  const report = verifyFromManifest(manifestPath);
-  printReport(report);
+export async function verifyFromManifest(manifestPath: string, provider?: ChainStateProvider): Promise<VerificationReport> {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as DeploymentManifest;
+  validateDeploymentManifest(manifest, 'live');
+  const endpoint = process.env.TON_RPC_ENDPOINT ??
+    (manifest.network === 'mainnet' ? 'https://toncenter.com/api/v2/jsonRPC' : 'https://testnet.toncenter.com/api/v2/jsonRPC');
+  return verifyManifest(manifest, manifestPath, provider ?? new TonJsonRpcStateProvider(endpoint, process.env.TONCENTER_API_KEY));
+}
 
-  // Write verification report
-  const reportPath = manifestPath.replace('.json', '.verification.json');
-  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
-  console.log(`📄 Verification report written: ${reportPath}`);
-
-  if (!report.allPassed) {
-    process.exit(1);
-  }
+async function main(): Promise<void> {
+  const index = process.argv.indexOf('--manifest');
+  if (index < 0 || !process.argv[index + 1]) throw new Error('Usage: verify.ts --manifest <manifest.json>');
+  const manifestPath = process.argv[index + 1];
+  const report = await verifyFromManifest(manifestPath);
+  const output = manifestPath.replace(/\.json$/, '.verification.json');
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, JSON.stringify(report, null, 2));
+  console.log(`Verification report: ${output}`);
+  if (!report.allPassed) process.exitCode = 1;
 }
 
 if (require.main === module) {
-  main();
+  main().catch(error => { console.error(`Verification failed: ${(error as Error).message}`); process.exitCode = 1; });
 }

@@ -1,21 +1,22 @@
 /**
- * TONBANKCARD Protocol — Deterministic Deployment Script
+ * Builds deterministic, unsigned TON deployment messages.
  *
- * Issue Reference: #74 — Improvements / Phase 14 — Production Readiness
- *
- * This script deploys all TONBANKCARD smart contracts in the correct order.
- * It produces a deterministic deployment manifest for audit and verification.
- *
- * Usage:
- *   npx ts-node scripts/deploy/deploy.ts --dry-run
- *   npx ts-node scripts/deploy/deploy.ts --network testnet
- *   npx ts-node scripts/deploy/deploy.ts --network mainnet --confirm
+ * No private key is accepted and no network request is made. The generated
+ * external-in BOC contains StateInit and is intended to be wrapped/signed by
+ * the deployment multi-sig described in the B1/B2 ceremony runbooks.
  */
-
+import { beginCell, Cell, contractAddress, external, storeMessage, storeStateInit } from '@ton/core';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
+import {
+  type ContractDeployment,
+  type DeploymentManifest,
+  validateDeploymentManifest,
+} from './manifest';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+export type { ContractDeployment, DeploymentManifest } from './manifest';
+export { validateDeploymentManifest } from './manifest';
 
 export interface DeploymentConfig {
   network: 'testnet' | 'mainnet';
@@ -27,262 +28,137 @@ export interface DeploymentConfig {
   confirm: boolean;
 }
 
-interface ContractDeployment {
-  address: string;
-  codeHash: string;
-  deployTx: string;
-  deployBlock: number;
+export interface UnsignedDeployment extends ContractDeployment {}
+
+interface ArtefactInput {
+  contract: string;
+  codeBoc: string;
+  dataBoc: string;
+  workchain?: number;
+  initParameters: Record<string, unknown>;
 }
 
-interface DeploymentManifest {
-  version: string;
-  network: string;
-  timestamp: string;
-  commit: string;
-  deployer: string;
-  contracts: Record<string, ContractDeployment>;
-  configuration: {
-    adminAddress: string;
-    riskAuthority: string;
-    lendingAdapter: string | null;
-  };
+function cellFromBase64(value: string, label: string): Cell {
+  const cells = Cell.fromBoc(Buffer.from(value, 'base64'));
+  if (cells.length !== 1) throw new Error(`${label} must contain exactly one root cell`);
+  return cells[0];
 }
 
-// ─── Configuration ───────────────────────────────────────────────────────────
-
-const PROTOCOL_VERSION = '1.0.0';
-
-const NETWORK_CONFIGS = {
-  testnet: {
-    rpcEndpoint: 'https://testnet.toncenter.com/api/v2/jsonRPC',
-  },
-  mainnet: {
-    rpcEndpoint: 'https://toncenter.com/api/v2/jsonRPC',
-  },
-};
-
-// Deployment order: dependencies first
-const DEPLOYMENT_ORDER = [
-  'AccountLocks',
-  'NFTAccountResolver',
-  'AccountStateMachine',
-  'PaymentHub',
-  'MerchantPaymentHub',
-  'CollateralSignal',
-  // PublicCollateralLookup is excluded until hasActiveCollateral reads
-  // Account Locks state instead of returning a stubbed default.
-] as const;
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function parseArgs(): Partial<DeploymentConfig> {
-  const args = process.argv.slice(2);
-  const config: Partial<DeploymentConfig> = {
-    dryRun: false,
-    confirm: false,
-  };
-
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--dry-run':
-        config.dryRun = true;
-        break;
-      case '--network':
-        config.network = args[++i] as 'testnet' | 'mainnet';
-        break;
-      case '--confirm':
-        config.confirm = true;
-        break;
+export function buildUnsignedDeployment(
+  _contractName: string,
+  codeInput: Cell | Buffer | string,
+  dataInput: Cell | Buffer | string,
+  workchain: number,
+): UnsignedDeployment {
+  if (workchain !== 0 && workchain !== -1) throw new Error('workchain must be 0 or -1');
+  const normalize = (value: Cell | Buffer | string, label: string): Cell => {
+    if (typeof value === 'string') return cellFromBase64(value, label);
+    if (Buffer.isBuffer(value)) {
+      const roots = Cell.fromBoc(value);
+      if (roots.length !== 1) throw new Error(`${label} must contain exactly one root cell`);
+      return roots[0];
     }
-  }
+    // Serialize across package boundaries; instanceof is unsafe when workspaces
+    // contain compatible but physically distinct @ton/core installations.
+    return Cell.fromBoc(value.toBoc())[0];
+  };
+  const code = normalize(codeInput, 'code');
+  const data = normalize(dataInput, 'data');
+  const init = { code, data };
+  const address = contractAddress(workchain, init);
+  const stateInit = beginCell().store(storeStateInit(init)).endCell();
+  const message = beginCell().store(storeMessage(external({ to: address, init }))).endCell();
 
-  return config;
-}
-
-function loadEnvConfig(): Partial<DeploymentConfig> {
   return {
-    adminAddress: process.env.ADMIN_ADDRESS ?? '',
-    riskAuthority: process.env.RISK_AUTHORITY_ADDRESS ?? '',
-    lendingAdapter: process.env.LENDING_ADAPTER_ADDRESS ?? null,
+    address: address.toString({ testOnly: false, bounceable: true }),
+    codeHash: code.hash().toString('hex'),
+    dataHash: data.hash().toString('hex'),
+    stateInitBoc: stateInit.toBoc().toString('base64'),
+    unsignedStateInitBoc: message.toBoc().toString('base64'),
+    workchain,
+    initParameters: {},
   };
 }
 
-function validateConfig(config: DeploymentConfig): void {
-  const errors: string[] = [];
-
-  if (!config.network) {
-    errors.push('--network is required (testnet|mainnet)');
-  }
-
-  if (!config.dryRun) {
-    if (!config.adminAddress) {
-      errors.push('ADMIN_ADDRESS environment variable is required');
-    }
-    if (!config.riskAuthority) {
-      errors.push('RISK_AUTHORITY_ADDRESS environment variable is required');
-    }
-    if (config.network === 'mainnet' && !config.confirm) {
-      errors.push('--confirm flag is required for mainnet deployment');
-    }
-  }
-
-  if (errors.length > 0) {
-    console.error('❌ Configuration errors:');
-    errors.forEach(e => console.error(`  - ${e}`));
-    process.exit(1);
-  }
+function currentCommit(): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 }
 
-function getCurrentCommit(): string {
-  try {
-    const result = require('child_process')
-      .execSync('git rev-parse HEAD', { encoding: 'utf8' })
-      .trim();
-    return result;
-  } catch {
-    return 'unknown';
+function readArgs(): Record<string, string | boolean> {
+  const result: Record<string, string | boolean> = {};
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const key = args[i];
+    if (!key.startsWith('--')) continue;
+    const next = args[i + 1];
+    if (next && !next.startsWith('--')) result[key.slice(2)] = args[++i];
+    else result[key.slice(2)] = true;
   }
+  return result;
 }
 
-function writeManifest(manifest: DeploymentManifest, network: string): string {
-  const dir = path.join('deployments', network);
-  fs.mkdirSync(dir, { recursive: true });
+function prepareManifest(inputPath: string, network: 'testnet' | 'mainnet'): DeploymentManifest {
+  const inputs = JSON.parse(fs.readFileSync(inputPath, 'utf8')) as ArtefactInput[];
+  if (!Array.isArray(inputs) || inputs.length === 0) throw new Error('artefacts must be a non-empty array');
 
-  const timestamp = manifest.timestamp.replace(/[:.]/g, '-');
-  const filename = path.join(dir, `${timestamp}.json`);
-
-  fs.writeFileSync(filename, JSON.stringify(manifest, null, 2));
-  return filename;
-}
-
-// ─── Pre-deployment Checks ───────────────────────────────────────────────────
-
-function checkPreDeploymentRequirements(): void {
-  console.log('\n📋 Pre-deployment checklist:');
-
-  const checks = [
-    {
-      name: 'Critical fixes applied (F-CRIT-1 to F-CRIT-5)',
-      description: 'See docs/audit/FULL_SYSTEM_AUDIT.md',
-      // In a real deployment, this would check the contract source for absence of test-only functions
-      passed: true,
-    },
-    {
-      name: 'Security audit completed',
-      description: 'External audit must be on file before mainnet',
-      passed: process.env.SECURITY_AUDIT_COMPLETED === 'true',
-    },
-    {
-      name: 'Build artifacts present',
-      description: 'Run "npx blueprint build" before deploying',
-      passed: fs.existsSync('build'),
-    },
-  ];
-
-  let allPassed = true;
-  for (const check of checks) {
-    const icon = check.passed ? '✅' : '⚠️ ';
-    console.log(`  ${icon} ${check.name}`);
-    if (!check.passed) {
-      console.log(`     → ${check.description}`);
-      allPassed = false;
-    }
+  const contracts: Record<string, ContractDeployment> = {};
+  for (const input of inputs) {
+    if (!input.contract || contracts[input.contract]) throw new Error('contract names must be present and unique');
+    const prepared = buildUnsignedDeployment(
+      input.contract,
+      cellFromBase64(input.codeBoc, `${input.contract}.codeBoc`),
+      cellFromBase64(input.dataBoc, `${input.contract}.dataBoc`),
+      input.workchain ?? 0,
+    );
+    prepared.initParameters = input.initParameters;
+    contracts[input.contract] = prepared;
   }
-
-  if (!allPassed) {
-    console.warn('\n⚠️  Some pre-deployment checks did not pass.');
-    console.warn('   Review the above items before deploying to mainnet.\n');
-  }
-}
-
-// ─── Deployment Simulation ───────────────────────────────────────────────────
-
-function simulateDeployment(config: DeploymentConfig): DeploymentManifest {
-  console.log('\n🔵 Simulating deployment (dry run)...\n');
 
   const manifest: DeploymentManifest = {
-    version: PROTOCOL_VERSION,
-    network: config.network,
+    version: '1.0.0',
+    manifestType: 'tonbankcard.deploy.manifest',
+    artefactType: 'prepared',
+    network,
     timestamp: new Date().toISOString(),
-    commit: getCurrentCommit(),
-    deployer: config.adminAddress || '[DRY RUN - not set]',
-    contracts: {},
+    commit: currentCommit(),
     configuration: {
-      adminAddress: config.adminAddress || '[DRY RUN - not set]',
-      riskAuthority: config.riskAuthority || '[DRY RUN - not set]',
-      lendingAdapter: config.lendingAdapter,
+      adminAddress: process.env.ADMIN_ADDRESS ?? '',
+      riskAuthority: process.env.RISK_AUTHORITY_ADDRESS ?? '',
+      lendingAdapter: process.env.LENDING_ADAPTER_ADDRESS ?? null,
     },
+    verificationBlock: null,
+    contracts,
   };
-
-  for (const contractName of DEPLOYMENT_ORDER) {
-    console.log(`  📦 [DRY RUN] Would deploy: ${contractName}`);
-    manifest.contracts[contractName] = {
-      address: `[DRY RUN] EQA...${contractName.toLowerCase()}`,
-      codeHash: `[DRY RUN] hash_${contractName.toLowerCase()}`,
-      deployTx: `[DRY RUN] tx_${contractName.toLowerCase()}`,
-      deployBlock: 0,
-    };
-  }
-
+  validateDeploymentManifest(manifest, 'prepared');
   return manifest;
 }
 
-/**
- * Build the manifest for a requested deployment mode.
- *
- * Live deployment is deliberately blocked until the Blueprint transaction
- * construction/signing path is implemented. Falling back to a simulated
- * manifest for a non-dry-run request makes an operator-facing production
- * command appear successful even though no transaction was sent.
- */
-export function createDeploymentManifest(config: DeploymentConfig): DeploymentManifest {
-  if (!config.dryRun) {
+function main(): void {
+  const args = readArgs();
+  const network = args.network;
+  const input = args.artefacts;
+  const output = args.output;
+  if ((network !== 'testnet' && network !== 'mainnet') || typeof input !== 'string' ||
+      typeof output !== 'string') {
     throw new Error(
-      'Live deployment is not implemented. Use --dry-run for simulation; ' +
-      'do not create a production manifest until Blueprint deployment and signing are available.',
+      'Usage: deploy.ts --network testnet|mainnet --artefacts <input.json> ' +
+      '--output <manifest.json>',
     );
   }
+  if (network === 'mainnet' && args.confirm !== true) {
+    throw new Error('--confirm is required for mainnet artefact preparation');
+  }
 
-  return simulateDeployment(config);
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
-async function main(): Promise<void> {
-  console.log('🚀 TONBANKCARD Protocol Deployment Script');
-  console.log('==========================================');
-
-  const argConfig = parseArgs();
-  const envConfig = loadEnvConfig();
-
-  const config: DeploymentConfig = {
-    network: argConfig.network ?? 'testnet',
-    adminAddress: envConfig.adminAddress ?? '',
-    riskAuthority: envConfig.riskAuthority ?? '',
-    lendingAdapter: envConfig.lendingAdapter ?? null,
-    rpcEndpoint: NETWORK_CONFIGS[argConfig.network ?? 'testnet'].rpcEndpoint,
-    dryRun: argConfig.dryRun ?? false,
-    confirm: argConfig.confirm ?? false,
-  };
-
-  console.log(`\nNetwork:  ${config.network}`);
-  console.log(`Dry run:  ${config.dryRun}`);
-  console.log(`Commit:   ${getCurrentCommit()}`);
-
-  validateConfig(config);
-  checkPreDeploymentRequirements();
-
-  const manifest = createDeploymentManifest(config);
-  console.log('\n✅ Dry run complete. No contracts were deployed.');
-
-  const manifestPath = writeManifest(manifest, config.network);
-  console.log(`\n📄 Deployment manifest written: ${manifestPath}`);
-
+  const manifest = prepareManifest(input, network);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, JSON.stringify(manifest, null, 2));
+  console.log(`Prepared ${Object.keys(manifest.contracts).length} unsigned deploy BOC(s): ${output}`);
+  console.log('No transaction was signed or broadcast. Wrap each StateInit in a funded internal multi-sig transfer.');
 }
 
 if (require.main === module) {
-  main().catch(err => {
-    console.error('❌ Deployment failed:', err);
-    process.exit(1);
-  });
+  try { main(); } catch (error) {
+    console.error(`Deployment preparation failed: ${(error as Error).message}`);
+    process.exitCode = 1;
+  }
 }

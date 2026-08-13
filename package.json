@@ -18,7 +18,18 @@
     "build": "bash scripts/build-all.sh",
     "test": "bash scripts/test-all.sh",
     "smoke": "bash scripts/smoke-test.sh",
+    "deploy:check": "tsc --noEmit -p tsconfig.deploy.json",
     "demo": "npm --prefix examples/merchant-demo start",
     "demo:install": "npm --prefix examples/merchant-demo install"
+  },
+  "dependencies": {
+    "@ton/core": "^0.56.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   }
 }

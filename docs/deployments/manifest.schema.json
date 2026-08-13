@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TONBANKCARD deployment tooling manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "manifestType", "artefactType", "network", "timestamp", "commit", "configuration", "verificationBlock", "contracts"],
+  "properties": {
+    "version": { "const": "1.0.0" },
+    "manifestType": { "const": "tonbankcard.deploy.manifest" },
+    "artefactType": { "enum": ["dry-run", "prepared", "live"] },
+    "network": { "enum": ["testnet", "mainnet"] },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adminAddress", "riskAuthority", "lendingAdapter"],
+      "properties": {
+        "adminAddress": { "type": "string", "minLength": 1 },
+        "riskAuthority": { "type": "string", "minLength": 1 },
+        "lendingAdapter": { "type": ["string", "null"] }
+      }
+    },
+    "verificationBlock": { "type": ["integer", "null"], "minimum": 0 },
+    "contracts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["address", "codeHash", "dataHash", "stateInitBoc", "unsignedStateInitBoc", "workchain", "initParameters"],
+        "properties": {
+          "address": { "type": "string", "pattern": "^(EQ|UQ|kQ|0Q)[A-Za-z0-9_-]{46}$" },
+          "codeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "dataHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "stateInitBoc": { "type": "string", "minLength": 1 },
+          "unsignedStateInitBoc": { "type": "string", "minLength": 1 },
+          "workchain": { "type": "integer", "minimum": -1, "maximum": 0 },
+          "initParameters": { "type": "object" },
+          "deployTx": { "type": "string", "minLength": 1 },
+          "deployBlock": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "artefactType": { "const": "prepared" } } },
+      "then": { "properties": { "verificationBlock": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "artefactType": { "const": "dry-run" } } },
+      "then": { "properties": { "verificationBlock": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "artefactType": { "const": "live" } } },
+      "then": { "properties": { "verificationBlock": { "type": "integer", "minimum": 0 } } }
+    }
+  ]
+}
