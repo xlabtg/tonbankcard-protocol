@@ -6,10 +6,10 @@
  *
  * Usage:
  *   npm run governance:snapshot                    # Snapshot at current block
- *   npm run governance:snapshot --block 12345678   # Snapshot at specific block
+ *   npm run governance:snapshot -- --block=12345678 # Snapshot at specific block
  */
 
-import { Address, TonClient } from '@ton/ton';
+import { Address, Cell } from '@ton/core';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -50,6 +50,8 @@ interface GovernanceSnapshot {
     created_at: string;
     tool_version: string;
     governance_type: string;
+    complete: boolean;
+    failed_indices: number[];
   };
 }
 
@@ -61,18 +63,133 @@ interface NFTData {
   individual_content: any;
 }
 
+interface SnapshotProvider {
+  getLatestBlock(): Promise<number>;
+  getNFTAddress(collectionAddress: Address, index: number, block: number): Promise<Address>;
+  getNFTData(nftAddress: Address, block: number): Promise<NFTData>;
+}
+
+type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
+type RpcStackEntry = [string, unknown];
+interface RpcStackResult {
+  exit_code: number;
+  stack: RpcStackEntry[];
+  block_id?: { seqno?: number };
+}
+
+/** JSON-RPC provider whose get-method reads are attested at one masterchain seqno. */
+class TonJsonRpcSnapshotProvider implements SnapshotProvider {
+  constructor(
+    private readonly endpoint: string,
+    private readonly apiKey?: string,
+    private readonly fetcher: Fetch = fetch,
+  ) {}
+
+  async getLatestBlock(): Promise<number> {
+    const result = await this.call<{ last?: { seqno?: number } }>('getMasterchainInfo', {});
+    const seqno = result.last?.seqno;
+    if (!Number.isSafeInteger(seqno) || seqno! <= 0) {
+      throw new Error('TON endpoint did not return a valid masterchain seqno');
+    }
+    return seqno!;
+  }
+
+  async getNFTAddress(collectionAddress: Address, index: number, block: number): Promise<Address> {
+    const result = await this.runMethod(collectionAddress, 'get_nft_address_by_index', [
+      ['num', `0x${BigInt(index).toString(16)}`],
+    ], block);
+    return this.readAddress(result.stack[0], 'get_nft_address_by_index address');
+  }
+
+  async getNFTData(nftAddress: Address, block: number): Promise<NFTData> {
+    const result = await this.runMethod(nftAddress, 'get_nft_data', [], block);
+    if (result.stack.length < 5) throw new Error('get_nft_data returned an incomplete TEP-62 stack');
+    return {
+      init: this.readNumber(result.stack[0], 'init') !== 0n,
+      index: this.toSafeNumber(this.readNumber(result.stack[1], 'index'), 'index'),
+      collection_address: this.readAddress(result.stack[2], 'collection address'),
+      owner_address: this.readOptionalAddress(result.stack[3], 'owner address'),
+      individual_content: this.readCell(result.stack[4], 'individual content'),
+    };
+  }
+
+  private async runMethod(
+    address: Address, method: string, stack: RpcStackEntry[], block: number,
+  ): Promise<RpcStackResult> {
+    const result = await this.call<RpcStackResult>('runGetMethod', {
+      address: address.toString(), method, stack, seqno: block,
+    });
+    if (result.exit_code !== 0) throw new Error(`${method} failed with exit code ${result.exit_code}`);
+    if (result.block_id?.seqno !== block) {
+      throw new Error(`${method} was not executed at requested block ${block}`);
+    }
+    if (!Array.isArray(result.stack)) throw new Error(`${method} returned no stack`);
+    return result;
+  }
+
+  private async call<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    const response = await this.fetcher(this.endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(this.apiKey ? { 'X-API-Key': this.apiKey } : {}),
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    });
+    if (!response.ok) throw new Error(`TON endpoint returned HTTP ${response.status}`);
+    const payload = await response.json() as { result?: T; error?: { message?: string } };
+    if (payload.result === undefined) {
+      throw new Error(payload.error?.message ?? 'TON endpoint returned no result');
+    }
+    return payload.result;
+  }
+
+  private readNumber(entry: RpcStackEntry | undefined, label: string): bigint {
+    if (!entry || entry[0] !== 'num') throw new Error(`get_nft_data returned invalid ${label}`);
+    const raw = typeof entry[1] === 'string'
+      ? entry[1]
+      : (entry[1] as { number?: string } | undefined)?.number;
+    if (!raw) throw new Error(`get_nft_data returned invalid ${label}`);
+    try { return BigInt(raw); } catch { throw new Error(`get_nft_data returned invalid ${label}`); }
+  }
+
+  private toSafeNumber(value: bigint, label: string): number {
+    const result = Number(value);
+    if (!Number.isSafeInteger(result) || result < 0) throw new Error(`get_nft_data returned invalid ${label}`);
+    return result;
+  }
+
+  private readAddress(entry: RpcStackEntry | undefined, label: string): Address {
+    const cell = this.readCell(entry, label);
+    const address = cell.beginParse().loadAddress();
+    if (!address) throw new Error(`TON getter returned empty ${label}`);
+    return address;
+  }
+
+  private readOptionalAddress(entry: RpcStackEntry | undefined, label: string): Address | null {
+    const cell = this.readCell(entry, label);
+    return cell.beginParse().loadMaybeAddress();
+  }
+
+  private readCell(entry: RpcStackEntry | undefined, label: string): Cell {
+    if (!entry || (entry[0] !== 'cell' && entry[0] !== 'slice')) {
+      throw new Error(`TON getter returned invalid ${label}`);
+    }
+    const encoded = typeof entry[1] === 'string'
+      ? entry[1]
+      : (entry[1] as { bytes?: string } | undefined)?.bytes;
+    if (!encoded) throw new Error(`TON getter returned invalid ${label}`);
+    try { return Cell.fromBase64(encoded); } catch { throw new Error(`TON getter returned invalid ${label}`); }
+  }
+}
+
 // ==================== SNAPSHOT CREATION ====================
 
 class DiamondSnapshotTool {
-  private client: TonClient;
-  private config: GovernanceConfig;
+  private readonly provider: SnapshotProvider;
 
-  constructor(config: GovernanceConfig) {
-    this.config = config;
-    this.client = new TonClient({
-      endpoint: config.tonApiEndpoint,
-      apiKey: config.tonApiKey,
-    });
+  constructor(private readonly config: GovernanceConfig, provider?: SnapshotProvider) {
+    this.provider = provider ?? new TonJsonRpcSnapshotProvider(config.tonApiEndpoint, config.tonApiKey);
   }
 
   /**
@@ -97,57 +214,26 @@ class DiamondSnapshotTool {
   /**
    * Calculate NFT item address from collection and index
    *
-   * Note: This is a simplified implementation.
-   * In production, use the collection contract's get_nft_address_by_index method.
+   * Execute the collection's get_nft_address_by_index at the pinned block.
    */
-  private async getNFTAddress(collectionAddress: Address, index: number): Promise<Address> {
-    // Call collection contract's get_nft_address_by_index
-    // This is collection-specific and depends on the NFT collection implementation
-
-    // Placeholder: In production, execute get method call:
-    // const result = await this.client.runMethod(collectionAddress, 'get_nft_address_by_index', [
-    //   { type: 'int', value: BigInt(index) }
-    // ]);
-    // return result.stack.readAddress();
-
-    // For now, throw an error indicating this needs implementation
-    throw new Error(
-      'NFT address calculation not implemented. ' +
-      'This requires calling the collection contract\'s get_nft_address_by_index method. ' +
-      'Please implement based on the actual TBC Diamonds collection contract.'
-    );
+  private async getNFTAddress(collectionAddress: Address, index: number, block: number): Promise<Address> {
+    return this.provider.getNFTAddress(collectionAddress, index, block);
   }
 
   /**
    * Get NFT data at specific block
    */
-  private async getNFTData(nftAddress: Address, blockNumber?: number): Promise<NFTData> {
-    // Call NFT contract's get_nft_data method
-    // This is a standard TEP-62 method
-
-    // Placeholder: In production, execute get method call:
-    // const result = await this.client.runMethod(nftAddress, 'get_nft_data', [], blockNumber);
-    //
-    // Parse result:
-    // const init = result.stack.readBoolean();
-    // const index = result.stack.readNumber();
-    // const collection_address = result.stack.readAddress();
-    // const owner_address = result.stack.readAddressOpt();
-    // const individual_content = result.stack.readCell();
-    //
-    // return { init, index, collection_address, owner_address, individual_content };
-
-    throw new Error(
-      'NFT data query not implemented. ' +
-      'This requires calling each NFT item\'s get_nft_data method. ' +
-      'Please implement based on TON SDK and the actual deployed NFT collection.'
-    );
+  private async getNFTData(nftAddress: Address, blockNumber: number): Promise<NFTData> {
+    return this.provider.getNFTData(nftAddress, blockNumber);
   }
 
   /**
    * Create snapshot at specific block
    */
-  async createSnapshot(blockNumber?: number): Promise<GovernanceSnapshot> {
+  async createSnapshot(
+    blockNumber?: number,
+    options: { allowPartial?: boolean } = {},
+  ): Promise<GovernanceSnapshot> {
     console.log('Creating TBC Diamonds governance snapshot...');
 
     // Validate configuration
@@ -164,13 +250,15 @@ class DiamondSnapshotTool {
     let snapshotBlock: number;
     let snapshotTime: string;
 
-    if (blockNumber) {
+    if (blockNumber !== undefined) {
+      if (!Number.isSafeInteger(blockNumber) || blockNumber <= 0) {
+        throw new Error('Snapshot block must be a positive integer masterchain seqno');
+      }
       snapshotBlock = blockNumber;
       snapshotTime = new Date().toISOString(); // Approximate
       console.log(`Using specified block: ${snapshotBlock}`);
     } else {
-      // Get current block (placeholder - implement using TON API)
-      snapshotBlock = 0; // TODO: Get latest block from TON API
+      snapshotBlock = await this.provider.getLatestBlock();
       snapshotTime = new Date().toISOString();
       console.log(`Using current block: ${snapshotBlock}`);
     }
@@ -179,14 +267,22 @@ class DiamondSnapshotTool {
     console.log(`Querying ${this.config.totalSupply} Diamond NFTs...`);
     const voters: VoterSnapshot[] = [];
     const ownerSet = new Set<string>();
+    const failedIndices: number[] = [];
 
     for (let index = 0; index < this.config.totalSupply; index++) {
       try {
         // Get NFT address
-        const nftAddress = await this.getNFTAddress(collectionAddress, index);
+        const nftAddress = await this.getNFTAddress(collectionAddress, index, snapshotBlock);
 
         // Get NFT data at snapshot block
         const nftData = await this.getNFTData(nftAddress, snapshotBlock);
+
+        if (nftData.index !== index) {
+          throw new Error(`get_nft_data returned index ${nftData.index}`);
+        }
+        if (!nftData.collection_address.equals(collectionAddress)) {
+          throw new Error('get_nft_data returned another collection address');
+        }
 
         // Only include initialized NFTs with owners
         if (nftData.init && nftData.owner_address) {
@@ -209,7 +305,12 @@ class DiamondSnapshotTool {
         }
       } catch (error) {
         console.error(`Error querying Diamond #${index}:`, error);
-        // Continue with other NFTs
+        failedIndices.push(index);
+        if (!options.allowPartial) {
+          throw new Error(
+            `Snapshot incomplete at Diamond #${index}: ${(error as Error).message}`,
+          );
+        }
       }
     }
 
@@ -226,6 +327,8 @@ class DiamondSnapshotTool {
         created_at: new Date().toISOString(),
         tool_version: '1.0.0',
         governance_type: 'advisory-non-binding',
+        complete: failedIndices.length === 0,
+        failed_indices: failedIndices,
       },
     };
 
@@ -348,6 +451,9 @@ class DiamondSnapshotTool {
     if (!snapshot.metadata || snapshot.metadata.governance_type !== 'advisory-non-binding') {
       warnings.push('Governance type should be "advisory-non-binding"');
     }
+    if (snapshot.metadata?.complete !== true || snapshot.metadata.failed_indices?.length > 0) {
+      errors.push('Snapshot is partial or completeness is not attested');
+    }
 
     return {
       valid: errors.length === 0,
@@ -369,6 +475,9 @@ async function main() {
     // Parse options
     const blockArg = args.find((arg) => arg.startsWith('--block='));
     const blockNumber = blockArg ? parseInt(blockArg.split('=')[1], 10) : undefined;
+    if (blockArg && (!Number.isSafeInteger(blockNumber) || blockNumber! <= 0)) {
+      throw new Error('--block must be a positive integer masterchain seqno');
+    }
 
     const configArg = args.find((arg) => arg.startsWith('--config='));
     const configPath = configArg ? configArg.split('=')[1] : undefined;
@@ -378,7 +487,8 @@ async function main() {
 
     // Create snapshot
     const tool = new DiamondSnapshotTool(config);
-    const snapshot = await tool.createSnapshot(blockNumber);
+    const allowPartial = args.includes('--allow-partial');
+    const snapshot = await tool.createSnapshot(blockNumber, { allowPartial });
 
     // Save snapshot
     tool.saveSnapshot(snapshot);
@@ -441,4 +551,12 @@ if (require.main === module) {
 }
 
 // Export for testing
-export { DiamondSnapshotTool, GovernanceSnapshot, VoterSnapshot, GovernanceConfig };
+export {
+  DiamondSnapshotTool,
+  GovernanceSnapshot,
+  VoterSnapshot,
+  GovernanceConfig,
+  NFTData,
+  SnapshotProvider,
+  TonJsonRpcSnapshotProvider,
+};

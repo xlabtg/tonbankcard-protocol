@@ -12,6 +12,28 @@ permissions:
   contents: read
 
 jobs:
+  test-governance-snapshot:
+    name: Test governance snapshot utility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install test dependencies
+        working-directory: tests/tooling
+        run: npm ci
+
+      - name: Test block-pinned snapshot queries
+        run: npm --prefix tests/tooling exec -- jest --runInBand --config tests/governance/jest.snapshot.config.js
+
   infra-verify:
     name: Infra (port binding and compose hardening)
     runs-on: ubuntu-latest
