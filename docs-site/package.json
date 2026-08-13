@@ -15,10 +15,12 @@
     "write-heading-ids": "docusaurus write-heading-ids",
     "typecheck": "tsc",
     "gen:sdk-api": "typedoc",
+    "test:image-safety": "node --test tests/image-safety.test.mjs",
     "prebuild": "npm run gen:sdk-api"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",
+    "@docusaurus/mdx-loader": "file:vendor/docusaurus-mdx-loader",
     "@docusaurus/preset-classic": "3.10.2",
     "@docusaurus/theme-mermaid": "3.10.2",
     "@mdx-js/react": "^3.0.0",

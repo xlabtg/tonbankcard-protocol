@@ -41,6 +41,10 @@ jobs:
         working-directory: docs-site
         run: npm run gen:sdk-api
 
+      - name: Verify image parsing stays disabled
+        working-directory: docs-site
+        run: npm run test:image-safety
+
       - name: Build documentation site
         working-directory: docs-site
         run: npm run build
