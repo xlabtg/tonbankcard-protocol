@@ -19,6 +19,8 @@
     "test": "bash scripts/test-all.sh",
     "smoke": "bash scripts/smoke-test.sh",
     "deploy:check": "tsc --noEmit -p tsconfig.deploy.json",
+    "governance:snapshot": "ts-node scripts/governance/snapshot.ts create",
+    "governance:verify-snapshot": "ts-node scripts/governance/snapshot.ts verify",
     "demo": "npm --prefix examples/merchant-demo start",
     "demo:install": "npm --prefix examples/merchant-demo install"
   },
