@@ -1,13 +1,15 @@
 name: Dependency Audit
 
 # Purpose:
-#   * Run `npm audit --audit-level=high` for every npm workspace listed
-#     in issue #131 (D5) on every push and pull request to `main`.
-#   * Fail the build if any High or Critical vulnerability is reported.
+#   * Run `npm audit` for every shipped, locked npm workspace on every push
+#     and pull request to `main`.
+#   * Fail on High/Critical findings everywhere except docs-site. Docusaurus
+#     currently pulls image-size@2.0.2 with two High advisories and no patched
+#     release, so docs-site temporarily blocks Critical findings while
+#     CHECK423-M2 / #429 tracks removal of that exception.
 #   * Verify that committed `package-lock.json` files are not tampered
-#     with — `npm ci --dry-run` succeeds only when the lockfile matches
-#     `package.json` exactly. This protects the audit from a malicious
-#     in-CI lockfile rewrite.
+#     with — regenerating package-lock-only must produce no diff. This
+#     protects the audit from a malicious in-CI lockfile rewrite.
 #
 # References:
 #   * issue #131 §"Functional Requirements"
@@ -36,18 +38,35 @@ jobs:
         package:
           - name: sdk
             path: sdk
+            audit_level: high
           - name: api
             path: api
+            audit_level: high
           - name: indexer
             path: backend/indexer
+            audit_level: high
           - name: wallet-ui
             path: wallet-ui
+            audit_level: high
           - name: mobile
             path: mobile
+            audit_level: high
+          - name: mobile-app
+            path: mobile-app
+            audit_level: high
           - name: dashboard
             path: dashboard
+            audit_level: high
           - name: faucet
             path: scripts/faucet
+            audit_level: high
+          # Temporary exception: @docusaurus/mdx-loader depends on the latest
+          # image-size (2.0.2), whose High advisories have no upstream fix.
+          # Critical findings still fail immediately; CHECK423-M2 / #429 owns the
+          # High-severity exception and migration/patch decision.
+          - name: docs-site
+            path: docs-site
+            audit_level: critical
     steps:
       - uses: actions/checkout@v6
 
@@ -71,6 +90,6 @@ jobs:
           npm install --package-lock-only --no-audit --no-fund
           diff -u /tmp/lock.expected.json package-lock.json
 
-      - name: npm audit (high+critical)
+      - name: npm audit (${{ matrix.package.audit_level }}+)
         working-directory: ${{ matrix.package.path }}
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=${{ matrix.package.audit_level }}
