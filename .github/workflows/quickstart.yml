@@ -88,7 +88,7 @@ jobs:
           fi
 
   full-setup:
-    name: Full one-command setup (install-only)
+    name: Full one-command setup
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
