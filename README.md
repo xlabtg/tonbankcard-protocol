@@ -137,7 +137,7 @@ tonbankcard-protocol/
 
 ### Payment-Block Contracts (Awaiting B2 Mainnet Ceremony)
 
-The Phase 2 protocol contracts (`AccountLocks`, `NFTAccountResolver`, `AccountStateMachine`, `PaymentHub`, `MerchantPaymentHub`, `CollateralSignal`, `PublicCollateralLookup`) plus the governance group are scheduled for mainnet deployment under engagement **[B2-mainnet](docs/deployments/B2-mainnet/ENGAGEMENT.md)**.
+The Phase 2 protocol contracts (`AccountLocks`, `AccountStateMachine`, `PaymentHub`, `MerchantPaymentHub`, `CollateralSignal`) plus the governance group are scheduled for mainnet deployment under engagement **[B2-mainnet](docs/deployments/B2-mainnet/ENGAGEMENT.md)**. `NFTAccountResolver` and `PublicCollateralLookup` remain explicitly non-deployable until their tracked production blockers are resolved (#426 and #298 respectively).
 
 - **Runbook:** [`scripts/deploy/MAINNET_RUNBOOK.md`](scripts/deploy/MAINNET_RUNBOOK.md) — step-by-step deploy ceremony
 - **Multi-sig discipline:** [`docs/deployments/B2-mainnet/MULTISIG_CEREMONY.md`](docs/deployments/B2-mainnet/MULTISIG_CEREMONY.md) — ≥ 2-of-3 hardware-wallet signers, distinct from B1 testnet

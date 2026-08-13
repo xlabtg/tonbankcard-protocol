@@ -12,9 +12,11 @@
  * (0xDEAD) on every message, and the resolver stub returns dummy/empty owner data.
  *
  * To make sure neither file can be deployed or verified as a production artefact,
- * the deployable contract map below resolves the PaymentHub and NFTAccountResolver
- * to their production Tact sources ONLY. PublicCollateralLookup is also excluded
- * until it reads Account Locks state instead of returning a stubbed result. The
+ * the deployable contract map below resolves PaymentHub to its production Tact
+ * source. NFTAccountResolver is excluded until its Tact placeholder implements
+ * an authenticated asynchronous TEP-62 request/callback flow and has Sandbox
+ * coverage (Issue #426). PublicCollateralLookup is also excluded until it reads
+ * Account Locks state instead of returning a stubbed result. The
  * non-production sources are kept on disk for audit reference but are listed
  * explicitly in {@link NON_PRODUCTION_STUBS} and excluded from every
  * deployment/verification manifest that imports this module.
@@ -31,7 +33,6 @@
  */
 export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
   AccountLocks: ['contracts/payments/account-locks.fc'],
-  NFTAccountResolver: ['contracts/nft-resolver/nft_account_resolver.tact'],
   AccountStateMachine: ['contracts/payment-hub/account-state.tact'],
   PaymentHub: ['contracts/payments/PaymentHub.tact'],
   MerchantPaymentHub: ['contracts/MerchantPaymentHub.tact'],
@@ -49,6 +50,8 @@ export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
  *   logic lands.
  * - `nft_account_resolver.fc` is a stateless read-only reference that rejects
  *   empty/addr_none owners so a dummy owner can never pass an ownership check.
+ * - `nft_account_resolver.tact` still returns the NFT address as its owner and
+ *   does not implement authenticated asynchronous TEP-62 resolution (Issue #426).
  * - `PublicCollateralLookup.*` is a non-production collateral lookup because it
  *   does not yet query Account Locks state.
  * - `MerchantPaymentHubHarness.tact` (Issue #363) is a TEST-ONLY harness that
@@ -59,6 +62,7 @@ export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
 export const NON_PRODUCTION_STUBS: string[] = [
   'contracts/payments/payment-hub.fc',
   'contracts/nft-resolver/nft_account_resolver.fc',
+  'contracts/nft-resolver/nft_account_resolver.tact',
   'contracts/collateral-lookup/PublicCollateralLookup.tact',
   'contracts/collateral-lookup/public-collateral-lookup.fc',
   'contracts/merchant-hub/test/MerchantPaymentHubHarness.tact',

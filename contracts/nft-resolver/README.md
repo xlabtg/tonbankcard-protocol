@@ -6,7 +6,10 @@ This directory contains the NFT Account Resolver smart contract, which provides 
 
 ## Files
 
-- **`nft_account_resolver.tact`** - Tact implementation (production, deployable set)
+- **`nft_account_resolver.tact`** - Tact **non-production placeholder**. It does not
+  yet send `GetNFTData`, authenticate/correlate callbacks, or publish resolved owners
+  to consumers; Issue #426 excludes it from every deployable manifest until that
+  asynchronous flow and its Sandbox security tests are complete.
 - **`nft_account_resolver.fc`** - FunC **non-production reference stub** (audit finding
   [CONTRACTS-H3](../../audit/findings/CONTRACTS-H3-nonfunctional-fc-stubs-shipped.md), #260).
   On-chain TEP-62 owner resolution is an asynchronous cross-contract flow on TON and cannot be
@@ -23,7 +26,14 @@ The NFT Account Resolver links NFT cards to their owners and validates NFT-based
 3. Check account state flags
 4. Prevent unauthorized access
 
-## Key Features
+## Current limitations
+
+Neither source in this directory is a production ownership authority. In particular,
+the Tact placeholder returns `nft_address` from `resolveOwner`, exposes default account
+flags, and leaves `set_payment_hub` as a no-op. Deployment and on-chain integrations
+must remain blocked until the Issue #426 acceptance criteria are implemented.
+
+## Intended Features
 
 - ✅ **Stateless Design**: No mutable state, purely verification logic
 - ✅ **Read-Only**: No fund custody, no transfers, no state changes
@@ -177,6 +187,9 @@ See `tests/nft-resolver/NFTAccountResolver.spec.ts` for comprehensive test suite
 
 ## Deployment
 
+**Blocked by Issue #426.** The commands below are retained only as historical
+development notes and must not be used for testnet or mainnet deployment.
+
 ### Prerequisites
 
 1. TON development environment (FunC compiler, etc.)
@@ -248,5 +261,5 @@ MIT — see [LICENSE](../../LICENSE)
 ---
 
 **Contract Version**: 1.0
-**Status**: Implementation Complete
+**Status**: Non-production placeholder; deployment blocked by Issue #426
 **Last Updated**: 26.12.2025
