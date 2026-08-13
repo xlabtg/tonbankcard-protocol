@@ -126,8 +126,8 @@ These changes harden the reference; the 0xDEAD blocker is **deliberately retaine
 
 **Key difference from FunC version:** Includes explicit reentrancy guard (`self.locked` flag, lines 121, 149–150). Self-transfers handled as no-op with event emission.
 
-**Pre-production hardening (Issue #371 / PC-02 — RESOLVED):** account creation is
-now **write-once**. `receive(msg: InitializeAccount)` previously checked only
+**Pre-production hardening (Issues #371 and #427 — RESOLVED):** account creation
+was first made **write-once**. `receive(msg: InitializeAccount)` previously checked only
 `sender() == self.admin` and then unconditionally wrote `balance`/`owner` for the
 target slot. A malicious or compromised admin could re-initialize an
 already-funded account, reassign `owner` to an attacker-controlled address, and
@@ -142,7 +142,11 @@ unauthenticated `GetAccountStateRequest` query cannot squat an `nft_address` and
 block its legitimate first initialization (a denial-of-service the bare guard
 would otherwise introduce). Regression coverage: a CI grep gate in
 `contracts/payment-hub/non-production-stubs.spec.ts` plus a standalone
-reproduction in `experiments/issue-371-paymenthub-create-once/`.
+reproduction in `experiments/issue-371-paymenthub-create-once/`. Issue #427 then
+removed the test/setup message from the deployable source altogether: create-once
+still let admin mint an arbitrary unbacked balance into every fresh slot. Sandbox
+coverage now submits the former ABI message to the production artifact and proves
+that it is rejected before balance mutation.
 
 #### 2.1.3 Merchant Payment Hub (Tact) — `contracts/MerchantPaymentHub.tact`
 
@@ -1006,7 +1010,7 @@ Every identified threat is mapped to its code-level, architectural, and operatio
 | **Access control bypass** (4.1.5) | CollateralSignal.tact | Test-only `RegisterNFTOwner` removed from the production contract; ownership is registered ONLY via `ResolveNFTOwner`, accepted from the immutable `nft_resolver` (on-chain NFT Account Resolver), and remains write-once (CONTRACTS-M1) (Issue #364) | RESOLVED ✅ (pre-mainnet) — CI regression guard blocks reintroduction |
 | **Access control bypass** (4.1.5) | ProposalRegistry.tact | `SubmitProposal`/`CastVote` confirm ownership asynchronously via a trusted on-chain resolver before recording, failing closed until configured (Issue #248); the resolver/verifier addresses are governed by an M-of-N multi-sig + 7-day timelock + code-hash verification, with a recovery path for misconfiguration (Issue #366) | RESOLVED ✅ (pre-mainnet) — covered by `ProposalRegistry.spec.ts` |
 | **Access control bypass** (4.1.5) | SnapshotVerifier.tact | `RegisterSnapshot` (the governance eligibility-oracle writer consumed by `ProposalRegistry`) verifies `sender() == trusted_indexer`; the slot starts `null` and fails closed until the deployer (governance multi-sig) sets it via deployer-only, rotatable `SetTrustedIndexer`; typed `SetProposalRegistry` is deployer-only + write-once and stores its `registry` payload (Issues #370, #414) | RESOLVED ✅ (pre-mainnet) — covered by `SnapshotVerifier.spec.ts` |
-| **Admin account hijack** (4.1.5) | PaymentHub.tact | `InitializeAccount` is now **write-once** (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`): a compromised admin can no longer re-initialize a funded slot to reassign `owner` and drain it via `TransferInternalRequest`. The account read path (`getAccountOrDefault`) was made side-effect free so a free `GetAccountStateRequest` query cannot squat a slot and DoS its first init (Issue #371 / PC-02) | RESOLVED ✅ (pre-mainnet) — grep gate in `non-production-stubs.spec.ts`; repro in `experiments/issue-371-paymenthub-create-once/` |
+| **Admin account hijack / mint** (4.1.5) | PaymentHub.tact | The account read path is side-effect free (Issue #371), and the test-only `InitializeAccount` message was removed from the deployable contract (Issue #427), so admin can neither overwrite a funded slot nor mint an unbacked fresh balance | RESOLVED ✅ (pre-mainnet) — source gate plus production-artifact sandbox regression in `contracts/payment-hub` |
 
 ### 6.2 Economic Threat Mitigations
 
@@ -1360,8 +1364,8 @@ This section maps each threat to the seven protocol invariants defined in [docs/
 | I3 | ~~Test-only functions allow balance modification without NFT owner signature~~ | `SetAccountBalance` message in MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production; merchant payments debit/credit only via NFT-owner-authorised `MerchantPaymentRequest` |
 | I5 | ~~`SetAccountBalance` can create/destroy funds~~ | MerchantPaymentHub.tact | RESOLVED ✅ (Issue #363) — removed from production contract before mainnet |
 | I6 | ~~FunC Payment Hub does not check Account Locks~~ | `payment-hub.fc` missing `can_send()` call | RESOLVED ✅ (Issue #367, reference level) — `handle_internal_transfer()`/`handle_merchant_payment()` now gate on `can_send()` fed by the `op::apply_account_lock` mirror; `handle_payment_received()` stays open (locked accounts still RECEIVE). Contract is non-deployable (0xDEAD blocker retained); production hub is `PaymentHub.tact` |
-| I1 | ~~`PaymentHub.InitializeAccount` overwrites an existing account's `owner`/`balance`~~ | `PaymentHub.tact` initializer had no "account already exists" guard | RESOLVED ✅ (Issue #371 / PC-02) — `InitializeAccount` is write-once (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`); a re-init of a funded slot reverts, so funds stay controllable only by the original NFT owner |
-| I3 | ~~A compromised admin can re-initialize a funded account, reassign `owner`, then drain it~~ | `PaymentHub.InitializeAccount` (admin-gated) + `TransferInternalRequest` authorizing on `sender() == from_account.owner` | RESOLVED ✅ (Issue #371 / PC-02) — write-once init removes the only admin path to reassign ownership; the account read path was also made side-effect free so a query cannot squat a slot and DoS first init |
+| I1 | ~~`PaymentHub.InitializeAccount` overwrites an existing account's `owner`/`balance`~~ | Former `PaymentHub.tact` initializer | RESOLVED ✅ (Issues #371, #427) — the read path is side-effect free and the initializer no longer exists in production |
+| I3/I5 | ~~A compromised admin can mint an arbitrary fresh balance and transfer it as the chosen owner~~ | Former admin-gated `PaymentHub.InitializeAccount` + normal owner transfer | RESOLVED ✅ (Issue #427) — the message and receiver were removed; the former ABI message fails before mutation |
 
 ---
 
@@ -1389,7 +1393,7 @@ This checklist enables an external auditor to systematically verify the protocol
 - [ ] Verify reentrancy guard (lines 121, 149–150) is correctly implemented
 - [ ] Verify ownership check in `TransferInternalRequest` handler
 - [ ] Confirm self-transfer handled as no-op with event emission
-- [x] **CRITICAL: `InitializeAccount` is create-once (Issue #371 / PC-02)** — RESOLVED ✅: the initializer rejects writes to a live slot (`require(self.accounts.get(msg.nft_address) == null, "Account already initialized")`), so a compromised admin cannot re-initialize a funded account, reassign `owner` and drain it via `TransferInternalRequest` (I1/I3); the account read path (`getAccountOrDefault`) was made side-effect free so a free query cannot squat a slot; grep gate in `non-production-stubs.spec.ts`, repro in `experiments/issue-371-paymenthub-create-once/`
+- [x] **CRITICAL: no production admin account initializer (Issues #371, #427)** — RESOLVED ✅: the account read path is side-effect free and `InitializeAccount` was removed from the deployable source, preventing both overwrite and fresh-slot admin minting; guarded by source and sandbox production-artifact tests in `contracts/payment-hub`
 
 #### Merchant Payment Hub (Tact: `MerchantPaymentHub.tact`)
 
