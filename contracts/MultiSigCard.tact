@@ -21,7 +21,7 @@
 // - No single co-signer can block fund access permanently
 
 // Note: ownership is tracked locally via the `nft_owners` map (populated by the
-// test-only RegisterNFTOwnerMultiSig handler), so no external NFT resolver
+// test-only owner-seeding harness), so no external NFT resolver
 // trait is imported here.
 
 // ============================================
@@ -196,7 +196,7 @@ fun defaultPaymentProposal(): PaymentProposal {
 // MAIN CONTRACT
 // ============================================
 
-contract MultiSigCard {
+trait MultiSigCardBase {
 
     // Storage: NFT address => MultiSigConfig
     multisig_configs: map<Address, MultiSigConfig>;
@@ -209,18 +209,6 @@ contract MultiSigCard {
 
     // Storage: NFT address => owner address (for ownership verification)
     nft_owners: map<Address, Address>;
-
-    // Deployer address — gates the test-only RegisterNFTOwnerMultiSig handler.
-    // INVARIANT I3: deployer cannot bypass the multi-sig flow or move funds.
-    deployer: Address;
-
-    init() {
-        self.multisig_configs = emptyMap();
-        self.proposals = emptyMap();
-        self.approvals = emptyMap();
-        self.nft_owners = emptyMap();
-        self.deployer = sender();
-    }
 
     // ============================================
     // CONFIGURE MULTI-SIG (NFT Owner Only)
@@ -707,24 +695,18 @@ contract MultiSigCard {
         });
     }
 
-    // ============================================
-    // ADMIN FUNCTIONS (FOR TESTING ONLY)
-    // ============================================
-    //
-    // Mitigation for audit finding C-MSC-C1 / cross-cutting X-1: the handler
-    // is now gated behind the deployer recorded at init() and refuses to
-    // overwrite an already-registered owner. It remains test-only and MUST be
-    // removed (or compiled out) before mainnet.
-
-    receive(msg: RegisterNFTOwnerMultiSig) {
-        require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
-        require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
-        self.nft_owners.set(msg.nft_address, msg.owner);
-    }
 }
 
-// Test-only message
-message RegisterNFTOwnerMultiSig {
-    nft_address: Address;
-    owner: Address;
+contract MultiSigCard with MultiSigCardBase {
+    multisig_configs: map<Address, MultiSigConfig>;
+    proposals: map<Int, PaymentProposal>;
+    approvals: map<Int, Bool>;
+    nft_owners: map<Address, Address>;
+
+    init() {
+        self.multisig_configs = emptyMap();
+        self.proposals = emptyMap();
+        self.approvals = emptyMap();
+        self.nft_owners = emptyMap();
+    }
 }

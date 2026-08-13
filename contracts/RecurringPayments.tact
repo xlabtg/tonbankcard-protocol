@@ -140,24 +140,13 @@ fun defaultMandateInfo(): MandateInfo {
 // MAIN CONTRACT
 // ============================================
 
-contract RecurringPayments {
+trait RecurringPaymentsBase {
 
     // Storage: composite key (hash of serialized nft_address and mandate_id) => MandateInfo
     mandates: map<Int, MandateInfo>;
 
     // Storage: NFT address => owner address (for ownership verification)
     nft_owners: map<Address, Address>;
-
-    // Deployer address — gates the test-only RegisterNFTOwnerRecurring handler.
-    // INVARIANT I3: deployer cannot move funds (this contract never custodies
-    // them) or override an existing owner entry.
-    deployer: Address;
-
-    init() {
-        self.mandates = emptyMap();
-        self.nft_owners = emptyMap();
-        self.deployer = sender();
-    }
 
     // ============================================
     // CREATE MANDATE (NFT Owner Only)
@@ -424,24 +413,14 @@ contract RecurringPayments {
         });
     }
 
-    // ============================================
-    // ADMIN FUNCTIONS (FOR TESTING ONLY)
-    // ============================================
-    //
-    // Mitigation for cross-cutting audit finding X-1: the handler is now
-    // gated behind the deployer recorded at init() and refuses to overwrite
-    // an already-registered owner. It remains test-only and MUST be removed
-    // (or compiled out) before mainnet.
-
-    receive(msg: RegisterNFTOwnerRecurring) {
-        require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
-        require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
-        self.nft_owners.set(msg.nft_address, msg.owner);
-    }
 }
 
-// Test-only message
-message RegisterNFTOwnerRecurring {
-    nft_address: Address;
-    owner: Address;
+contract RecurringPayments with RecurringPaymentsBase {
+    mandates: map<Int, MandateInfo>;
+    nft_owners: map<Address, Address>;
+
+    init() {
+        self.mandates = emptyMap();
+        self.nft_owners = emptyMap();
+    }
 }

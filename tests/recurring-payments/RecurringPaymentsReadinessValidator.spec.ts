@@ -579,22 +579,11 @@ describe('checkContractEvidence', () => {
         expect(failures(checkContractEvidence(tampered))).toContain('CT.mandateKey.addition');
     });
 
-    it('flags landing of RP-CH-2 (removal of RegisterNFTOwnerRecurring) without doc update', () => {
-        const tampered = realContract.replace(
-            /receive\(msg:\s*RegisterNFTOwnerRecurring\)/g,
-            'receive(msg: OTHER_HANDLER_REMOVED)',
-        );
+    it('flags reintroduction of RegisterNFTOwnerRecurring in production', () => {
+        const tampered = `${realContract}\nreceive(msg: RegisterNFTOwnerRecurring) {}`;
         expect(failures(checkContractEvidence(tampered))).toContain(
             'CT.testonly.RegisterNFTOwnerRecurring',
         );
-    });
-
-    it('flags removal of the deployer-only guard on the test handler', () => {
-        const tampered = realContract.replace(
-            /require\(sender\(\)\s*==\s*self\.deployer/g,
-            'require(true',
-        );
-        expect(failures(checkContractEvidence(tampered))).toContain('CT.testonly.deployer-guard');
     });
 
     it('flags removal of the ERROR_RP_TOO_EARLY schedule guard', () => {

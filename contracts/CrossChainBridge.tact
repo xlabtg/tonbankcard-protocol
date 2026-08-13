@@ -139,7 +139,7 @@ fun defaultBridgeIntentInfo(): BridgeIntentInfo {
 // MAIN CONTRACT
 // ============================================
 
-contract CrossChainBridge {
+trait CrossChainBridgeBase {
 
     // Storage: composite key => BridgeIntentInfo
     bridge_intents: map<Int, BridgeIntentInfo>;
@@ -149,19 +149,6 @@ contract CrossChainBridge {
 
     // Storage: authorized relayer addresses
     authorized_relayers: map<Address, Bool>;
-
-    // Deployer address — gates the test-only RegisterNFTOwnerBridge /
-    // RegisterRelayer handlers. INVARIANT I3: deployer cannot move funds
-    // (this contract never custodies them) or override an existing owner
-    // entry; it can only seed initial test mappings.
-    deployer: Address;
-
-    init() {
-        self.bridge_intents = emptyMap();
-        self.nft_owners = emptyMap();
-        self.authorized_relayers = emptyMap();
-        self.deployer = sender();
-    }
 
     // ============================================
     // REGISTER BRIDGE INTENT (NFT Owner Only)
@@ -407,37 +394,16 @@ contract CrossChainBridge {
         });
     }
 
-    // ============================================
-    // ADMIN FUNCTIONS (FOR TESTING ONLY)
-    // ============================================
-    //
-    // Mitigation for audit finding C-CCB-C1 / C-CCB-H1 / cross-cutting X-1:
-    // both handlers are now gated behind the deployer recorded at init().
-    // The handlers remain test-only and MUST be removed (or compiled out)
-    // before mainnet — the deployer gate prevents any third party from
-    // poisoning the ownership / relayer maps but does not change the
-    // production-readiness assessment.
-
-    receive(msg: RegisterNFTOwnerBridge) {
-        require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
-        // Write-once: refuse to overwrite a previously registered owner so a
-        // test misconfiguration cannot silently re-bind an NFT to a new owner.
-        require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
-        self.nft_owners.set(msg.nft_address, msg.owner);
-    }
-
-    receive(msg: RegisterRelayer) {
-        require(sender() == self.deployer, "Unauthorized: only deployer (test-only)");
-        self.authorized_relayers.set(msg.relayer, true);
-    }
 }
 
-// Test-only messages
-message RegisterNFTOwnerBridge {
-    nft_address: Address;
-    owner: Address;
-}
+contract CrossChainBridge with CrossChainBridgeBase {
+    bridge_intents: map<Int, BridgeIntentInfo>;
+    nft_owners: map<Address, Address>;
+    authorized_relayers: map<Address, Bool>;
 
-message RegisterRelayer {
-    relayer: Address;
+    init() {
+        self.bridge_intents = emptyMap();
+        self.nft_owners = emptyMap();
+        self.authorized_relayers = emptyMap();
+    }
 }

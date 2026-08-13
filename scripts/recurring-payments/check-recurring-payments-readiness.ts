@@ -681,20 +681,12 @@ export function checkContractEvidence(content: string | null): CheckResult[] {
         detail: 'Confirms RP-CH-1 has not landed yet — see CONTRACT_HARDENING.md §3',
     });
 
-    // Pre-RP-CH-2 marker: test-only handler still present (lines 428–432).
+    // RP-CH-2 / Issue #432: test-only authority seeding is absent from production.
     results.push({
         id: 'CT.testonly.RegisterNFTOwnerRecurring',
-        name: 'RecurringPayments.tact still ships RegisterNFTOwnerRecurring (RP-CH-2 pending)',
-        passed: /receive\(msg:\s*RegisterNFTOwnerRecurring\)/.test(content),
-        detail: 'Confirms RP-CH-2 has not landed yet — see CONTRACT_HARDENING.md §3',
-    });
-
-    // Deployer guard on the test-only handler (X-1 mitigation).
-    results.push({
-        id: 'CT.testonly.deployer-guard',
-        name: 'RecurringPayments.tact gates RegisterNFTOwnerRecurring behind deployer-only sender',
-        passed: /require\(sender\(\)\s*==\s*self\.deployer/.test(content),
-        detail: 'X-1 mitigation per SPECIFICATION.md §7.1',
+        name: 'RecurringPayments.tact excludes RegisterNFTOwnerRecurring (RP-CH-2 landed)',
+        passed: !/RegisterNFTOwnerRecurring/.test(content),
+        detail: 'Issue #432: authority seeding exists only in the non-deployable harness',
     });
 
     // Schedule enforcement still uses ERROR_RP_TOO_EARLY (T-RP-2 closure).

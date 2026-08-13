@@ -16,6 +16,10 @@
 import { describe, it, expect } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  a2VerdictAllowsMainnet,
+  scanPhase4Artifact,
+} from '../../scripts/deploy/phase4-release-gate';
 
 // Repository root, resolved from contracts/payment-hub/.
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -42,13 +46,28 @@ const DEPLOYER_GATED_TEST_ONLY_HANDLERS = [
       'receive(msg: ChangeAccountState)',
     ],
   },
+];
+
+const PHASE4_TEST_ONLY_HANDLERS = [
   {
-    file: 'contracts/RecurringPayments.tact',
-    handlers: ['receive(msg: RegisterNFTOwnerRecurring)'],
+    production: 'contracts/RecurringPayments.tact',
+    harness: 'contracts/phase4/test/RecurringPaymentsHarness.tact',
+    handlers: ['RegisterNFTOwnerRecurring'],
   },
   {
-    file: 'contracts/MultiSigCard.tact',
-    handlers: ['receive(msg: RegisterNFTOwnerMultiSig)'],
+    production: 'contracts/MultiSigCard.tact',
+    harness: 'contracts/phase4/test/MultiSigCardHarness.tact',
+    handlers: ['RegisterNFTOwnerMultiSig'],
+  },
+  {
+    production: 'contracts/CrossChainBridge.tact',
+    harness: 'contracts/phase4/test/CrossChainBridgeHarness.tact',
+    handlers: ['RegisterNFTOwnerBridge', 'RegisterRelayer'],
+  },
+  {
+    production: 'contracts/LendingProtocolCoordinator.tact',
+    harness: 'contracts/phase4/test/LendingProtocolCoordinatorHarness.tact',
+    handlers: ['RegisterNFTOwnerLending'],
   },
 ];
 
@@ -172,6 +191,50 @@ describe('CONTRACTS-LOW I-1: deployable contracts exclude test-only deployer-gat
       expect(source).not.toContain(handler);
     }
     expect(source).not.toContain('Unauthorized: only deployer (test-only)');
+  });
+});
+
+describe('Issue #432: Phase 4 authority seeding is test-harness only', () => {
+  it('removes test-only authority messages and handlers from production sources', () => {
+    for (const { production, handlers } of PHASE4_TEST_ONLY_HANDLERS) {
+      const source = read(production);
+      for (const handler of handlers) {
+        expect(source).not.toContain(handler);
+      }
+      expect(source).not.toContain('(test-only)');
+    }
+  });
+
+  it('keeps authority seeding exclusively in non-deployable harnesses', () => {
+    const manifest = extractLiteral(read(MANIFEST), 'const NON_PRODUCTION_STUBS', '[', ']');
+    for (const { harness, handlers } of PHASE4_TEST_ONLY_HANDLERS) {
+      expect(fs.existsSync(path.join(REPO_ROOT, harness))).toBe(true);
+      expect(manifest).toContain(harness);
+      const source = read(harness);
+      for (const handler of handlers) {
+        expect(source).toContain(`receive(msg: ${handler})`);
+      }
+    }
+  });
+
+  it('keeps mainnet blocked while the canonical A2 verdict is pending', () => {
+    const status = read('docs/security/audits/A2-phase4-contracts/STATUS.md');
+    expect(a2VerdictAllowsMainnet(status)).toBe(false);
+  });
+
+  it('rejects generated harness ABI and bytecode while accepting production artifacts', () => {
+    const artifact = (target: string, contract: string, extension: string) =>
+      path.join(REPO_ROOT, 'contracts/phase4/dist', target, `${target}_${contract}.${extension}`);
+    expect(scanPhase4Artifact(
+      artifact('MultiSigCard', 'MultiSigCard', 'abi'),
+      artifact('MultiSigCard', 'MultiSigCard', 'code.boc'),
+    )).toEqual([]);
+    expect(scanPhase4Artifact(
+      path.join(REPO_ROOT, 'contracts/multisig/dist/MultiSigCardHarness_MultiSigCardHarness.abi'),
+      path.join(REPO_ROOT, 'contracts/multisig/dist/MultiSigCardHarness_MultiSigCardHarness.code.boc'),
+    )).toEqual(expect.arrayContaining([
+      expect.stringContaining('RegisterNFTOwnerMultiSig'),
+    ]));
   });
 });
 

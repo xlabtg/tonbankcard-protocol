@@ -491,6 +491,10 @@ jobs:
         working-directory: contracts/payment-hub
         run: npm run build:deployable
 
+      - name: Build and scan Phase 4 production/harness artifacts
+        working-directory: contracts/payment-hub
+        run: npm run build:phase4
+
       - name: Test payment-hub contract specs
         working-directory: contracts/payment-hub
         run: npm test
@@ -515,10 +519,6 @@ jobs:
           HUSKY: '0'
         run: npm install --ignore-scripts
 
-      - name: Build multisig contract
-        working-directory: contracts/multisig
-        run: npm run build
-
       - name: Test multisig contract specs
         working-directory: contracts/multisig
         run: npm test
@@ -531,10 +531,6 @@ jobs:
         env:
           HUSKY: '0'
         run: npm install --ignore-scripts
-
-      - name: Build lending coordinator contract
-        working-directory: contracts/lending
-        run: npm run build
 
       - name: Test lending coordinator contract specs
         working-directory: contracts/lending

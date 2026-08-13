@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Multi-Signature Card contract with multi-sig gated payment execution path",
   "scripts": {
-    "build": "tact --config ../tact.config.multisig.json",
+    "build": "NODE_PATH=./node_modules node ../phase4/build.js",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch"
