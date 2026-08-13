@@ -261,6 +261,36 @@ describe('Issue #397: MerchantPaymentHub registers accounts only via the trusted
   });
 });
 
+describe('Issue #428: MerchantPaymentHub credits TBC only from immutable settlement', () => {
+  const source = read('contracts/MerchantPaymentHub.tact');
+
+  it('authenticates token provenance through the immutable settlement address', () => {
+    expect(source).toContain('tbc_settlement: Address');
+    expect(source).toContain('receive(msg: TBCDeposit)');
+    expect(source).toContain('sender() == self.tbc_settlement');
+    expect(source).toContain('Unauthorized: only TBC settlement');
+    expect(source).toContain('getTBCSettlement');
+  });
+
+  it('credits only registered accounts with positive deposits', () => {
+    expect(source).toContain('Deposit amount must be positive');
+    expect(source).toContain('NFT account not registered');
+    expect(source).toContain('self.creditBalance(msg.nft_address, msg.amount_tbc)');
+  });
+
+  it('consumes every globally unique deposit id exactly once', () => {
+    expect(source).toContain('processed_deposits: map<Int, Bool>');
+    expect(source).toContain('Deposit already processed');
+    expect(source).toContain('self.processed_deposits.set(msg.deposit_id, true)');
+    expect(source).toContain('isDepositProcessed');
+  });
+
+  it('does not restore an admin balance mutation path', () => {
+    expect(source).not.toContain('receive(msg: SetAccountBalance)');
+    expect(source).not.toContain('self.account_balances.set(msg.nft_address, msg.balance)');
+  });
+});
+
 describe('Issue #364: CollateralSignal binds NFT ownership only via the trusted resolver', () => {
   const PRODUCTION = 'contracts/CollateralSignal.tact';
 
