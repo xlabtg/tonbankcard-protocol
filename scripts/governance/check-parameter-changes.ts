@@ -75,7 +75,7 @@ const PARAMETER_INVENTORY: ParameterRecord[] = [
   { id: 'PP-11', contract: 'payments/PaymentHub.tact',          parameter: 'admin', classification: 'T', recommendedQuorum: 0,  recommendedCooldownHours: 7 * 24 },
   { id: 'PP-12', contract: 'payments/PaymentHub.tact',          parameter: 'ADMIN_TRANSFER_DELAY', classification: 'I', recommendedQuorum: 0,  recommendedCooldownHours: 0 },
   { id: 'PP-13', contract: 'payments/PaymentHub.tact',          parameter: 'whitelisted_collections', classification: 'G', recommendedQuorum: 44, recommendedCooldownHours: 48, proposalCategory: 0 },
-  { id: 'PP-14', contract: 'payments/PaymentHub.tact',          parameter: 'accounts (admin init)', classification: 'G', recommendedQuorum: 22, recommendedCooldownHours: 48, proposalCategory: 0 },
+  { id: 'PP-14', contract: 'payments/PaymentHub.tact',          parameter: 'accounts (no admin init; Issue #427)', classification: 'U', recommendedQuorum: 0, recommendedCooldownHours: 0 },
   { id: 'PP-15', contract: 'MerchantPaymentHub.tact',           parameter: 'admin', classification: 'T', recommendedQuorum: 0,  recommendedCooldownHours: 7 * 24 },
   { id: 'PP-16', contract: 'MerchantPaymentHub.tact',           parameter: 'MERCHANT_ADMIN_TRANSFER_DELAY', classification: 'I', recommendedQuorum: 0, recommendedCooldownHours: 0 },
   { id: 'PP-17', contract: 'MerchantPaymentHub.tact',           parameter: 'whitelisted_collections', classification: 'G', recommendedQuorum: 44, recommendedCooldownHours: 48, proposalCategory: 0 },

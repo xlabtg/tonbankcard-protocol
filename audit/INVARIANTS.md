@@ -145,7 +145,7 @@ This document defines the seven formal invariants of the TONBANKCARD protocol th
 
 | Contract | Location | What to Verify |
 |----------|----------|----------------|
-| `PaymentHub.tact` | `InitializeAccount` handler | `admin` can only `InitializeAccount` (test-only seeding). **Create-once enforced (Issue #371 / PC-02):** `require(self.accounts.get(msg.nft_address) == null, "Account already initialized")` blocks re-initializing a funded slot to reassign `owner` and drain it via `TransferInternalRequest` (I1/I3) |
+| `PaymentHub.tact` | No account initializer | The test-only `InitializeAccount` handler was removed from production (Issue #427); admin cannot seed arbitrary owner/balance state (I3/I5) |
 | `account-locks.fc` | Lines 160–217 | risk_authority sets locks only, cannot move funds |
 | `MerchantPaymentHub.tact` | Lines 223–245 | Admin setup functions are test-only |
 
@@ -162,7 +162,7 @@ Expected: ZERO results in fund-moving contexts
 | Admin (Payment Hub) | Pause contract, flag accounts | Move funds, upgrade contract |
 | risk_authority | Set/clear FRAUD_LOCK | Move funds, set COLLATERAL_LOCK |
 | lending_adapter | Set/clear COLLATERAL_LOCK | Move funds, set FRAUD_LOCK |
-| deployer | InitializeAccount (test-only, **create-once** — Issue #371 / PC-02) | Move funds (the re-init → owner-overwrite → drain path is closed by the create-once guard) |
+| deployer | Deploy and administer non-fund parameters | Initialize accounts, mint balances, or move funds (`InitializeAccount` removed by Issue #427) |
 
 **Test Coverage:**
 - `tests/invariants/I3-no-admin-fund-control.spec.ts`

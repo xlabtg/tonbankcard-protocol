@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tact --config tact.config.json",
+    "build": "node build.js",
     "build:wrappers": "tsc",
     "test": "jest",
     "test:coverage": "jest --coverage",

@@ -423,13 +423,10 @@ describe('Issue #367: payment-hub.fc reference integrates ownership, Account Loc
   });
 });
 
-describe('Issue #371 (PC-02): PaymentHub.InitializeAccount is create-once', () => {
-  // The production hub is contracts/payments/PaymentHub.tact (CONTRACTS-H3 / #260
-  // keeps it as the single deployable hub). That directory is not built or tested
-  // in CI, so — exactly like the #364 and #367 gates above — these static
-  // assertions are the CI-enforced lock that the create-once fix stays in place.
-  // The behavioural reproduction lives in
-  // experiments/issue-371-paymenthub-create-once/.
+describe('Issue #427 (CHECK423-H3): PaymentHub excludes admin balance minting', () => {
+  // Issue #371 made the old InitializeAccount path create-once. Issue #427
+  // removes that test-only path from production altogether: create-once still
+  // allowed an admin to mint an arbitrary balance into every fresh slot.
   const PRODUCTION = 'contracts/payments/PaymentHub.tact';
   const source = read(PRODUCTION);
 
@@ -438,25 +435,10 @@ describe('Issue #371 (PC-02): PaymentHub.InitializeAccount is create-once', () =
     expect(deployable).toContain(PRODUCTION);
   });
 
-  it('guards InitializeAccount with a write-once existence check (CONTRACTS-M1 pattern)', () => {
-    // Mirrors the #279 owner-binding guard and the MerchantPaymentHub
-    // SetAccountBalance guard: a live account slot cannot be overwritten, so a
-    // compromised admin cannot reassign `owner` to drain a funded account.
-    expect(source).toContain('Account already initialized');
-    expect(source).toMatch(/self\.accounts\.get\(msg\.nft_address\)\s*==\s*null/);
-  });
-
-  it('places the guard inside InitializeAccount, after the admin authentication', () => {
-    const handlerIdx = source.indexOf('receive(msg: InitializeAccount)');
-    expect(handlerIdx).toBeGreaterThanOrEqual(0);
-    // Bound the search to this handler body (up to the next receive()).
-    const nextReceive = source.indexOf('receive(', handlerIdx + 1);
-    const body = source.slice(handlerIdx, nextReceive === -1 ? source.length : nextReceive);
-    const adminIdx = body.indexOf('sender() == self.admin');
-    const guardIdx = body.indexOf('Account already initialized');
-    expect(adminIdx).toBeGreaterThanOrEqual(0);
-    // Admin check first, then the create-once guard — the handler still authenticates.
-    expect(guardIdx).toBeGreaterThan(adminIdx);
+  it('contains neither the InitializeAccount message nor its receiver', () => {
+    expect(source).not.toContain('message InitializeAccount');
+    expect(source).not.toContain('receive(msg: InitializeAccount)');
+    expect(source).not.toContain('initial_balance');
   });
 
   it('keeps the account read path side-effect free so a query cannot squat a slot', () => {
