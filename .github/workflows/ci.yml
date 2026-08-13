@@ -69,10 +69,9 @@ jobs:
       - name: Verify Dockerfiles install with npm ci
         run: scripts/tooling/check-dockerfile-npm-ci.sh
 
-      # CHECK423-M2: a shipped locked workspace must not silently disappear
-      # from the weekly vulnerability scan (the historical docs-site and
-      # mobile-app omissions are what this guard closes).
-      - name: Verify dependency-audit workspace coverage
+      # CHECK423-M2/CHECK423-L2: a shipped locked workspace must not silently
+      # disappear from either the vulnerability scan or Dependabot updates.
+      - name: Verify dependency-control workspace coverage
         run: scripts/tooling/check-dependency-audit-coverage.sh
 
       # DEVOPS-LOW: keep the low-severity DevOps hardening backlog closed.
