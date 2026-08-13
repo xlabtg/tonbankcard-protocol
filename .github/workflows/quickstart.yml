@@ -99,8 +99,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run npm run setup:install
-        run: bash scripts/setup.sh --install-only
+      - name: Run the full one-command setup (install, build and smoke)
+        run: bash scripts/setup.sh
 
       - name: Verify packages installed
         run: |
