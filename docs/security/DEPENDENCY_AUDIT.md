@@ -4,9 +4,42 @@
 > Roadmap reference: [TEMP/DEVELOPMENT_ROADMAP.md — Track D, D5](../../TEMP/DEVELOPMENT_ROADMAP.md)
 > Related security artefacts: [SECURITY.md](../../SECURITY.md), [docs/security/audits/](audits/)
 
-## 1. Scope
+## 0. Current control status (2026-08-13)
 
-This document records the first end-to-end dependency audit of the six
+The CHECK423 audit re-ran `npm audit` against every shipped npm workspace with
+a committed lockfile after fresh CI run
+[31704315208](https://github.com/xlabtg/tonbankcard-protocol/actions/runs/31704315208)
+failed. The historical seven-workspace matrix omitted `mobile-app` and
+`docs-site`; both are now covered and a CI guard prevents future omissions.
+
+| Workspace | Audit result after remediation | CI threshold |
+|---|---:|---|
+| `sdk` | 0 vulnerabilities | High |
+| `api` | 0 vulnerabilities | High |
+| `backend/indexer` | 0 vulnerabilities | High |
+| `wallet-ui` | 0 vulnerabilities | High |
+| `mobile` | 0 vulnerabilities | High |
+| `mobile-app` | 0 vulnerabilities | High |
+| `dashboard` | 0 vulnerabilities | High |
+| `scripts/faucet` | 0 vulnerabilities | High |
+| `docs-site` | 21 total: 18 High, 3 Moderate, 0 Critical | Critical (temporary) |
+
+The remaining docs-site High chain has one root cause:
+`@docusaurus/mdx-loader` depends on `image-size@2.0.2`, the latest published
+version, and npm reports `fixAvailable=false` for both advisories. Critical
+findings still fail CI. Tracking issue
+[#429](https://github.com/xlabtg/tonbankcard-protocol/issues/429) owns removal
+of the temporary exception; every other workspace continues to fail on High or
+Critical findings.
+
+The previously documented Dependabot control is **not currently present**:
+`.github/dependabot.yml` was deleted after the original D5 audit. Restoring it
+or documenting an approved alternative is tracked separately in
+[#434](https://github.com/xlabtg/tonbankcard-protocol/issues/434).
+
+## 1. Historical D5 scope (2026-05-17)
+
+The sections below preserve the first end-to-end dependency audit of the six
 runtime npm workspaces shipped by the TONBANKCARD protocol, the
 remediation that was applied, and the controls that prevent the
 problem from regressing.
@@ -41,9 +74,9 @@ For each workspace we performed the following sequence on
    `found 0 vulnerabilities`.
 
 The CI workflow [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml)
-re-runs steps 2 and a lockfile-tamper check on every push, PR, and
-weekly cron — so the snapshot below is continuously verified rather
-than read only at audit time.
+now re-runs the audit and a lockfile-tamper check for all nine shipped locked
+workspaces on every push, PR, and weekly cron. See the current exception and
+results in §0; the figures below remain the original D5 snapshot.
 
 ## 3. Pre-remediation findings
 
@@ -164,10 +197,10 @@ code.
 
 | Control                                          | Where                                                              | Triggers on                                       |
 |--------------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------|
-| `npm audit --audit-level=high` for every workspace | [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml) | every push to `main`, every PR, weekly cron       |
+| `npm audit` for all nine shipped locked workspaces | [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml) | every push to `main`, every PR, weekly cron; High threshold except temporary docs-site Critical threshold (#429) |
 | Lockfile-tamper detection                        | same workflow, diff of regenerated `package-lock.json`              | every push / PR — fails CI on drift                |
-| Weekly dependency PRs                            | [`.github/dependabot.yml`](../../.github/dependabot.yml)            | weekly per workspace + GitHub Actions             |
-| Manual review of major bumps in production packages | dependabot `ignore: version-update:semver-major` on `sdk/`, `api/`, `backend/indexer/` | every dependabot run                  |
+| Audit-matrix completeness guard                  | [`scripts/tooling/check-dependency-audit-coverage.sh`](../../scripts/tooling/check-dependency-audit-coverage.sh) | every CI run; fails if a shipped locked workspace is omitted |
+| Weekly dependency PRs                            | **Missing** — tracked by [#434](https://github.com/xlabtg/tonbankcard-protocol/issues/434) | no active Dependabot configuration |
 | Node LTS pinning                                 | `engines.node: ">=20.0.0"` in every `package.json`                  | every `npm install`                                |
 
 ## 7. Pinned versions (rationale)
@@ -200,8 +233,9 @@ PR as follows:
   `jq '.dependencies' sdk/package.json` etc.
 * [x] All `package-lock.json` files committed and up to date — see
   `git ls-files '**/package-lock.json'`.
-* [x] `.github/dependabot.yml` created and targeting all 6
-  directories — [`.github/dependabot.yml`](../../.github/dependabot.yml).
+* [ ] `.github/dependabot.yml` was created for the original D5 audit but later
+  deleted; restore it or approve/document an alternative under
+  [#434](https://github.com/xlabtg/tonbankcard-protocol/issues/434).
 * [x] CI step added to run `npm audit --audit-level=high` for all
   packages —
   [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml).

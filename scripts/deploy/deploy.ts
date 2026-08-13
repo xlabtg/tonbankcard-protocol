@@ -17,7 +17,7 @@ import * as path from 'path';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface DeploymentConfig {
+export interface DeploymentConfig {
   network: 'testnet' | 'mainnet';
   adminAddress: string;
   riskAuthority: string;
@@ -227,6 +227,25 @@ function simulateDeployment(config: DeploymentConfig): DeploymentManifest {
   return manifest;
 }
 
+/**
+ * Build the manifest for a requested deployment mode.
+ *
+ * Live deployment is deliberately blocked until the Blueprint transaction
+ * construction/signing path is implemented. Falling back to a simulated
+ * manifest for a non-dry-run request makes an operator-facing production
+ * command appear successful even though no transaction was sent.
+ */
+export function createDeploymentManifest(config: DeploymentConfig): DeploymentManifest {
+  if (!config.dryRun) {
+    throw new Error(
+      'Live deployment is not implemented. Use --dry-run for simulation; ' +
+      'do not create a production manifest until Blueprint deployment and signing are available.',
+    );
+  }
+
+  return simulateDeployment(config);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -253,32 +272,17 @@ async function main(): Promise<void> {
   validateConfig(config);
   checkPreDeploymentRequirements();
 
-  let manifest: DeploymentManifest;
-
-  if (config.dryRun) {
-    manifest = simulateDeployment(config);
-    console.log('\n✅ Dry run complete. No contracts were deployed.');
-  } else {
-    // Real deployment would use Blueprint SDK here:
-    // import { NetworkProvider } from '@ton/blueprint';
-    // const provider = await NetworkProvider.fromEnvironment();
-    // ... deploy each contract ...
-    console.log('\n⚠️  Live deployment requires Blueprint SDK and signing key.');
-    console.log('   This script validates configuration and structure only.');
-    console.log('   For actual deployment, use: npx blueprint deploy');
-    manifest = simulateDeployment(config);
-  }
+  const manifest = createDeploymentManifest(config);
+  console.log('\n✅ Dry run complete. No contracts were deployed.');
 
   const manifestPath = writeManifest(manifest, config.network);
   console.log(`\n📄 Deployment manifest written: ${manifestPath}`);
 
-  if (!config.dryRun) {
-    console.log('\n🔍 Run verification:');
-    console.log(`   npx ts-node scripts/deploy/verify.ts --manifest ${manifestPath}`);
-  }
 }
 
-main().catch(err => {
-  console.error('❌ Deployment failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error('❌ Deployment failed:', err);
+    process.exit(1);
+  });
+}

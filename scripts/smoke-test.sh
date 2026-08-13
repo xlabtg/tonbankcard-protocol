@@ -36,7 +36,7 @@ node -e "
   // Quick functional check — round-trip a TBC amount through the helpers.
   const wei = sdk.parseTBC('1');
   const human = sdk.formatTBC(wei);
-  if (human !== '1' && human !== '1.0') {
+  if (human !== '1.00') {
     console.error('✗ smoke: TBC helpers returned unexpected result: ' + human);
     process.exit(1);
   }

@@ -16,7 +16,7 @@ import { DEPLOYABLE_CONTRACTS } from './deployable-contracts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface VerificationResult {
+export interface VerificationResult {
   contract: string;
   address: string;
   codeHashMatch: boolean;
@@ -25,7 +25,7 @@ interface VerificationResult {
   errors: string[];
 }
 
-interface VerificationReport {
+export interface VerificationReport {
   timestamp: string;
   network: string;
   manifestFile: string;
@@ -44,9 +44,9 @@ interface VerificationReport {
  * 3. Query the deployed contract's code hash from the blockchain
  * 4. Compare the two hashes
  */
-function verifyCodeHash(
+export function verifyCodeHash(
   address: string,
-  expectedHash: string,
+  _expectedHash: string,
   contractName: string
 ): { passed: boolean; actual: string } {
   // Placeholder: real implementation would query TON blockchain
@@ -56,9 +56,10 @@ function verifyCodeHash(
 
   console.log(`  🔍 ${contractName}: Verifying code hash at ${address.slice(0, 20)}...`);
 
-  // For now, mark as needing real blockchain verification
+  // Fail closed until the blockchain query above is implemented. A dry-run
+  // marker is not evidence that deployed bytecode matches the local source.
   return {
-    passed: expectedHash.startsWith('[DRY RUN]') ? true : false,
+    passed: false,
     actual: '[Requires blockchain query - run after real deployment]',
   };
 }
@@ -80,13 +81,13 @@ function verifyInvariants(contractName: string): { passed: boolean; details: str
   // stubs (CONTRACTS-H3, #260) can never re-enter the verification set.
   const files = DEPLOYABLE_CONTRACTS[contractName];
   if (!files || files.length === 0) {
-    details.push(`Source file mapping not found for ${contractName}`);
+    details.push(`FAIL: Source file mapping not found for ${contractName}`);
     return { passed: false, details };
   }
 
   const existingFiles = files.filter(f => fs.existsSync(f));
   if (existingFiles.length === 0) {
-    details.push(`No source files exist on disk for ${contractName}: ${files.join(', ')}`);
+    details.push(`FAIL: No source files exist on disk for ${contractName}: ${files.join(', ')}`);
     return { passed: false, details };
   }
 
@@ -117,7 +118,7 @@ function verifyInvariants(contractName: string): { passed: boolean; details: str
 
 // ─── Main Verification ───────────────────────────────────────────────────────
 
-function verifyFromManifest(manifestPath: string): VerificationReport {
+export function verifyFromManifest(manifestPath: string): VerificationReport {
   if (!fs.existsSync(manifestPath)) {
     console.error(`❌ Manifest file not found: ${manifestPath}`);
     process.exit(1);
@@ -160,18 +161,28 @@ function verifyFromManifest(manifestPath: string): VerificationReport {
       errors.push(...details.filter(d => d.startsWith('FAIL')));
     }
 
+    if (!hashPassed) {
+      errors.push(`On-chain verification is not implemented: ${actual}`);
+    }
+
     const result: VerificationResult = {
       contract: contractName,
       address: dep.address,
       codeHashMatch: hashPassed,
-      stateValid: true, // Would be checked against blockchain
-      adminAddressMatch: true, // Would be checked against blockchain
+      stateValid: false, // Fail closed until checked against the blockchain
+      adminAddressMatch: false, // Fail closed until checked against the blockchain
       errors,
     };
 
     report.results.push(result);
 
-    if (errors.length > 0 || !invariantsPassed) {
+    if (
+      errors.length > 0 ||
+      !hashPassed ||
+      !invariantsPassed ||
+      !result.stateValid ||
+      !result.adminAddressMatch
+    ) {
       report.allPassed = false;
     }
   }
@@ -256,4 +267,6 @@ function main(): void {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
