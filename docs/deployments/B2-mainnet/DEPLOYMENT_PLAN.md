@@ -67,8 +67,10 @@ Contracts are deployed in dependency order so each downstream contract receives 
 | 4 | `PaymentHub` | `nft_account_resolver` | Address from step 2 | |
 | 4 | `PaymentHub` | `account_state_machine` | Address from step 3 | |
 | 4 | `PaymentHub` | `admin` | `ADMIN_ADDRESS` env var | Strictly limited to NFT allow-listing — no fund authority (**I3**). |
-| 5 | `MerchantPaymentHub` | `payment_hub` | Address from step 4 | |
-| 5 | `MerchantPaymentHub` | `admin` | `ADMIN_ADDRESS` env var | Merchant onboarding only. |
+| 5 | `MerchantPaymentHub` | `deployer_address` | `ADMIN_ADDRESS` env var | Initial admin; cannot move or credit user funds. |
+| 5 | `MerchantPaymentHub` | `account_locks_contract` | Address from step 1 (`AccountLocks`) | Immutable lock authority. |
+| 5 | `MerchantPaymentHub` | `nft_resolver` | Address from step 2 (`NFTAccountResolver`) | Immutable, write-once NFT registration authority. |
+| 5 | `MerchantPaymentHub` | `tbc_settlement` | Audited settlement contract address recorded in the deployment manifest | Immutable token-provenance authority; can only submit positive, replay-protected deposits to registered NFTs (Issue #428). |
 | 6 | `CollateralSignal` | `nft_resolver` | Address from step 2 (`NFTAccountResolver`) | Issue #364 — ownership is pushed only by the trusted resolver via `ResolveNFTOwner`; no `admin`/`deployer` write path (I3). Emits read-only collateral state, no fund authority. |
 | 7 | `PublicCollateralLookup` | `collateral_signal` | Address from step 6 | |
 | 8 | `ProposalRegistry` | `admin` | `ADMIN_ADDRESS` env var | **Activation deferred** — see §3.2. |
