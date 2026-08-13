@@ -46,6 +46,7 @@ describe('MerchantPaymentHub — production hardening (Issue #363)', () => {
     let deployer: SandboxContract<TreasuryContract>; // initial admin
     let locksContract: SandboxContract<TreasuryContract>; // the dedicated Account Locks contract authority
     let nftResolver: SandboxContract<TreasuryContract>; // the trusted NFT Account Resolver authority (Issue #397)
+    let tbcSettlement: SandboxContract<TreasuryContract>;
     let payerOwner: SandboxContract<TreasuryContract>;
     let merchantOwner: SandboxContract<TreasuryContract>;
     let attacker: SandboxContract<TreasuryContract>;
@@ -88,6 +89,7 @@ describe('MerchantPaymentHub — production hardening (Issue #363)', () => {
         deployer = await blockchain.treasury('deployer');
         locksContract = await blockchain.treasury('locksContract');
         nftResolver = await blockchain.treasury('nftResolver');
+        tbcSettlement = await blockchain.treasury('tbcSettlement');
         payerOwner = await blockchain.treasury('payerOwner');
         merchantOwner = await blockchain.treasury('merchantOwner');
         attacker = await blockchain.treasury('attacker');
@@ -105,6 +107,7 @@ describe('MerchantPaymentHub — production hardening (Issue #363)', () => {
                 deployer.address,
                 locksContract.address,
                 nftResolver.address,
+                tbcSettlement.address,
             ),
         );
         // First message auto-attaches the init state (no Deployable trait needed).
