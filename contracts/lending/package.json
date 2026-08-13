@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Lending Protocol Coordinator contract — non-custodial lending intent coordination",
   "scripts": {
-    "build": "tact --config ../tact.config.lending.json",
+    "build": "NODE_PATH=../multisig/node_modules:./node_modules node ../phase4/build.js",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch"

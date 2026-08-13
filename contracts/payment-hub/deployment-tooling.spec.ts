@@ -13,6 +13,10 @@ import {
   verifyManifest,
   type ChainStateProvider,
 } from '../../scripts/deploy/verify';
+import {
+  a2VerdictAllowsMainnet,
+  assertPhase4MainnetAllowed,
+} from '../../scripts/deploy/phase4-release-gate';
 
 const ADMIN = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c';
 
@@ -70,6 +74,25 @@ describe('CHECK423-H1: unsigned deployment artefacts', () => {
     const prepared = { ...liveManifest(), artefactType: 'prepared' as const, verificationBlock: null };
     expect(() => validateDeploymentManifest(prepared, 'prepared')).not.toThrow();
     expect(() => validateDeploymentManifest(prepared, 'live')).toThrow(/artefactType/i);
+  });
+
+  it('blocks Phase 4 mainnet manifests until the canonical A2 verdict is READY', () => {
+    const phase4 = liveManifest();
+    phase4.contracts = { RecurringPayments: phase4.contracts.PaymentHub };
+    expect(() => validateDeploymentManifest(phase4, 'live')).toThrow(/A2 verdict.*READY/i);
+
+    phase4.network = 'testnet';
+    expect(() => validateDeploymentManifest(phase4, 'live')).not.toThrow();
+  });
+
+  it('only unlocks Phase 4 mainnet for a canonical READY verdict', () => {
+    expect(a2VerdictAllowsMainnet('**Gating verdict:** Pending')).toBe(false);
+    expect(a2VerdictAllowsMainnet('prose says READY')).toBe(false);
+    expect(a2VerdictAllowsMainnet('**Gating verdict:** READY')).toBe(true);
+    expect(a2VerdictAllowsMainnet('**Gating verdict:** READY WITH ACCEPTED RISKS')).toBe(true);
+
+    expect(() => assertPhase4MainnetAllowed('mainnet', ['PaymentHub'])).not.toThrow();
+    expect(() => assertPhase4MainnetAllowed('testnet', ['RecurringPayments'])).not.toThrow();
   });
 });
 

@@ -242,14 +242,14 @@ The audit identified a family of handlers that exist solely to bootstrap test sc
 | # | Handler | Contract | Mitigation status |
 |---|---------|----------|-------------------|
 | ~~PP-36~~ | ~~`RegisterNFTOwner`~~ | `CollateralSignal.tact` | **RESOLVED (Issue #364)** — test-only handler removed; ownership now registered ONLY via `ResolveNFTOwner`, gated by the immutable `nft_resolver` (on-chain NFT Account Resolver), write-once (CONTRACTS-M1). CI regression guard blocks reintroduction |
-| PP-37 | `RegisterNFTOwner` | `LendingProtocolCoordinator.tact:357` | test-only — remove before mainnet (audit C-LPC-C1 / X-1) |
-| PP-38 | `RegisterNFTOwnerRecurring` | `RecurringPayments.tact:428` | test-only — remove before mainnet (audit X-1) |
-| PP-39 | `RegisterNFTOwnerMultiSig` | `MultiSigCard.tact:569` | test-only — remove before mainnet (audit C-MSC-C1 / X-1) |
-| PP-40 | `RegisterNFTOwnerBridge`, `RegisterRelayer` | `CrossChainBridge.tact:413, 421` | test-only — remove before mainnet (audit C-CCB-C1 / H1 / X-1) |
+| ~~PP-37~~ | ~~`RegisterNFTOwnerLending`~~ | `contracts/phase4/test/LendingProtocolCoordinatorHarness.tact` | **RESOLVED (Issue #432)** — absent from production ABI/bytecode; retained only in a non-deployable Sandbox harness |
+| ~~PP-38~~ | ~~`RegisterNFTOwnerRecurring`~~ | `contracts/phase4/test/RecurringPaymentsHarness.tact` | **RESOLVED (Issue #432)** — absent from production ABI/bytecode; retained only in a non-deployable Sandbox harness |
+| ~~PP-39~~ | ~~`RegisterNFTOwnerMultiSig`~~ | `contracts/phase4/test/MultiSigCardHarness.tact` | **RESOLVED (Issue #432)** — absent from production ABI/bytecode; retained only in a non-deployable Sandbox harness |
+| ~~PP-40~~ | ~~`RegisterNFTOwnerBridge`, `RegisterRelayer`~~ | `contracts/phase4/test/CrossChainBridgeHarness.tact` | **RESOLVED (Issue #432)** — absent from production ABI/bytecode; retained only in a non-deployable Sandbox harness |
 
 These handlers are **not** governance parameters. They are tracked in this document so the E2 audit explicitly accounts for every state-mutating receiver in the codebase.
 
-> **Update (Issue #364):** PP-36 (`CollateralSignal`) is the first of this family to be remediated. Its test-only `RegisterNFTOwner` handler is removed; NFT ownership is now bound exclusively by the trusted on-chain NFT Account Resolver (`ResolveNFTOwner`, gated by the immutable `nft_resolver`), preserving the write-once binding (CONTRACTS-M1). PP-37…PP-40 remain open and must still be removed before mainnet.
+> **Update (Issues #364, #432):** PP-36 uses the trusted on-chain resolver. PP-37…PP-40 were removed from all production Phase 4 sources and generated artifacts; test bootstrap remains only in explicitly non-deployable harnesses. Phase 4 mainnet manifests remain blocked independently until the canonical A2 verdict is `READY` or `READY WITH ACCEPTED RISKS`.
 
 ---
 

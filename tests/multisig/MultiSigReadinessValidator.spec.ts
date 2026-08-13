@@ -635,23 +635,10 @@ describe('checkContractEvidence', () => {
         expect(failures(checkContractEvidence(tampered))).toContain('CT.approvalKey.hardened');
     });
 
-    it('flags landing of MS-CH-2 (removal of RegisterNFTOwnerMultiSig) without doc update', () => {
-        const tampered = realContract.replace(
-            /receive\(msg:\s*RegisterNFTOwnerMultiSig\)/g,
-            'receive(msg: OTHER_HANDLER_REMOVED)',
-        );
+    it('flags reintroduction of RegisterNFTOwnerMultiSig in production', () => {
+        const tampered = `${realContract}\nreceive(msg: RegisterNFTOwnerMultiSig) {}`;
         expect(failures(checkContractEvidence(tampered))).toContain(
             'CT.testonly.RegisterNFTOwnerMultiSig',
-        );
-    });
-
-    it('flags removal of the deployer-only guard on the test handler', () => {
-        const tampered = realContract.replace(
-            /require\(sender\(\)\s*==\s*self\.deployer/g,
-            'require(true',
-        );
-        expect(failures(checkContractEvidence(tampered))).toContain(
-            'CT.testonly.deployer-guard',
         );
     });
 

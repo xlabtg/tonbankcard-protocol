@@ -27,7 +27,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import '@ton/test-utils';
 import { toNano, Address } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
-import { LendingProtocolCoordinator } from './dist/LendingProtocolCoordinator_LendingProtocolCoordinator';
+import { LendingProtocolCoordinatorHarness } from './dist/LendingProtocolCoordinatorHarness_LendingProtocolCoordinatorHarness';
 
 // Mirror of the Tact intent-state constants.
 const LENDING_INTENT_NONE = 0n;
@@ -40,7 +40,7 @@ describe('LendingProtocolCoordinator — NFT owner registration (CONTRACTS-M2)',
     let deployer: SandboxContract<TreasuryContract>;
     let owner: SandboxContract<TreasuryContract>;
     let attacker: SandboxContract<TreasuryContract>;
-    let coordinator: SandboxContract<LendingProtocolCoordinator>;
+    let coordinator: SandboxContract<LendingProtocolCoordinatorHarness>;
 
     // A stand-in NFT card address (the contract only uses it as a map key).
     let nft: Address;
@@ -77,7 +77,7 @@ describe('LendingProtocolCoordinator — NFT owner registration (CONTRACTS-M2)',
         attacker = await blockchain.treasury('attacker');
         nft = (await blockchain.treasury('nft-card')).address;
 
-        coordinator = blockchain.openContract(await LendingProtocolCoordinator.fromInit());
+        coordinator = blockchain.openContract(await LendingProtocolCoordinatorHarness.fromInit());
 
         // The very first message both deploys the contract (init records the
         // deployer = sender) and registers the NFT owner via the test-only

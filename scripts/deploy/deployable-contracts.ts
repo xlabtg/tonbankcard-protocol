@@ -58,6 +58,9 @@ export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
  *   re-adds the `SetAccountState` / `SetAccountBalance` bootstrap handlers removed
  *   from the deployable `MerchantPaymentHub`. It exists solely for the Jest suite
  *   and MUST NEVER be deployed.
+ * - `contracts/phase4/test/*Harness.tact` (Issue #432) are TEST-ONLY authority
+ *   seeders for Phase 4 Sandbox suites. Production Phase 4 sources contain no
+ *   owner/relayer bootstrap receivers and remain blocked from mainnet until A2.
  */
 export const NON_PRODUCTION_STUBS: string[] = [
   'contracts/payments/payment-hub.fc',
@@ -66,6 +69,10 @@ export const NON_PRODUCTION_STUBS: string[] = [
   'contracts/collateral-lookup/PublicCollateralLookup.tact',
   'contracts/collateral-lookup/public-collateral-lookup.fc',
   'contracts/merchant-hub/test/MerchantPaymentHubHarness.tact',
+  'contracts/phase4/test/RecurringPaymentsHarness.tact',
+  'contracts/phase4/test/MultiSigCardHarness.tact',
+  'contracts/phase4/test/CrossChainBridgeHarness.tact',
+  'contracts/phase4/test/LendingProtocolCoordinatorHarness.tact',
 ];
 
 /**

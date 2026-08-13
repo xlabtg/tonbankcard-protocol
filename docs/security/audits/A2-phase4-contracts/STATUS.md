@@ -176,7 +176,7 @@ Mirrors issue #113 §7.
 | Q-4 | Budget envelope and funding source for A2 (typically higher than A1 due to bridge focus) | `@konard` | Open |
 | Q-5 | Calendar window for audit (T+4w → T+16w) | `@konard` | Open |
 | Q-6 | Whether `MultiSigCard.tact` will be removed (per internal pre-audit C-MSC-H1) before A2 kickoff, narrowing the scope to three contracts | `@konard` | Open |
-| Q-7 | Whether `LendingProtocolCoordinator` dead-code `RegisterNFTOwnerLending` (C-LPC-H1) is cleaned up before the freeze | `@konard` | Open |
+| Q-7 | Whether `LendingProtocolCoordinator` dead-code `RegisterNFTOwnerLending` (C-LPC-H1) is cleaned up before the freeze | `@konard` | Closed by #432: removed from production and retained only in a non-deployable harness |
 | Q-8 | Whether bridge validator infrastructure (ChangeNOW or other relayers) must be selected before kickoff so that trust assumptions are explicit | `@konard` | Open |
 
 Add new rows as blockers are discovered. Close rows by linking the resolving issue / commit.

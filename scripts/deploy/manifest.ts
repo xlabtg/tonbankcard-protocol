@@ -3,6 +3,7 @@ import { type ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertPhase4MainnetAllowed } from './phase4-release-gate';
 
 export type ArtefactType = 'dry-run' | 'prepared' | 'live';
 
@@ -56,5 +57,6 @@ export function validateDeploymentManifest(
       .join('; ');
     throw new Error(`Invalid deployment manifest: ${errors}`);
   }
-
+  const deployment = manifest as DeploymentManifest;
+  assertPhase4MainnetAllowed(deployment.network, Object.keys(deployment.contracts));
 }

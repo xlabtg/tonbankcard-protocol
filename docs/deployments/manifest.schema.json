@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TONBANKCARD deployment tooling manifest",
+  "$comment": "Phase 4 mainnet contract names are additionally rejected by validateDeploymentManifest until docs/security/audits/A2-phase4-contracts/STATUS.md has a READY verdict.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "manifestType", "artefactType", "network", "timestamp", "commit", "configuration", "verificationBlock", "contracts"],

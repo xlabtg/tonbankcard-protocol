@@ -770,20 +770,12 @@ export function checkContractEvidence(content: string | null): CheckResult[] {
         detail: 'MS-CH-1 closed on-chain — see CONTRACT_HARDENING.md §3 and SPECIFICATION.md §3.3',
     });
 
-    // Pre-MS-CH-2 marker: test-only handler still present (lines 569–573).
+    // MS-CH-2 / Issue #432: test-only authority seeding is absent from production.
     results.push({
         id: 'CT.testonly.RegisterNFTOwnerMultiSig',
-        name: 'MultiSigCard.tact still ships RegisterNFTOwnerMultiSig (MS-CH-2 pending)',
-        passed: /receive\(msg:\s*RegisterNFTOwnerMultiSig\)/.test(content),
-        detail: 'Confirms MS-CH-2 has not landed yet — see CONTRACT_HARDENING.md §3',
-    });
-
-    // Deployer guard on the test-only handler (X-1 mitigation).
-    results.push({
-        id: 'CT.testonly.deployer-guard',
-        name: 'MultiSigCard.tact gates RegisterNFTOwnerMultiSig behind deployer-only sender',
-        passed: /require\(sender\(\)\s*==\s*self\.deployer/.test(content),
-        detail: 'X-1 mitigation per SPECIFICATION.md §7.1',
+        name: 'MultiSigCard.tact excludes RegisterNFTOwnerMultiSig (MS-CH-2 landed)',
+        passed: !/RegisterNFTOwnerMultiSig/.test(content),
+        detail: 'Issue #432: authority seeding exists only in the non-deployable harness',
     });
 
     // Idempotency guard: ApprovePaymentProposal must reject duplicate

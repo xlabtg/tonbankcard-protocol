@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import '@ton/test-utils';
 import { toNano, Address } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
-import { LendingProtocolCoordinator } from './dist/LendingProtocolCoordinator_LendingProtocolCoordinator';
+import { LendingProtocolCoordinatorHarness } from './dist/LendingProtocolCoordinatorHarness_LendingProtocolCoordinatorHarness';
 
 const LENDING_INTENT_NONE = 0n;
 const LENDING_INTENT_ACTIVE = 1n;
@@ -26,7 +26,7 @@ describe('LendingProtocolCoordinator - lending intent update guard (#398)', () =
     let blockchain: Blockchain;
     let deployer: SandboxContract<TreasuryContract>;
     let owner: SandboxContract<TreasuryContract>;
-    let coordinator: SandboxContract<LendingProtocolCoordinator>;
+    let coordinator: SandboxContract<LendingProtocolCoordinatorHarness>;
     let nft: Address;
 
     async function registerOwner(ownerAddress: Address, nftAddress: Address = nft) {
@@ -87,7 +87,7 @@ describe('LendingProtocolCoordinator - lending intent update guard (#398)', () =
         owner = await blockchain.treasury('owner');
         nft = (await blockchain.treasury('nft-card')).address;
 
-        coordinator = blockchain.openContract(await LendingProtocolCoordinator.fromInit());
+        coordinator = blockchain.openContract(await LendingProtocolCoordinatorHarness.fromInit());
 
         const result = await registerOwner(owner.address);
         expect(result.transactions).toHaveTransaction({

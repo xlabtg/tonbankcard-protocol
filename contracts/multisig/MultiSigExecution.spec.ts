@@ -28,7 +28,10 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import '@ton/test-utils';
 import { toNano, Address } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
-import { MultiSigCard, loadPaymentProposalExecuted } from './dist/MultiSigCard_MultiSigCard';
+import {
+    MultiSigCardHarness,
+    loadPaymentProposalExecuted,
+} from './dist/MultiSigCardHarness_MultiSigCardHarness';
 
 // Mirror of the Tact status constants.
 const PROPOSAL_PENDING = 0n;
@@ -46,7 +49,7 @@ describe('MultiSigCard — payment execution path (CONTRACTS-H2)', () => {
     let signer2: SandboxContract<TreasuryContract>;
     let recipient: SandboxContract<TreasuryContract>;
     let attacker: SandboxContract<TreasuryContract>;
-    let card: SandboxContract<MultiSigCard>;
+    let card: SandboxContract<MultiSigCardHarness>;
 
     // A stand-in NFT card address (the contract only uses it as a map key).
     let nft: Address;
@@ -125,7 +128,7 @@ describe('MultiSigCard — payment execution path (CONTRACTS-H2)', () => {
         attacker = await blockchain.treasury('attacker');
         nft = (await blockchain.treasury('nft-card')).address;
 
-        card = blockchain.openContract(await MultiSigCard.fromInit());
+        card = blockchain.openContract(await MultiSigCardHarness.fromInit());
 
         // The very first message both deploys the contract (init records the
         // deployer = sender) and registers the NFT owner via the test-only

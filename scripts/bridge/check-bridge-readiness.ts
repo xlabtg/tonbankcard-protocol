@@ -589,18 +589,18 @@ export function checkContractEvidence(content: string | null): CheckResult[] {
         detail: 'Issue #138 §5.1 v1 chain count',
     });
 
-    // Test-only handlers — must still be present until CH-7 lands
+    // CH-7 / Issue #432: test-only handlers are absent from production.
     results.push({
         id: 'CT.testonly.RegisterRelayer',
-        name: 'CrossChainBridge.tact still ships RegisterRelayer (CH-7 pending)',
-        passed: /receive\(msg:\s*RegisterRelayer\)/.test(content),
-        detail: 'Confirms CH-7 has not landed yet — see CONTRACT_HARDENING.md §3',
+        name: 'CrossChainBridge.tact excludes RegisterRelayer (CH-7 landed)',
+        passed: !/RegisterRelayer/.test(content),
+        detail: 'Issue #432: relayer seeding exists only in the non-deployable harness',
     });
     results.push({
         id: 'CT.testonly.RegisterNFTOwnerBridge',
-        name: 'CrossChainBridge.tact still ships RegisterNFTOwnerBridge (CH-7 pending)',
-        passed: /receive\(msg:\s*RegisterNFTOwnerBridge\)/.test(content),
-        detail: 'Confirms CH-7 has not landed yet — see CONTRACT_HARDENING.md §3',
+        name: 'CrossChainBridge.tact excludes RegisterNFTOwnerBridge (CH-7 landed)',
+        passed: !/RegisterNFTOwnerBridge/.test(content),
+        detail: 'Issue #432: owner seeding exists only in the non-deployable harness',
     });
 
     // The vulnerable composite-key combinator (CH-2 target) — must still be
