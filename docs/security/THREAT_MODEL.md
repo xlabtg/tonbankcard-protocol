@@ -171,10 +171,11 @@ that it is rejected before balance mutation.
 - `SetAccountState` / `SetAccountBalance` (admin-mint / admin-register backdoors,
   audit C-MPH-C1 / C-MPH-H1) now exist ONLY in the non-deployable test harness
   `contracts/merchant-hub/test/MerchantPaymentHubHarness.tact`. In production,
-  account registration is performed by the NFT Account Resolver. No production
-  handler currently funds `account_balances`; this liveness gap is tracked by
-  Issue #414 and blocks a successful fresh-account payment until a separately
-  reviewed non-custodial funding design is implemented.
+  account registration is performed by the NFT Account Resolver. Issue #428 adds
+  production funding through `TBCDeposit`, accepted only from immutable
+  `tbc_settlement`, for a registered NFT and a positive amount. A globally unique
+  `deposit_id` is stored before the atomic credit, so replay and forged messages
+  revert without changing the balance. The admin has no credit path.
 - `SetAccountLock` is replaced by `ApplyAccountLock`, which is accepted ONLY from
   the dedicated Account Locks contract (`account_locks_contract`, immutable, set at
   `init`). The admin cannot apply locks (invariant I3).
@@ -194,12 +195,10 @@ accounts ONLY through the resolver-gated, write-once `ResolveNFTOwner` handler �
 `require(sender() == self.nft_resolver, ...)` plus
 `require(self.nft_owners.get(msg.nft_address) == null, ...)` — which binds
 `nft_owners` and seeds `account_states` to `ACCOUNT_STATE_ACTIVE`, mirroring
-CollateralSignal (Issue #364). It seeds ownership/state only. Because no other
-production handler credits a fresh payer, every payment still reaches
-`ERROR_INSUFFICIENT_BALANCE`; Issue #414 records that unresolved liveness gap.
-Choosing a deposit/settlement credit mechanism changes protocol economics and
-requires a dedicated contract review (invariant I3 / audit C-MPH-C1). The same CI
-guard asserts the registration handler stays resolver-gated and write-once.
+CollateralSignal (Issue #364). It seeds ownership/state only; the separate
+settlement-gated `TBCDeposit` handler supplies the backed balance after registration.
+The CI guard asserts both authorities remain immutable and distinct in scope:
+resolver binds ownership, settlement attests deposits, and neither can debit funds.
 
 #### 2.1.4 Account Locks (FunC) — `contracts/payments/account-locks.fc`
 
@@ -621,6 +620,7 @@ This section defines the adversary classes the protocol must defend against. Eac
 | MerchantPaymentHub.tact | `SetAccountBalance` | Removed from production (Issue #363) — test-only handler now lives in `MerchantPaymentHubHarness` | Yes ✅ |
 | MerchantPaymentHub.tact | `ApplyAccountLock` (replaces `SetAccountLock`, Issue #363) | `account_locks_contract` | Yes ✅ |
 | MerchantPaymentHub.tact | `ResolveNFTOwner` (account registration, Issue #397) | `nft_resolver` (immutable on-chain NFT Account Resolver) — write-once binding | Yes ✅ |
+| MerchantPaymentHub.tact | `TBCDeposit` (production funding, Issue #428) | `tbc_settlement` (immutable settlement contract), positive amount, registered NFT, globally unique `deposit_id` | Yes ✅ |
 | CollateralSignal.tact | `ResolveNFTOwner` (replaces `RegisterNFTOwner`, Issue #364) | `nft_resolver` (immutable on-chain NFT Account Resolver) | Yes ✅ |
 | TransparencyRegistry.tact | `RecordProposal` | `proposal_registry` writer (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |
 | TransparencyRegistry.tact | `RecordVotingResult` | `proposal_registry` writer (deployer-configurable, fail-closed) | Yes ✅ (Issue #365) |

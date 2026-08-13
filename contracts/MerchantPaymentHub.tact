@@ -187,6 +187,15 @@ message ResolveNFTOwner {
     owner: Address;
 }
 
+// Credit confirmed TBC settlement to an NFT account. The immutable settlement
+// contract is the sole token-provenance authority; deposit_id is globally unique
+// and consumed exactly once, preventing replayed credits.
+message TBCDeposit {
+    deposit_id: Int as uint256;
+    nft_address: Address;
+    amount_tbc: Int as coins;
+}
+
 // 7-day timelock delay for admin transfers (in seconds)
 const MERCHANT_ADMIN_TRANSFER_DELAY: Int = 7 * 24 * 60 * 60;
 
@@ -241,10 +250,15 @@ trait MerchantPaymentHubBase {
     // (write-once). The admin/deployer has NO account-registration path (Issue #397).
     nft_resolver: Address;
 
+    // Immutable TBC settlement contract authorised to attest deposits. Neither
+    // the admin nor the resolver can credit balances.
+    tbc_settlement: Address;
+
     account_states: map<Address, Int>;      // nft_address => state
     account_balances: map<Address, Int>;    // nft_address => balance_tbc
     account_locks: map<Address, LockState>; // nft_address => lock_state
     nft_owners: map<Address, Address>;      // nft_address => owner_address
+    processed_deposits: map<Int, Bool>;     // deposit_id => consumed
     whitelisted_collections: map<Address, Bool>; // collection_address => whitelisted
 
     // Pending collection whitelist (timelock): proposed collection (null if none pending)
@@ -432,6 +446,38 @@ trait MerchantPaymentHubBase {
     // confirm the only authorised account-registration authority (Issue #397).
     get fun getNFTResolver(): Address {
         return self.nft_resolver;
+    }
+
+    // ============================================
+    // TBC DEPOSITS (immutable settlement authority only, Issue #428)
+    // ============================================
+
+    receive(msg: TBCDeposit) {
+        require(sender() == self.tbc_settlement, "Unauthorized: only TBC settlement");
+        require(msg.amount_tbc > 0, "Deposit amount must be positive");
+        require(self.account_states.get(msg.nft_address) != null, "NFT account not registered");
+        require(self.processed_deposits.get(msg.deposit_id) == null, "Deposit already processed");
+
+        // Mark before credit. Both writes are committed atomically by TON, so a
+        // failed transaction consumes neither the id nor the balance mutation.
+        self.processed_deposits.set(msg.deposit_id, true);
+        self.creditBalance(msg.nft_address, msg.amount_tbc);
+
+        emit(MerchantTBCDeposited{
+            deposit_id: msg.deposit_id,
+            nft_address: msg.nft_address,
+            amount_tbc: msg.amount_tbc,
+            timestamp: now()
+        }.toCell());
+    }
+
+    get fun getTBCSettlement(): Address {
+        return self.tbc_settlement;
+    }
+
+    get fun isDepositProcessed(deposit_id: Int): Bool {
+        let processed: Bool? = self.processed_deposits.get(deposit_id);
+        return processed != null && processed!!;
     }
 
     // ============================================
@@ -634,10 +680,12 @@ contract MerchantPaymentHub with MerchantPaymentHubBase {
     pending_admin_executable_at: Int as uint32 = 0;
     account_locks_contract: Address;
     nft_resolver: Address;
+    tbc_settlement: Address;
     account_states: map<Address, Int>;
     account_balances: map<Address, Int>;
     account_locks: map<Address, LockState>;
     nft_owners: map<Address, Address>;
+    processed_deposits: map<Int, Bool>;
     whitelisted_collections: map<Address, Bool>;
     pending_whitelist_collection: Address? = null;
     pending_whitelist_executable_at: Int as uint32 = 0;
@@ -650,12 +698,18 @@ contract MerchantPaymentHub with MerchantPaymentHubBase {
     //                            register NFT ownership + ACTIVE state via
     //                            ResolveNFTOwner (immutable). Without this the maps
     //                            stay empty and every payment fails (Issue #397).
-    init(deployer_address: Address, account_locks_contract: Address, nft_resolver: Address) {
+    init(
+        deployer_address: Address,
+        account_locks_contract: Address,
+        nft_resolver: Address,
+        tbc_settlement: Address
+    ) {
         // The deployer becomes the initial admin. Admin rights can later be
         // transferred to a DAO or multisig via MerchantProposeAdminTransfer + MerchantExecuteAdminTransfer.
         self.admin = deployer_address;
         self.account_locks_contract = account_locks_contract;
         self.nft_resolver = nft_resolver;
+        self.tbc_settlement = tbc_settlement;
     }
 }
 
@@ -680,5 +734,12 @@ message MerchantNFTOwnerRegistered {
     nft_address: Address;
     owner: Address;
     state: Int as uint8;
+    timestamp: Int as uint32;
+}
+
+message MerchantTBCDeposited {
+    deposit_id: Int as uint256;
+    nft_address: Address;
+    amount_tbc: Int as coins;
     timestamp: Int as uint32;
 }

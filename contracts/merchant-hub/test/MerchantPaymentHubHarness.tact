@@ -41,18 +41,26 @@ contract MerchantPaymentHubHarness with MerchantPaymentHubBase {
     pending_admin_executable_at: Int as uint32 = 0;
     account_locks_contract: Address;
     nft_resolver: Address;
+    tbc_settlement: Address;
     account_states: map<Address, Int>;
     account_balances: map<Address, Int>;
     account_locks: map<Address, LockState>;
     nft_owners: map<Address, Address>;
+    processed_deposits: map<Int, Bool>;
     whitelisted_collections: map<Address, Bool>;
     pending_whitelist_collection: Address? = null;
     pending_whitelist_executable_at: Int as uint32 = 0;
 
-    init(deployer_address: Address, account_locks_contract: Address, nft_resolver: Address) {
+    init(
+        deployer_address: Address,
+        account_locks_contract: Address,
+        nft_resolver: Address,
+        tbc_settlement: Address
+    ) {
         self.admin = deployer_address;
         self.account_locks_contract = account_locks_contract;
         self.nft_resolver = nft_resolver;
+        self.tbc_settlement = tbc_settlement;
     }
 
     // ---- TEST-ONLY bootstrap handlers (never deployed) ----

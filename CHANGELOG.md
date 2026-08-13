@@ -10,6 +10,10 @@ For SDK-specific changes, see [sdk/CHANGELOG.md](sdk/CHANGELOG.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `MerchantPaymentHub` получил production funding path: immutable TBC settlement authority подтверждает replay-защищённые депозиты зарегистрированных NFT без admin mint (`#428`).
+
 ### Changed — Security hardening: implement resolver-gated account registration in MerchantPaymentHub before mainnet (Issue #397)
 - **Root cause (audit CHECK393-M1).** Issue #363 removed the test-only `SetAccountState` / `SetAccountBalance` / `SetAccountLock` admin bootstrap from the deployable `contracts/MerchantPaymentHub.tact` and **documented** — but never **implemented** — a real account-registration path ("Account registration is performed by the NFT Account Resolver integration"). A freshly deployed hub therefore had permanently empty `nft_owners` / `account_states` maps, so every `MerchantPaymentRequest` short-circuited to `ERROR_PAYER_NOT_EXISTS` (7) / `ERROR_MERCHANT_NOT_EXISTS` (8) and **no payment could ever succeed**.
 - **Resolver-gated, write-once registration handler** added to the shared `MerchantPaymentHubBase` trait, so the deployable `MerchantPaymentHub` and the test-only `MerchantPaymentHubHarness` cannot drift. The contract now stores an immutable `nft_resolver` (set at `init()`, alongside `account_locks_contract`) and accepts a new `ResolveNFTOwner` message ONLY from that resolver (`require(sender() == self.nft_resolver, "Unauthorized: only NFT resolver")`). The handler binds `nft_owners`, seeds `account_states` to `ACCOUNT_STATE_ACTIVE`, and emits `MerchantNFTOwnerRegistered`. This mirrors how Issue #364 replaced CollateralSignal's admin `RegisterNFTOwner` with the resolver-gated `ResolveNFTOwner`.

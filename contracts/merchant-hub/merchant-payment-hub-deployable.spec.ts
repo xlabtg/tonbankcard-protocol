@@ -16,10 +16,9 @@
  *   (1) Reproduction: a fresh deployable contract rejects every payment because
  *       nothing can populate `nft_owners` (`ERROR_PAYER_NOT_EXISTS`).
  *   (2) Fix: the trusted NFT Account Resolver registers payer + merchant via the
- *       new resolver-gated, write-once `ResolveNFTOwner` handler, after which a
- *       full payment succeeds end-to-end (balances move) on the deployable
- *       contract. Funding the payer mirrors the external on-chain TBC settlement
- *       flow and is injected here via a sandbox storage fixture.
+ *       resolver-gated, write-once `ResolveNFTOwner` handler, then the immutable
+ *       TBC settlement authority funds the payer through replay-protected
+ *       `TBCDeposit`; a full payment succeeds end-to-end on the deployable contract.
  *   (3) Access control (invariant I3): the deployer / an attacker cannot register
  *       ownership — only `nft_resolver` can.
  *   (4) Write-once binding: an NFT cannot be silently re-pointed to a new owner.
@@ -27,7 +26,7 @@
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import '@ton/test-utils';
-import { Address, beginCell, Cell, Dictionary, toNano } from '@ton/core';
+import { Address, beginCell, Cell, toNano } from '@ton/core';
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
 import {
     MerchantPaymentHub,
@@ -57,6 +56,7 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
     let deployer: SandboxContract<TreasuryContract>; // initial admin
     let locksContract: SandboxContract<TreasuryContract>; // dedicated Account Locks authority
     let nftResolver: SandboxContract<TreasuryContract>; // trusted NFT Account Resolver
+    let tbcSettlement: SandboxContract<TreasuryContract>; // trusted TBC settlement authority
     let payerOwner: SandboxContract<TreasuryContract>;
     let merchantOwner: SandboxContract<TreasuryContract>;
     let attacker: SandboxContract<TreasuryContract>;
@@ -72,6 +72,7 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
         deployer = await blockchain.treasury('deployer');
         locksContract = await blockchain.treasury('locksContract');
         nftResolver = await blockchain.treasury('nftResolver');
+        tbcSettlement = await blockchain.treasury('tbcSettlement');
         payerOwner = await blockchain.treasury('payerOwner');
         merchantOwner = await blockchain.treasury('merchantOwner');
         attacker = await blockchain.treasury('attacker');
@@ -88,6 +89,7 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
                 deployer.address,
                 locksContract.address,
                 nftResolver.address,
+                tbcSettlement.address,
             ),
         );
     });
@@ -107,66 +109,22 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
         );
     }
 
-    // Credit a payer balance by writing the deployable hub's storage directly. The
-    // production contract intentionally has NO balance-minting handler (that removes the
-    // admin-mint backdoor C-MPH-C1 / invariant I3); in production, balances arrive via
-    // the external on-chain TBC settlement flow. This sandbox storage fixture stands in
-    // for that flow so the end-to-end payment can be exercised on the real artefact.
-    //
-    // Tact's runtime contract storage is NOT the plain `$Data` layout: it is
-    // `[lazy-init flag bit][admin][pending_admin][pending_admin_executable_at:32]
-    // [account_locks_contract] + ref0=<Tact system cell> + ref1=<$Data tail cell>`.
-    // We surgically rebuild it, keeping the flag, scalars, the system cell, the
-    // account_states / account_locks dicts and the nft_owners ref VERBATIM, and only
-    // inserting/overwriting the `account_balances` entry (an Address→coins dict).
-    async function fundBalance(nft: Address, amount: bigint) {
-        const smc = await blockchain.getContract(hub.address);
-        const shard = smc.account;
-        const account = shard.account;
-        if (!account) {
-            throw new Error('hub account missing — send a message to deploy it first');
-        }
-        const state = account.storage.state;
-        if (state.type !== 'active' || !state.state.data) {
-            throw new Error('hub is not active/deployed yet — send a message first');
-        }
-
-        const root = state.state.data.beginParse();
-        const initFlag = root.loadBit();
-        const admin = root.loadAddress();
-        const pendingAdmin = root.loadMaybeAddress();
-        const pendingAdminAt = root.loadUintBig(32);
-        const locksAddr = root.loadAddress();
-        const systemRef = root.loadRef(); // Tact system cell — keep verbatim
-        const tail = root.loadRef().beginParse(); // $Data tail: nft_resolver + dicts + ref
-
-        const nftResolverAddr = tail.loadAddress();
-        const statesRef = tail.loadMaybeRef(); // account_states dict — keep verbatim
-        const balances = tail.loadDict(Dictionary.Keys.Address(), Dictionary.Values.BigInt(257));
-        const locksRef = tail.loadMaybeRef(); // account_locks dict — keep verbatim
-        const ownersRef = tail.loadRef(); // nft_owners + whitelist tail — keep verbatim
-
-        balances.set(nft, amount);
-
-        const newTail = beginCell()
-            .storeAddress(nftResolverAddr)
-            .storeMaybeRef(statesRef)
-            .storeDict(balances, Dictionary.Keys.Address(), Dictionary.Values.BigInt(257))
-            .storeMaybeRef(locksRef)
-            .storeRef(ownersRef)
-            .endCell();
-
-        state.state.data = beginCell()
-            .storeBit(initFlag)
-            .storeAddress(admin)
-            .storeAddress(pendingAdmin)
-            .storeUint(pendingAdminAt, 32)
-            .storeAddress(locksAddr)
-            .storeRef(systemRef)
-            .storeRef(newTail)
-            .endCell();
-
-        await blockchain.setShardAccount(hub.address, shard);
+    async function deposit(
+        depositId: bigint,
+        nft: Address,
+        amount: bigint,
+        from: SandboxContract<TreasuryContract> = tbcSettlement,
+    ) {
+        return hub.send(
+            from.getSender(),
+            { value: GAS },
+            {
+                $$type: 'TBCDeposit',
+                deposit_id: depositId,
+                nft_address: nft,
+                amount_tbc: amount,
+            },
+        );
     }
 
     // Send a MerchantPaymentRequest from `from` on behalf of `payer` → `merchant`.
@@ -229,8 +187,7 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
             // This first message also deploys the contract (state-init is attached).
             await resolveOwner(payerNft, payerOwner.address);
             await resolveOwner(merchantNft, merchantOwner.address);
-            // The external on-chain TBC settlement flow funds the payer (fixture stand-in).
-            await fundBalance(payerNft, toNano('100'));
+            await deposit(1n, payerNft, toNano('100'));
         });
 
         it('populates nft_owners + account_states on the deployable contract', async () => {
@@ -259,6 +216,74 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
             // Funds moved atomically: payer −30, merchant +30 (ledger conservation, I5).
             expect(await hub.getGetBalance(payerNft)).toBe(toNano('70'));
             expect(await hub.getGetBalance(merchantNft)).toBe(toNano('30'));
+        });
+    });
+
+    describe('production TBC funding path', () => {
+        beforeEach(async () => {
+            await resolveOwner(payerNft, payerOwner.address);
+            await resolveOwner(merchantNft, merchantOwner.address);
+        });
+
+        it('settles fresh NFT → deposit → merchant payment', async () => {
+            await deposit(1n, payerNft, toNano('100'));
+            expect((await hub.getGetTbcSettlement()).toString()).toBe(
+                tbcSettlement.address.toString(),
+            );
+            expect(await hub.getIsDepositProcessed(1n)).toBe(true);
+            const res = await pay(payerOwner, payerNft, merchantNft, toNano('30'));
+
+            expect(res.transactions).toHaveTransaction({
+                from: hub.address,
+                to: payerOwner.address,
+                body: paymentResponse(true, ERROR_NONE),
+            });
+            expect(await hub.getGetBalance(payerNft)).toBe(toNano('70'));
+            expect(await hub.getGetBalance(merchantNft)).toBe(toNano('30'));
+        });
+
+        it('rejects forged deposits without changing balance', async () => {
+            const res = await deposit(1n, payerNft, toNano('100'), attacker);
+            expect(res.transactions).toHaveTransaction({
+                from: attacker.address,
+                to: hub.address,
+                success: false,
+            });
+            expect(await hub.getGetBalance(payerNft)).toBe(0n);
+        });
+
+        it('rejects a replayed deposit without crediting twice', async () => {
+            await deposit(1n, payerNft, toNano('100'));
+            const replay = await deposit(1n, payerNft, toNano('100'));
+            expect(replay.transactions).toHaveTransaction({
+                from: tbcSettlement.address,
+                to: hub.address,
+                success: false,
+            });
+            expect(await hub.getGetBalance(payerNft)).toBe(toNano('100'));
+        });
+
+        it('rejects zero-value deposits without consuming their id', async () => {
+            const res = await deposit(2n, payerNft, 0n);
+            expect(res.transactions).toHaveTransaction({
+                from: tbcSettlement.address,
+                to: hub.address,
+                success: false,
+            });
+            expect(await hub.getGetBalance(payerNft)).toBe(0n);
+            expect(await hub.getIsDepositProcessed(2n)).toBe(false);
+        });
+
+        it('rejects deposits to unregistered NFTs without consuming their id', async () => {
+            const unknownNft = (await blockchain.treasury('unknownNft')).address;
+            const res = await deposit(3n, unknownNft, toNano('100'));
+            expect(res.transactions).toHaveTransaction({
+                from: tbcSettlement.address,
+                to: hub.address,
+                success: false,
+            });
+            expect(await hub.getGetBalance(unknownNft)).toBe(0n);
+            expect(await hub.getIsDepositProcessed(3n)).toBe(false);
         });
     });
 
@@ -301,7 +326,7 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
         beforeEach(async () => {
             await resolveOwner(payerNft, payerOwner.address);
             await resolveOwner(merchantNft, merchantOwner.address);
-            await fundBalance(payerNft, toNano('100'));
+            await deposit(1n, payerNft, toNano('100'));
         });
 
         it('rejects a second ResolveNFTOwner for the same NFT (even from the resolver)', async () => {
