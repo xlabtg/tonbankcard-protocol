@@ -477,7 +477,7 @@ jobs:
         working-directory: contracts/payment-hub
         env:
           HUSKY: '0'
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts
 
       - name: Install deployment-tooling dependencies
         env:

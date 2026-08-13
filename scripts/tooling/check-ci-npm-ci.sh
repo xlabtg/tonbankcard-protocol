@@ -78,7 +78,8 @@ scan_workflow() {
     command="$(trim_yaml_value "${BASH_REMATCH[1]}")"
     lockfile="${REPO_ROOT}/${working_directory}/package-lock.json"
 
-    if [ ! -f "${lockfile}" ]; then
+    if [ ! -f "${lockfile}" ] ||
+       ! git -C "${REPO_ROOT}" ls-files --error-unmatch -- "${lockfile#"${REPO_ROOT}/"}" >/dev/null 2>&1; then
       continue
     fi
 
