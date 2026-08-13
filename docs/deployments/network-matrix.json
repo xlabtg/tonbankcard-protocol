@@ -140,13 +140,13 @@
     {
       "contractName": "NFT Account Resolver",
       "contractPurpose": "NFT ownership verification",
-      "status": "Implemented (FunC & Tact)",
+      "status": "BLOCKED — non-production placeholders (Issue #426)",
       "sourceFilePaths": [
         "contracts/nft-resolver/nft_account_resolver.fc",
         "contracts/nft-resolver/nft_account_resolver.tact"
       ],
       "deploymentStatus": "NOT DEPLOYED",
-      "notes": "Requires testnet verification before mainnet deployment"
+      "notes": "Excluded from deployable manifests until authenticated asynchronous TEP-62 resolution and Sandbox security tests are complete (Issue #426)"
     },
     {
       "contractName": "Account State Machine",

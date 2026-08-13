@@ -25,6 +25,8 @@ const STUB_FILES = [
   'contracts/nft-resolver/nft_account_resolver.fc',
 ];
 
+const INCOMPLETE_NFT_RESOLVER = 'contracts/nft-resolver/nft_account_resolver.tact';
+
 const NON_PRODUCTION_COLLATERAL_LOOKUP_FILES = [
   'contracts/collateral-lookup/PublicCollateralLookup.tact',
   'contracts/collateral-lookup/public-collateral-lookup.fc',
@@ -98,10 +100,9 @@ describe('CONTRACTS-H3: non-production FunC stubs excluded from deployable set',
     }
   });
 
-  it('keeps the production Tact sources in the deployable map', () => {
+  it('keeps the production PaymentHub source in the deployable map', () => {
     const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
     expect(deployable).toContain('contracts/payments/PaymentHub.tact');
-    expect(deployable).toContain('contracts/nft-resolver/nft_account_resolver.tact');
   });
 
   it('deploy/verify scripts source their contract set from the shared manifest', () => {
@@ -119,6 +120,21 @@ describe('CONTRACTS-H3: non-production FunC stubs excluded from deployable set',
     for (const stub of STUB_FILES) {
       expect(fs.existsSync(path.join(REPO_ROOT, stub))).toBe(true);
     }
+  });
+});
+
+describe('Issue #426: placeholder NFTAccountResolver is not deployable', () => {
+  it('excludes the incomplete Tact resolver from production manifests', () => {
+    const manifest = read(MANIFEST);
+    const deployable = extractLiteral(manifest, 'const DEPLOYABLE_CONTRACTS', '{', '}');
+    const nonProduction = extractLiteral(manifest, 'const NON_PRODUCTION_STUBS', '[', ']');
+
+    expect(deployable).not.toContain(INCOMPLETE_NFT_RESOLVER);
+    expect(nonProduction).toContain(INCOMPLETE_NFT_RESOLVER);
+  });
+
+  it('documents why the resolver cannot be deployed as production authority', () => {
+    expect(read(INCOMPLETE_NFT_RESOLVER)).toMatch(/NON-PRODUCTION|NOT PRODUCTION READY/i);
   });
 });
 

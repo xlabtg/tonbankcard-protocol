@@ -1,3 +1,11 @@
+// NON-PRODUCTION PLACEHOLDER — NOT PRODUCTION READY (Issue #426)
+//
+// This source does not implement the authenticated asynchronous TEP-62
+// request/callback flow required to resolve current NFT ownership on-chain. It is
+// intentionally excluded from scripts/deploy/deployable-contracts.ts until that
+// protocol and its replay/out-of-order/forged-callback Sandbox tests are complete.
+// Do not use resolveOwner() or the default account flags as authority data.
+//
 // NFT Account Resolver (Core Account Abstraction)
 // Purpose: Links NFT cards to owners and validates NFT-based accounts
 // Security: Stateless, read-only, no fund custody
