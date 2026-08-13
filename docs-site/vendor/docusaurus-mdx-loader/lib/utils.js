@@ -90,7 +90,7 @@ async function compileToJSX({ filePath, fileContent, frontMatter, options, compi
                 error.stack ?? 'N/A'
             : // MDX error: print extra attributes + stacktrace
                 `${errorJSON}\n${error.stack}`;
-        throw new Error(`MDX compilation failed for file ${logger_1.default.path(filePath)}\nCause: ${error.message}\nDetails:\n${errorDetails}`, 
+        throw new Error(`MDX compilation failed for file ${logger_1.default.path(filePath)}\nCause: ${error.message}\nDetails:\n${errorDetails}`,
         // TODO error cause doesn't seem to be used by Webpack stats.errors :s
         { cause: error });
     }

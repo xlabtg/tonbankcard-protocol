@@ -32,7 +32,7 @@ function normalizeAdmonitionOptions(providedOptions) {
     return options;
 }
 function parseDirective(directive) {
-    const hasDirectiveLabel = 
+    const hasDirectiveLabel =
     // @ts-expect-error: fine
     directive.children?.[0]?.data?.directiveLabel === true;
     if (hasDirectiveLabel) {
