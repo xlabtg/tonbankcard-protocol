@@ -235,6 +235,17 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Verify lint workspace coverage
+        run: node scripts/tooling/check-lint-workspace-coverage.js
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Lint API
+        working-directory: api
+        run: npm run lint
+
       - name: Install SDK dependencies
         working-directory: sdk
         run: npm ci
@@ -287,8 +298,21 @@ jobs:
         working-directory: dashboard
         run: npm run lint
 
-      # Contracts use Tact as primary language; TypeScript wrappers are generated
-      # by the Tact build step and linted as part of the build verification.
+      - name: Install faucet dependencies
+        working-directory: scripts/faucet
+        run: npm ci
+
+      - name: Lint faucet
+        working-directory: scripts/faucet
+        run: npm run lint
+
+      - name: Install payment-hub dependencies
+        working-directory: contracts/payment-hub
+        run: npm install
+
+      - name: Lint payment-hub TypeScript
+        working-directory: contracts/payment-hub
+        run: npm run lint
 
   # Verifies that secret-bearing .env files cannot be committed (audit finding
   # DEVOPS-H1, issue #261) while *.example templates remain tracked.
