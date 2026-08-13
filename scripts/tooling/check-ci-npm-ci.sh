@@ -82,11 +82,19 @@ scan_workflow() {
       continue
     fi
 
-    locked_npm_steps=$((locked_npm_steps + 1))
-
     if [[ ! "${command}" =~ ^npm[[:space:]]+install([[:space:]].*)?$ ]]; then
+      locked_npm_steps=$((locked_npm_steps + 1))
       continue
     fi
+
+    # Global tool installations do not consume the workspace lockfile, so
+    # replacing them with npm ci would be both misleading and invalid.
+    if [[ " ${command} " =~ [[:space:]]-g[[:space:]] ]] ||
+       [[ " ${command} " =~ [[:space:]]--global[[:space:]] ]]; then
+      continue
+    fi
+
+    locked_npm_steps=$((locked_npm_steps + 1))
 
     location="${rel}:${line_no}"
     install_args="${command#npm install}"
