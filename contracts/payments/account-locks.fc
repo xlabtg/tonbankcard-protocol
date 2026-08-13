@@ -209,7 +209,7 @@ int can_receive(slice nft_address) method_id {
     ;; Set FRAUD_LOCK
     if (op == op::set_fraud_lock) {
         ;; INVARIANT I3: Only risk authority can set fraud lock (no fund control)
-        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, risk_authority));
 
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
@@ -226,7 +226,7 @@ int can_receive(slice nft_address) method_id {
     ;; Clear FRAUD_LOCK
     if (op == op::clear_fraud_lock) {
         ;; Only risk authority can clear fraud lock
-        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, risk_authority));
 
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
@@ -243,7 +243,7 @@ int can_receive(slice nft_address) method_id {
     ;; Set COLLATERAL_LOCK
     if (op == op::set_collateral_lock) {
         ;; Only lending adapter can set collateral lock
-        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, lending_adapter));
 
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
@@ -260,7 +260,7 @@ int can_receive(slice nft_address) method_id {
     ;; Clear COLLATERAL_LOCK
     if (op == op::clear_collateral_lock) {
         ;; Only lending adapter can clear collateral lock
-        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, lending_adapter));
 
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
@@ -291,7 +291,7 @@ int can_receive(slice nft_address) method_id {
 
     ;; Phase 1: Current risk_authority proposes a new risk_authority
     if (op == op::propose_risk_authority) {
-        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, risk_authority));
         slice proposed = in_msg_body~load_msg_addr();
         int executable_at = now() + ROLE_TRANSFER_DELAY;
         save_data(lock_dict, risk_authority, lending_adapter,
@@ -303,7 +303,7 @@ int can_receive(slice nft_address) method_id {
     ;; Phase 2: Proposed risk_authority executes the transfer (after timelock)
     if (op == op::execute_risk_authority) {
         throw_unless(err::no_pending_transfer, pending_risk_present);
-        throw_unless(err::unauthorized, equal_slices(sender_address, pending_risk));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, pending_risk));
         throw_unless(err::timelock_not_expired, now() >= pending_risk_at);
         save_data(lock_dict, pending_risk, lending_adapter,
                   0, pending_risk, 0,
@@ -313,7 +313,7 @@ int can_receive(slice nft_address) method_id {
 
     ;; Cancel a pending risk_authority transfer (only current risk_authority)
     if (op == op::cancel_risk_authority) {
-        throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, risk_authority));
         throw_unless(err::no_pending_transfer, pending_risk_present);
         save_data(lock_dict, risk_authority, lending_adapter,
                   0, risk_authority, 0,
@@ -327,7 +327,7 @@ int can_receive(slice nft_address) method_id {
 
     ;; Phase 1: Current lending_adapter proposes a new lending_adapter
     if (op == op::propose_lending_adapter) {
-        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, lending_adapter));
         slice proposed = in_msg_body~load_msg_addr();
         int executable_at = now() + ROLE_TRANSFER_DELAY;
         save_data(lock_dict, risk_authority, lending_adapter,
@@ -339,7 +339,7 @@ int can_receive(slice nft_address) method_id {
     ;; Phase 2: Proposed lending_adapter executes the transfer (after timelock)
     if (op == op::execute_lending_adapter) {
         throw_unless(err::no_pending_transfer, pending_lending_present);
-        throw_unless(err::unauthorized, equal_slices(sender_address, pending_lending));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, pending_lending));
         throw_unless(err::timelock_not_expired, now() >= pending_lending_at);
         save_data(lock_dict, risk_authority, pending_lending,
                   pending_risk_present, pending_risk, pending_risk_at,
@@ -349,7 +349,7 @@ int can_receive(slice nft_address) method_id {
 
     ;; Cancel a pending lending_adapter transfer (only current lending_adapter)
     if (op == op::cancel_lending_adapter) {
-        throw_unless(err::unauthorized, equal_slices(sender_address, lending_adapter));
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, lending_adapter));
         throw_unless(err::no_pending_transfer, pending_lending_present);
         save_data(lock_dict, risk_authority, lending_adapter,
                   pending_risk_present, pending_risk, pending_risk_at,

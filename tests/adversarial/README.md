@@ -775,7 +775,7 @@ CODE VERIFICATION:
 ```func
 // account-locks.fc:162
 if (op == op::set_fraud_lock) {
-    throw_unless(err::unauthorized, equal_slices(sender_address, risk_authority));
+    throw_unless(err::unauthorized, equal_slice_bits(sender_address, risk_authority));
     // ... rest
 }
 ```

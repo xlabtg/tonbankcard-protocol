@@ -47,7 +47,7 @@ The Risk Authority does **not**:
 - pause the protocol or call `op::set_paused` (that is the PaymentHub admin multi-sig, a separate signer set — see [`KEY_MANAGEMENT.md`](../security/KEY_MANAGEMENT.md) §7.2),
 - mint, burn, or transfer TBC Diamonds NFTs.
 
-This single-purpose scope is itself a security invariant: any expansion of Risk Authority capabilities requires a governance proposal of category `ROADMAP_SIGNAL` plus the redeployment ceremony in [`PARAMETERS.md`](./PARAMETERS.md) §10, because the role boundaries are encoded in `account-locks.fc` as `equal_slices(sender_address, risk_authority)` guards (lines 212, 229).
+This single-purpose scope is itself a security invariant: any expansion of Risk Authority capabilities requires a governance proposal of category `ROADMAP_SIGNAL` plus the redeployment ceremony in [`PARAMETERS.md`](./PARAMETERS.md) §10, because the role boundaries are encoded in `account-locks.fc` as `equal_slice_bits(sender_address, risk_authority)` guards (lines 212, 229).
 
 ---
 
@@ -165,7 +165,7 @@ T3+ indexer mirror:                      RecordVotingResult (lock event mirrored
 T3+ public summary published             docs/governance/fraud-lock-evidence/<id>/summary.md
 ```
 
-The `account-locks.fc` setter at lines 210–224 is unchanged from Issue #96 / Issue #7. The only difference at T3 is the `sender_address` of the message: it is the multi-sig wallet contract, not an EOA, and `equal_slices(sender_address, risk_authority)` (line 212) succeeds because the on-chain `risk_authority` slice was set to the multi-sig wallet address at the E3 activation deploy (§6).
+The `account-locks.fc` setter at lines 210–224 retains the Issue #96 / Issue #7 access-control semantics. The only difference at T3 is the `sender_address` of the message: it is the multi-sig wallet contract, not an EOA, and `equal_slice_bits(sender_address, risk_authority)` (line 212) succeeds because the on-chain `risk_authority` slice was set to the multi-sig wallet address at the E3 activation deploy (§6).
 
 ### 4.2 Required fields in the on-chain payload
 
@@ -226,13 +226,13 @@ T1  public summary                       (within 60 min of T1; expanded summary 
 
 The emergency path **does not bypass** the 3-of-5 multi-sig requirement and **does not bypass** the evidence-anchor step. It only compresses notification and dual-review windows, both of which are auditable from the ceremony log. The maximum lock duration for an emergency-path action is **48 h** unless renewed under the standard procedure (§3.4); a 48-h emergency lock that is not renewed is automatically scheduled for clearance.
 
-There is **no** path by which a single Risk Authority signer, a quorum of two signers, or any non-Risk-Authority key can set FRAUD_LOCK. The contract guard `equal_slices(sender_address, risk_authority)` (line 212) reduces this to "the on-chain multi-sig wallet emitted the call", and the wallet contract enforces 3-of-5.
+There is **no** path by which a single Risk Authority signer, a quorum of two signers, or any non-Risk-Authority key can set FRAUD_LOCK. The contract guard `equal_slice_bits(sender_address, risk_authority)` (line 212) reduces this to "the on-chain multi-sig wallet emitted the call", and the wallet contract enforces 3-of-5.
 
 ---
 
 ## 5. Unlock procedure (clear FRAUD_LOCK)
 
-`op::clear_fraud_lock` (opcode `0x1002`, lines 227–241 of `account-locks.fc`) is gated by the same `equal_slices(sender_address, risk_authority)` check as the set path. Clearing follows the same 3-of-5 multi-sig ceremony, with the following differences:
+`op::clear_fraud_lock` (opcode `0x1002`, lines 227–241 of `account-locks.fc`) is gated by the same `equal_slice_bits(sender_address, risk_authority)` check as the set path. Clearing follows the same 3-of-5 multi-sig ceremony, with the following differences:
 
 1. **No evidence anchor is required** to clear a lock — clearing is always considered a safe direction.
 2. **Triggers:** a successful appeal (per [`FRAUD_LOCK_APPEAL.md`](./FRAUD_LOCK_APPEAL.md) §3), the expiration of the maximum duration in §3.4, the court order that originally produced FC-1 being vacated, or a holder-provided recovery proof under FC-5.
@@ -378,7 +378,7 @@ The table below maps each acceptance criterion of [#134](https://github.com/xlab
 |---|----------------------|----------|
 | AC-1 | E1 (DAO governance activation) complete | Tracked via [`E1-activation/ENGAGEMENT.md`](./E1-activation/ENGAGEMENT.md) — out of E3 scope; E3 is staged behind E1 ratification |
 | AC-2 | Risk Authority multi-sig wallet set up and tested | §§ 6.2, 6.3 of this document + (operational) `docs/deployments/B2-mainnet/multisig.risk-authority.json` (to be added at activation time) |
-| AC-3 | FRAUD_LOCK access control updated to require multi-sig authorization | §§ 6.1–6.3 — the on-chain `risk_authority` slice rotates to a 3-of-5 multi-sig wallet contract via the existing Issue #96 two-phase flow; the `account-locks.fc` setter guard `equal_slices(sender_address, risk_authority)` (line 212) is unchanged and therefore audit-stable |
+| AC-3 | FRAUD_LOCK access control updated to require multi-sig authorization | §§ 6.1–6.3 — the on-chain `risk_authority` slice rotates to a 3-of-5 multi-sig wallet contract via the existing Issue #96 two-phase flow; the `account-locks.fc` setter guard `equal_slice_bits(sender_address, risk_authority)` (line 212) preserves the same access-control semantics |
 | AC-4 | `docs/governance/RISK_AUTHORITY.md` written with full governance structure | This document |
 | AC-5 | Appeal process documented and accessible to users | [`FRAUD_LOCK_APPEAL.md`](./FRAUD_LOCK_APPEAL.md), referenced from §§ 3.4, 4.4, 5 and from the wallet UI in-app notification deep link |
 | AC-6 | `TransparencyRegistry` used to log all FRAUD_LOCK events | § 7, with on-chain mirroring via `RecordSnapshot` and indexer-derived event records |

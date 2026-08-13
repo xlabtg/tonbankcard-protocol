@@ -332,7 +332,7 @@ The log is append-only; corrections are added as new entries with `"correction_o
 - User funds CANNOT be seized (architectural guarantee, INVARIANT I6)
 
 **Post-E3 (3-of-5 multi-sig) blast radius:**
-- A single signer compromise is **non-actionable** — the contract guard `equal_slices(sender_address, risk_authority)` reduces every setter call to "the multi-sig wallet emitted it", and the wallet enforces 3-of-5 — see [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) §4.6 closing paragraph
+- A single signer compromise is **non-actionable** — the contract guard `equal_slice_bits(sender_address, risk_authority)` reduces every setter call to "the multi-sig wallet emitted it", and the wallet enforces 3-of-5 — see [`../governance/RISK_AUTHORITY.md`](../governance/RISK_AUTHORITY.md) §4.6 closing paragraph
 - Two-signer compromise is detectable but still non-actionable
 - Three-or-more signer compromise: see §5.4.4 (catastrophic recovery path)
 

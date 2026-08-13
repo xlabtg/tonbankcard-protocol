@@ -255,14 +255,14 @@ export function checkAccountLocksContract(content: string | null): CheckResult[]
     // block cannot mask removal of the FRAUD_LOCK guard.
     results.push({
         id: 'AL.guard.set',
-        name: 'op::set_fraud_lock guarded by equal_slices(sender_address, risk_authority)',
-        passed: /if \(op == op::set_fraud_lock\) \{(?:(?!\bif \(op ==)[\s\S])*?equal_slices\(sender_address, risk_authority\)/.test(content),
+        name: 'op::set_fraud_lock guarded by equal_slice_bits(sender_address, risk_authority)',
+        passed: /if \(op == op::set_fraud_lock\) \{(?:(?!\bif \(op ==)[\s\S])*?equal_slice_bits\(sender_address, risk_authority\)/.test(content),
         detail: 'AC-3 — multi-sig wallet contract is whatever is stored in risk_authority',
     });
     results.push({
         id: 'AL.guard.clear',
-        name: 'op::clear_fraud_lock guarded by equal_slices(sender_address, risk_authority)',
-        passed: /if \(op == op::clear_fraud_lock\) \{(?:(?!\bif \(op ==)[\s\S])*?equal_slices\(sender_address, risk_authority\)/.test(content),
+        name: 'op::clear_fraud_lock guarded by equal_slice_bits(sender_address, risk_authority)',
+        passed: /if \(op == op::clear_fraud_lock\) \{(?:(?!\bif \(op ==)[\s\S])*?equal_slice_bits\(sender_address, risk_authority\)/.test(content),
         detail: 'AC-3',
     });
 
