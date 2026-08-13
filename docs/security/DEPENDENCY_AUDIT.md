@@ -35,10 +35,12 @@ bytes through `image-size`; that package is absent from the lockfile. The
 The vendored loader should be removed when upstream Docusaurus no longer
 depends on a vulnerable image parser.
 
-The previously documented Dependabot control is **not currently present**:
-`.github/dependabot.yml` was deleted after the original D5 audit. Restoring it
-or documenting an approved alternative is tracked separately in
-[#434](https://github.com/xlabtg/tonbankcard-protocol/issues/434).
+The Dependabot control is active again after its accidental deletion. It checks
+all nine shipped npm workspaces and GitHub Actions every Monday. Safe minor and
+patch npm updates are grouped per workspace; major updates to the production
+`sdk`, `api`, and `backend/indexer` packages are excluded from automation and
+must be proposed and reviewed as separately scoped changes. The coverage guard
+keeps the Dependabot and vulnerability-audit workspace lists synchronized.
 
 ## 1. Historical D5 scope (2026-05-17)
 
@@ -203,7 +205,7 @@ code.
 | `npm audit` for all nine shipped locked workspaces | [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml) | every push to `main`, every PR, weekly cron; High threshold in every workspace |
 | Lockfile-tamper detection                        | same workflow, diff of regenerated `package-lock.json`              | every push / PR — fails CI on drift                |
 | Audit-matrix completeness guard                  | [`scripts/tooling/check-dependency-audit-coverage.sh`](../../scripts/tooling/check-dependency-audit-coverage.sh) | every CI run; fails if a shipped locked workspace is omitted |
-| Weekly dependency PRs                            | **Missing** — tracked by [#434](https://github.com/xlabtg/tonbankcard-protocol/issues/434) | no active Dependabot configuration |
+| Weekly dependency PRs                            | [`.github/dependabot.yml`](../../.github/dependabot.yml) | every Monday; grouped minor/patch updates for all nine npm workspaces, separate GitHub Actions updates; production major updates require explicit review |
 | Node LTS pinning                                 | `engines.node: ">=20.0.0"` in every `package.json`                  | every `npm install`                                |
 
 ## 7. Pinned versions (rationale)
@@ -236,9 +238,8 @@ PR as follows:
   `jq '.dependencies' sdk/package.json` etc.
 * [x] All `package-lock.json` files committed and up to date — see
   `git ls-files '**/package-lock.json'`.
-* [ ] `.github/dependabot.yml` was created for the original D5 audit but later
-  deleted; restore it or approve/document an alternative under
-  [#434](https://github.com/xlabtg/tonbankcard-protocol/issues/434).
+* [x] `.github/dependabot.yml` covers all nine shipped npm workspaces and GitHub
+  Actions; the CI coverage guard prevents drift from the audit matrix.
 * [x] CI step added to run `npm audit --audit-level=high` for all
   packages —
   [`.github/workflows/dependency-audit.yml`](../../.github/workflows/dependency-audit.yml).
