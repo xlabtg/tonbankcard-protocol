@@ -366,8 +366,17 @@ export interface BorrowerIdentity {
   /** Current owner wallet address (informational only, may change) */
   currentOwnerAddress?: string;
 
+  /** On-chain NFT item address resolved for this account */
+  nftAddress?: string;
+
   /** Whether the NFT account is valid (from whitelisted collection, not burned) */
   isValid: boolean;
+
+  /** Trust level of the on-chain verification attempt */
+  verificationStatus: VerificationStatus;
+
+  /** Network snapshot used by the chain query */
+  verifiedAtBlock?: number;
 
   /** Timestamp when identity was resolved */
   resolvedAt: Date;
@@ -403,6 +412,58 @@ export interface CollateralSignalInfo {
 
   /** TON blockchain transaction hash of the signal creation */
   signalTxHash?: string;
+}
+
+/** Explicit result of an on-chain verification attempt. */
+export type VerificationStatus =
+  | 'verified'
+  | 'unverified'
+  | 'unavailable'
+  | 'invalid';
+
+/** Immutable masterchain snapshot selected for a verification. */
+export interface ChainSnapshot {
+  chainId: number;
+  blockSeqno: number;
+  observedAt: Date;
+}
+
+/** TEP-62 NFT data returned by the configured read-only chain gateway. */
+export interface NFTAccountChainData {
+  nftAccountId: string;
+  nftAddress: string;
+  collectionAddress: string;
+  ownerAddress?: string;
+  initialized: boolean;
+}
+
+/** CollateralSignal state returned at the same snapshot as NFT data. */
+export interface CollateralSignalChainData {
+  signalId: string;
+  nftAccountId: string;
+  nftAddress: string;
+  assetType: string;
+  signalAmount: string;
+  isActive: boolean;
+  createdAt: Date;
+  expiresAt?: Date;
+  signalTxHash?: string;
+}
+
+/**
+ * Read-only boundary implemented by the deployment's TON RPC/indexer client.
+ * Every lookup receives an explicit snapshot to prevent mixed/stale reads.
+ */
+export interface CoinRabbitChainGateway {
+  getLatestSnapshot(chainId: number): Promise<ChainSnapshot>;
+  getNFTAccount(
+    nftAccountId: string,
+    snapshot: ChainSnapshot
+  ): Promise<NFTAccountChainData | undefined>;
+  getCollateralSignal(
+    signalId: string,
+    snapshot: ChainSnapshot
+  ): Promise<CollateralSignalChainData | undefined>;
 }
 
 /**
@@ -585,6 +646,12 @@ export interface CoinRabbitConfig {
 
   /** Chain ID (1 = mainnet, 2 = testnet) */
   chainId?: number;
+
+  /** Read-only TON RPC/indexer gateway used for authoritative verification */
+  chainGateway?: CoinRabbitChainGateway;
+
+  /** Reject snapshots older than this many seconds (default: 120) */
+  maxSnapshotAgeSeconds?: number;
 }
 
 /**
@@ -611,6 +678,9 @@ export interface CollateralVerificationResponse {
 
   /** Whether NFT account matches signal owner */
   ownershipVerified: boolean;
+
+  /** Trust level of the on-chain verification attempt */
+  verificationStatus: VerificationStatus;
 
   /** Collateral signal details (if valid) */
   signalInfo?: CollateralSignalInfo;

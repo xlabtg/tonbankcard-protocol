@@ -45,15 +45,18 @@ Tests confirming security properties:
 ## Running Tests
 
 ```bash
-# Run all lending adapter tests
-npm test -- tests/lending-adapter/
-
-# Run with coverage
-npm test -- --coverage tests/lending-adapter/
-
-# Run specific test file
-npm test -- tests/lending-adapter/LendingAdapter.spec.ts
+cd tests/lending-adapter
+npm ci
+npm run typecheck
+npm test
 ```
+
+Production verification requires a read-only `CoinRabbitChainGateway`. The
+gateway must query TEP-62 NFT data and CollateralSignal state at the supplied
+masterchain snapshot. If the gateway is absent, RPC is unavailable, or the
+snapshot is stale, the adapter fails closed with `verificationStatus:
+'unavailable'` and never treats account prefixes or caller-provided owners as
+on-chain proof.
 
 ## Key Security Properties Tested
 

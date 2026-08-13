@@ -45,6 +45,7 @@ import type {
   CollateralVerificationRequest,
   CollateralVerificationResponse,
   ProviderError,
+  ChainSnapshot,
 } from './types';
 
 /**
@@ -75,7 +76,8 @@ const LENDER_DISCLAIMER =
  * with external lending services.
  */
 export class CoinRabbitAdapter {
-  private readonly config: Required<CoinRabbitConfig>;
+  private readonly config: Omit<Required<CoinRabbitConfig>, 'chainGateway'> &
+    Pick<CoinRabbitConfig, 'chainGateway'>;
 
   constructor(config: CoinRabbitConfig = {}) {
     this.config = {
@@ -85,6 +87,8 @@ export class CoinRabbitAdapter {
       resolverContractAddress: config.resolverContractAddress || '',
       collateralContractAddress: config.collateralContractAddress || '',
       chainId: config.chainId || 1, // Default to mainnet
+      chainGateway: config.chainGateway,
+      maxSnapshotAgeSeconds: config.maxSnapshotAgeSeconds ?? 120,
     };
   }
 
@@ -114,26 +118,51 @@ export class CoinRabbitAdapter {
       return {
         nftAccountId,
         collectionAddress: '',
-        currentOwnerAddress: ownerAddress,
         isValid: false,
+        verificationStatus: 'invalid',
         resolvedAt: new Date(),
       };
     }
 
-    // Determine collection from NFT Account ID
-    const collectionAddress = this.getCollectionForAccount(nftAccountId);
+    const snapshot = await this.getUsableSnapshot();
+    if (!snapshot || !this.config.chainGateway) {
+      return this.unavailableIdentity(nftAccountId);
+    }
 
-    // In production, this would query the NFT Account Resolver contract
-    // For now, we validate the format and collection
-    const isValid = this.isWhitelistedCollection(collectionAddress);
+    try {
+      const data = await this.config.chainGateway.getNFTAccount(nftAccountId, snapshot);
+      if (!data) {
+        return {
+          nftAccountId,
+          collectionAddress: '',
+          isValid: false,
+          verificationStatus: 'unverified',
+          verifiedAtBlock: snapshot.blockSeqno,
+          resolvedAt: new Date(),
+        };
+      }
 
-    return {
-      nftAccountId,
-      collectionAddress,
-      currentOwnerAddress: ownerAddress,
-      isValid,
-      resolvedAt: new Date(),
-    };
+      const ownerMatches = !ownerAddress || data.ownerAddress === ownerAddress;
+      const isValid =
+        data.nftAccountId === nftAccountId &&
+        data.initialized &&
+        Boolean(data.ownerAddress) &&
+        ownerMatches &&
+        this.isWhitelistedCollection(data.collectionAddress);
+
+      return {
+        nftAccountId,
+        collectionAddress: data.collectionAddress,
+        currentOwnerAddress: data.ownerAddress,
+        nftAddress: data.nftAddress,
+        isValid,
+        verificationStatus: isValid ? 'verified' : 'unverified',
+        verifiedAtBlock: snapshot.blockSeqno,
+        resolvedAt: new Date(),
+      };
+    } catch {
+      return this.unavailableIdentity(nftAccountId);
+    }
   }
 
   /**
@@ -148,13 +177,7 @@ export class CoinRabbitAdapter {
       return false;
     }
 
-    const numericId = nftAccountId.replace(/\D/g, '');
-    if (!numericId) {
-      return false;
-    }
-
-    // Check series prefix
-    return numericId.startsWith('7777') || numericId.startsWith('8888');
+    return /^(7777|8888)\d{1,15}$/.test(nftAccountId);
   }
 
   /**
@@ -212,39 +235,65 @@ export class CoinRabbitAdapter {
   async verifyCollateralSignal(
     request: CollateralVerificationRequest
   ): Promise<CollateralVerificationResponse> {
-    // Resolve borrower identity first
-    const identity = await this.resolveBorrowerIdentity(request.nftAccountId);
+    if (!request.signalId || !this.isValidNFTAccountId(request.nftAccountId)) {
+      return this.failedCollateralVerification('invalid');
+    }
+
+    const snapshot = await this.getUsableSnapshot();
+    if (!snapshot || !this.config.chainGateway) {
+      return this.failedCollateralVerification('unavailable');
+    }
+
+    const identity = await this.resolveBorrowerIdentityAtSnapshot(
+      request.nftAccountId,
+      snapshot
+    );
 
     if (!identity.isValid) {
+      return this.failedCollateralVerification(
+        identity.verificationStatus,
+        snapshot.blockSeqno
+      );
+    }
+
+    try {
+      const signal = await this.config.chainGateway.getCollateralSignal(
+        request.signalId,
+        snapshot
+      );
+      const ownershipVerified = Boolean(
+        signal &&
+        signal.signalId === request.signalId &&
+        signal.nftAccountId === request.nftAccountId &&
+        signal.nftAddress === identity.nftAddress
+      );
+      const isValid = ownershipVerified && Boolean(signal?.isActive);
+
+      if (!signal || !isValid) {
+        return this.failedCollateralVerification('unverified', snapshot.blockSeqno);
+      }
+
       return {
-        isValid: false,
-        ownershipVerified: false,
+        isValid: true,
+        ownershipVerified: true,
+        verificationStatus: 'verified',
+        signalInfo: {
+          signalId: signal.signalId,
+          nftAccountId: signal.nftAccountId,
+          assetType: signal.assetType,
+          signalAmount: signal.signalAmount,
+          isActive: signal.isActive,
+          createdAt: signal.createdAt,
+          expiresAt: signal.expiresAt,
+          signalTxHash: signal.signalTxHash,
+        },
+        verifiedAtBlock: snapshot.blockSeqno,
         verifiedAt: new Date(),
         disclaimer: LENDER_DISCLAIMER,
       };
+    } catch {
+      return this.failedCollateralVerification('unavailable', snapshot.blockSeqno);
     }
-
-    // In production, this would query the Collateral Signal Contract
-    // For now, we return a placeholder that demonstrates the interface
-    // The actual implementation requires Issue 6.1 to be completed
-
-    // TODO: Integrate with Issue 6.1 Collateral Signal Contract
-    // const signalData = await this.queryCollateralContract(request.signalId);
-
-    return {
-      isValid: true, // Would be determined by on-chain query
-      ownershipVerified: true, // Would verify NFT ownership matches signal
-      signalInfo: {
-        signalId: request.signalId,
-        nftAccountId: request.nftAccountId,
-        assetType: 'TON', // Would come from on-chain data
-        signalAmount: '0', // Would come from on-chain data
-        isActive: true, // Would come from on-chain data
-        createdAt: new Date(),
-      },
-      verifiedAt: new Date(),
-      disclaimer: LENDER_DISCLAIMER,
-    };
   }
 
   /**
@@ -258,21 +307,87 @@ export class CoinRabbitAdapter {
     signalId: string,
     nftAccountId: string
   ): Promise<CollateralSignalInfo | undefined> {
-    // In production, this would query the Collateral Signal Contract
-    // TODO: Integrate with Issue 6.1 Collateral Signal Contract
-
     if (!signalId || !nftAccountId) {
       return undefined;
     }
 
-    // Placeholder response - actual implementation requires Issue 6.1
+    const verification = await this.verifyCollateralSignal({ signalId, nftAccountId });
+    return verification.verificationStatus === 'verified'
+      ? verification.signalInfo
+      : undefined;
+  }
+
+  private async getUsableSnapshot(): Promise<ChainSnapshot | undefined> {
+    if (!this.config.chainGateway) return undefined;
+    try {
+      const snapshot = await this.config.chainGateway.getLatestSnapshot(this.config.chainId);
+      const age = Date.now() - snapshot.observedAt.getTime();
+      if (
+        snapshot.chainId !== this.config.chainId ||
+        !Number.isSafeInteger(snapshot.blockSeqno) ||
+        snapshot.blockSeqno < 0 ||
+        !Number.isFinite(age) ||
+        age < 0 ||
+        age > this.config.maxSnapshotAgeSeconds * 1000
+      ) {
+        return undefined;
+      }
+      return snapshot;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private unavailableIdentity(nftAccountId: string): BorrowerIdentity {
     return {
-      signalId,
       nftAccountId,
-      assetType: 'TON',
-      signalAmount: '0',
-      isActive: true,
-      createdAt: new Date(),
+      collectionAddress: '',
+      isValid: false,
+      verificationStatus: 'unavailable',
+      resolvedAt: new Date(),
+    };
+  }
+
+  private async resolveBorrowerIdentityAtSnapshot(
+    nftAccountId: string,
+    snapshot: ChainSnapshot
+  ): Promise<BorrowerIdentity> {
+    if (!this.config.chainGateway) return this.unavailableIdentity(nftAccountId);
+    try {
+      const data = await this.config.chainGateway.getNFTAccount(nftAccountId, snapshot);
+      const isValid = Boolean(
+        data &&
+        data.nftAccountId === nftAccountId &&
+        data.initialized &&
+        data.ownerAddress &&
+        this.isWhitelistedCollection(data.collectionAddress)
+      );
+      return {
+        nftAccountId,
+        collectionAddress: data?.collectionAddress || '',
+        currentOwnerAddress: data?.ownerAddress,
+        nftAddress: data?.nftAddress,
+        isValid,
+        verificationStatus: isValid ? 'verified' : 'unverified',
+        verifiedAtBlock: snapshot.blockSeqno,
+        resolvedAt: new Date(),
+      };
+    } catch {
+      return this.unavailableIdentity(nftAccountId);
+    }
+  }
+
+  private failedCollateralVerification(
+    verificationStatus: CollateralVerificationResponse['verificationStatus'],
+    verifiedAtBlock?: number
+  ): CollateralVerificationResponse {
+    return {
+      isValid: false,
+      ownershipVerified: false,
+      verificationStatus,
+      verifiedAtBlock,
+      verifiedAt: new Date(),
+      disclaimer: LENDER_DISCLAIMER,
     };
   }
 
@@ -554,12 +669,11 @@ export class CoinRabbitAdapter {
   /**
    * Create standardized provider error
    */
-  private createError(message: string, code?: string): ProviderError {
-    return {
-      message,
-      code,
-      provider: 'CoinRabbit',
-    };
+  private createError(message: string, code?: string): Error & ProviderError {
+    const error = new Error(message) as Error & ProviderError;
+    error.code = code;
+    error.provider = 'CoinRabbit';
+    return error;
   }
 }
 
