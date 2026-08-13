@@ -51,7 +51,7 @@ jobs:
     outputs:
       version: ${{ steps.parse.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Parse release tag and verify package version
         id: parse
@@ -89,7 +89,7 @@ jobs:
       name: npm-publish
       url: https://www.npmjs.com/package/@tonbankcard/merchant-sdk
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
