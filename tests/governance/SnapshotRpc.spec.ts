@@ -1,4 +1,5 @@
 import { Address, beginCell, Cell } from '@ton/core';
+import { describe, expect, it, jest } from '@jest/globals';
 import {
   DiamondSnapshotTool,
   GovernanceConfig,
@@ -91,12 +92,14 @@ describe('DiamondSnapshotTool fail-closed snapshots', () => {
   };
 
   it('aborts instead of emitting an incomplete snapshot after any RPC failure', async () => {
+    let addressCalls = 0;
     const provider = {
-      getLatestBlock: jest.fn().mockResolvedValue(77),
-      getNFTAddress: jest.fn()
-        .mockResolvedValueOnce(NFT)
-        .mockRejectedValueOnce(new Error('RPC unavailable')),
-      getNFTData: jest.fn().mockResolvedValue({
+      getLatestBlock: async () => 77,
+      getNFTAddress: async () => {
+        if (addressCalls++ === 0) return NFT;
+        throw new Error('RPC unavailable');
+      },
+      getNFTData: async () => ({
         init: true, index: 0, collection_address: COLLECTION,
         owner_address: OWNER, individual_content: beginCell().endCell(),
       }),
@@ -107,12 +110,14 @@ describe('DiamondSnapshotTool fail-closed snapshots', () => {
   });
 
   it('marks explicitly requested partial snapshots and makes verification invalid', async () => {
+    let addressCalls = 0;
     const provider = {
-      getLatestBlock: jest.fn().mockResolvedValue(77),
-      getNFTAddress: jest.fn()
-        .mockResolvedValueOnce(NFT)
-        .mockRejectedValueOnce(new Error('RPC unavailable')),
-      getNFTData: jest.fn().mockResolvedValue({
+      getLatestBlock: async () => 77,
+      getNFTAddress: async () => {
+        if (addressCalls++ === 0) return NFT;
+        throw new Error('RPC unavailable');
+      },
+      getNFTData: async () => ({
         init: true, index: 0, collection_address: COLLECTION,
         owner_address: OWNER, individual_content: beginCell().endCell(),
       }),

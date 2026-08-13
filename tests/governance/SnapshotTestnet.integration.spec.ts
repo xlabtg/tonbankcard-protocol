@@ -1,4 +1,5 @@
 import { Address } from '@ton/core';
+import { describe, expect, it } from '@jest/globals';
 import { TonJsonRpcSnapshotProvider } from '../../scripts/governance/snapshot';
 
 const run = process.env.TON_TESTNET_NFT_COLLECTION && process.env.TON_TESTNET_NFT_ADDRESS
@@ -22,4 +23,3 @@ run('governance snapshot testnet fixture', () => {
     expect(data.collection_address.equals(collection)).toBe(true);
   });
 });
-

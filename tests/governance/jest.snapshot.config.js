@@ -8,4 +8,7 @@ module.exports = {
       { tsconfig: '<rootDir>/tests/governance/tsconfig.snapshot.json' },
     ],
   },
+  moduleNameMapper: {
+    '^@jest/globals$': '<rootDir>/tests/tooling/node_modules/@jest/globals',
+  },
 };
