@@ -296,11 +296,18 @@ tuple get_all_owners() method_id;
 npm run governance:snapshot
 
 # Create snapshot at specific block
-npm run governance:snapshot --block 12345678
+npm run governance:snapshot -- --block=12345678
 
 # Verify snapshot integrity
-npm run governance:verify-snapshot snapshot_12345678.json
+npm run governance:verify-snapshot -- snapshot_12345678.json
 ```
+
+`snapshot.ts` interprets `--block` as a masterchain seqno. Without it, the tool
+pins the latest seqno once; collection and TEP-62 item getters must all attest
+that same `block_id.seqno`. A query, stack, index, or collection mismatch aborts
+the run without output. Diagnostic partial output requires `--allow-partial`, is
+marked with `metadata.complete=false` plus `failed_indices`, and fails integrity
+verification, so it cannot be used as a voter registry.
 
 **Output Format**:
 ```json
@@ -318,7 +325,14 @@ npm run governance:verify-snapshot snapshot_12345678.json
     ...
   ],
   "total_voting_power": 222,
-  "unique_owners": 187
+  "unique_owners": 187,
+  "metadata": {
+    "created_at": "2025-01-15T10:05:00Z",
+    "tool_version": "1.0.0",
+    "governance_type": "advisory-non-binding",
+    "complete": true,
+    "failed_indices": []
+  }
 }
 ```
 

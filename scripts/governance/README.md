@@ -18,7 +18,7 @@ Off-chain utilities for creating and verifying TBC Diamonds DAO governance snaps
 ### Prerequisites
 
 ```bash
-npm install @ton/ton @ton/core
+npm ci
 ```
 
 ### Configuration
@@ -51,13 +51,28 @@ Output: `../../snapshots/snapshot_<block_number>.json`
 ### Create Snapshot at Specific Block
 
 ```bash
-npm run governance:snapshot --block=12345678
+npm run governance:snapshot -- --block=12345678
 ```
+
+`--block` — это masterchain `seqno`. Без опции инструмент один раз вызывает
+`getMasterchainInfo` и фиксирует текущий `seqno`. Каждый последующий
+`get_nft_address_by_index` и `get_nft_data` отправляется с тем же `seqno`, а
+ответ RPC принимается только при совпадающем `block_id.seqno`.
+
+По умолчанию любой RPC/stack/consistency error останавливает процесс без записи
+snapshot. Для диагностики можно явно запросить неполный артефакт:
+
+```bash
+npm run governance:snapshot -- --allow-partial
+```
+
+Он получает `metadata.complete: false` и `metadata.failed_indices`, поэтому
+`governance:verify-snapshot` всегда признаёт его невалидным для голосования.
 
 ### Verify Snapshot Integrity
 
 ```bash
-npm run governance:verify-snapshot snapshots/snapshot_12345678.json
+npm run governance:verify-snapshot -- snapshots/snapshot_12345678.json
 ```
 
 ## Snapshot Format
@@ -83,7 +98,9 @@ Generated snapshots follow this structure:
   "metadata": {
     "created_at": "2025-01-15T10:05:00Z",
     "tool_version": "1.0.0",
-    "governance_type": "advisory-non-binding"
+    "governance_type": "advisory-non-binding",
+    "complete": true,
+    "failed_indices": []
   }
 }
 ```
@@ -245,14 +262,20 @@ Test coverage:
 
 Edit `config.json` and set `diamondsCollectionAddress`.
 
-### "NFT address calculation not implemented"
+### Testnet fixture
 
-The tool currently throws this error because it requires the actual TBC Diamonds collection contract to be deployed.
+Unit tests use deterministic mocked JSON-RPC stacks. A live testnet round-trip
+is opt-in so ordinary CI remains deterministic:
 
-**To fix**:
-1. Deploy TBC Diamonds NFT collection
-2. Update `getNFTAddress()` method in `snapshot.ts` to call the collection's `get_nft_address_by_index` method
-3. Implement TON SDK calls based on actual contract ABI
+```bash
+TON_TESTNET_NFT_COLLECTION=EQ... \
+TON_TESTNET_NFT_ADDRESS=EQ... \
+TON_TESTNET_NFT_INDEX=0 \
+TONCENTER_API_KEY=... \
+npm --prefix tests/tooling exec -- jest --runInBand --config tests/governance/jest.snapshot.config.js
+```
+
+`TON_TESTNET_RPC_ENDPOINT` can override the default testnet toncenter endpoint.
 
 ### Rate Limit Errors
 
