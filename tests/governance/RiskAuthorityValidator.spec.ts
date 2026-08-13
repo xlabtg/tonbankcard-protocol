@@ -246,19 +246,19 @@ describe('checkAccountLocksContract', () => {
         expect(results[0].id).toBe('AL.fc');
     });
 
-    it('flags removal of the equal_slices(sender_address, risk_authority) guard on op::set_fraud_lock', () => {
+    it('flags removal of the equal_slice_bits(sender_address, risk_authority) guard on op::set_fraud_lock', () => {
         const tampered = realContract.replace(
-            /if \(op == op::set_fraud_lock\) \{([\s\S]*?)equal_slices\(sender_address, risk_authority\)/,
-            'if (op == op::set_fraud_lock) {$1equal_slices(sender_address, anyone)',
+            /if \(op == op::set_fraud_lock\) \{([\s\S]*?)equal_slice_bits\(sender_address, risk_authority\)/,
+            'if (op == op::set_fraud_lock) {$1equal_slice_bits(sender_address, anyone)',
         );
         const results = checkAccountLocksContract(tampered);
         expect(failures(results)).toContain('AL.guard.set');
     });
 
-    it('flags removal of the equal_slices(sender_address, risk_authority) guard on op::clear_fraud_lock', () => {
+    it('flags removal of the equal_slice_bits(sender_address, risk_authority) guard on op::clear_fraud_lock', () => {
         const tampered = realContract.replace(
-            /if \(op == op::clear_fraud_lock\) \{([\s\S]*?)equal_slices\(sender_address, risk_authority\)/,
-            'if (op == op::clear_fraud_lock) {$1equal_slices(sender_address, anyone)',
+            /if \(op == op::clear_fraud_lock\) \{([\s\S]*?)equal_slice_bits\(sender_address, risk_authority\)/,
+            'if (op == op::clear_fraud_lock) {$1equal_slice_bits(sender_address, anyone)',
         );
         const results = checkAccountLocksContract(tampered);
         expect(failures(results)).toContain('AL.guard.clear');

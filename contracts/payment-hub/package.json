@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "node build.js",
+    "build:deployable": "node build-deployable.js",
     "build:wrappers": "tsc",
     "test": "jest",
     "test:coverage": "jest --coverage",

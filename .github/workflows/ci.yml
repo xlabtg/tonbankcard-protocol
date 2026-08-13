@@ -487,9 +487,9 @@ jobs:
       - name: Type-check deployment tooling
         run: npm run deploy:check
 
-      - name: Build payment-hub contracts
+      - name: Build every deployable contract source
         working-directory: contracts/payment-hub
-        run: npm run build
+        run: npm run build:deployable
 
       - name: Test payment-hub contract specs
         working-directory: contracts/payment-hub
