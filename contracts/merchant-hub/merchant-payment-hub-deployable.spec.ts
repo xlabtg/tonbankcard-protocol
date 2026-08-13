@@ -16,10 +16,9 @@
  *   (1) Reproduction: a fresh deployable contract rejects every payment because
  *       nothing can populate `nft_owners` (`ERROR_PAYER_NOT_EXISTS`).
  *   (2) Fix: the trusted NFT Account Resolver registers payer + merchant via the
- *       new resolver-gated, write-once `ResolveNFTOwner` handler, after which a
- *       full payment succeeds end-to-end (balances move) on the deployable
- *       contract. Funding the payer mirrors the external on-chain TBC settlement
- *       flow and is injected here via a sandbox storage fixture.
+ *       resolver-gated, write-once `ResolveNFTOwner` handler, then the immutable
+ *       TBC settlement authority funds the payer through replay-protected
+ *       `TBCDeposit`; a full payment succeeds end-to-end on the deployable contract.
  *   (3) Access control (invariant I3): the deployer / an attacker cannot register
  *       ownership — only `nft_resolver` can.
  *   (4) Write-once binding: an NFT cannot be silently re-pointed to a new owner.
