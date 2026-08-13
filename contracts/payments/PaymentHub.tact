@@ -89,14 +89,6 @@ message GetAccountStateResponse {
     owner: Address;
 }
 
-// Admin message to initialize an account (for testing/setup)
-message InitializeAccount {
-    nft_address: Address;
-    owner: Address;
-    initial_balance: Int as coins;
-    initial_state: Int as uint8;
-}
-
 // ========================================
 // Admin Transfer Messages
 // ========================================
@@ -331,35 +323,6 @@ contract PaymentHub with Deployable {
     }
 
     // ========================================
-    // Account Management
-    // ========================================
-
-    /// @notice Initialize or update an account
-    /// @dev INVARIANT I3: Admin can initialize but NOT withdraw/move existing funds
-    /// @dev This is needed for account setup when an NFT holder registers
-    receive(msg: InitializeAccount) {
-        // INVARIANT I3: Only admin can initialize accounts during development
-        // NOTE: This is a test-only function and does NOT allow moving existing funds
-        require(sender() == self.admin, "Unauthorized: only admin");
-
-        // SECURITY (PC-02 / #371): account creation is WRITE-ONCE.
-        // Without this guard a malicious or compromised admin could re-initialize
-        // an already-funded account, reassign `owner` to an attacker-controlled
-        // address and then drain it via TransferInternalRequest (which authorizes
-        // on sender() == from_account.owner). That breaks I1 (Non-Custodial) and
-        // I3 (No Admin Control over user funds). Reject any write to a live slot.
-        require(self.accounts.get(msg.nft_address) == null, "Account already initialized");
-
-        let account: AccountState = AccountState{
-            balance: msg.initial_balance,
-            state: msg.initial_state,
-            owner: msg.owner
-        };
-
-        self.accounts.set(msg.nft_address, account);
-    }
-
-    // ========================================
     // Admin Transfer Functions (Issue #96)
     // ========================================
 
@@ -465,12 +428,10 @@ contract PaymentHub with Deployable {
     // Return the stored account for an NFT, or a transient zero-balance default.
     //
     // SECURITY (PC-02 / #371): this helper is READ-ONLY — it must NOT persist a
-    // placeholder slot. Now that InitializeAccount is write-once
-    // (require accounts.get == null), any path that durably created an empty slot
-    // here (a free GetAccountStateRequest query, a validation lookup) would let
-    // anyone permanently squat an nft_address and block its legitimate first
-    // initialization — a denial-of-service. Real account state is persisted only
-    // by InitializeAccount and by the balance update in TransferInternalRequest.
+    // placeholder slot. Any path that durably created an empty slot here would let
+    // anyone squat an nft_address. Real balances can only be persisted by a
+    // verified deposit/settlement path; the test-only InitializeAccount bootstrap
+    // was removed from this deployable source by Issue #427.
     fun getAccountOrDefault(nft_address: Address): AccountState {
         let existing: AccountState? = self.accounts.get(nft_address);
 
@@ -480,8 +441,8 @@ contract PaymentHub with Deployable {
 
         // Transient default for a not-yet-initialized account: zero balance,
         // ACTIVE state, owner set to the NFT address as a placeholder. Real
-        // ownership is established when InitializeAccount is called with the
-        // actual owner from the NFT item contract. NOT written to storage.
+        // ownership must be established by a resolver-verified registration path.
+        // This transient default is NOT written to storage.
         return AccountState{
             balance: 0,
             state: ACCOUNT_STATE_ACTIVE,
