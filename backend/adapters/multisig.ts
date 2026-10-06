@@ -1,3 +1,4 @@
+import { isPositiveDecimal } from './validation';
 /**
  * TONBANKCARD Multi-Signature Card Adapter
  *
@@ -125,7 +126,7 @@ export class MultiSigCardAdapter {
       );
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    if (!isPositiveDecimal(amount)) {
       throw this.createError('Invalid payment amount', 'INVALID_AMOUNT');
     }
 

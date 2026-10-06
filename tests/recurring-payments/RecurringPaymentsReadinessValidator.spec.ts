@@ -569,14 +569,12 @@ describe('checkContractEvidence', () => {
         expect(failures(checkContractEvidence(tampered))).toContain('CT.min-period');
     });
 
-    it('flags landing of RP-CH-1 (composite-key combinator change) without doc update', () => {
-        // Simulate RP-CH-1 landing by swapping the integer-addition combinator
-        // for a hash-based combinator. The validator must detect the divergence.
+    it('flags reintroduction of additive composite keys', () => {
         const tampered = realContract.replace(
-            /return sha256\(nft_address\.asSlice\(\)\) \+ mandate_id;/g,
-            'return sha256(beginCell().storeSlice(nft_address.asSlice()).storeUint(mandate_id, 64).endCell().asSlice());',
+            /return beginCell\(\)[\s\S]*?\.hash\(\);/,
+            'return sha256(nft_address.asSlice()) + mandate_id;',
         );
-        expect(failures(checkContractEvidence(tampered))).toContain('CT.mandateKey.addition');
+        expect(failures(checkContractEvidence(tampered))).toContain('CT.mandateKey.hash');
     });
 
     it('flags reintroduction of RegisterNFTOwnerRecurring in production', () => {
