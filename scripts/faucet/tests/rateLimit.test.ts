@@ -1,9 +1,10 @@
+import { Address } from '@ton/core';
 import { describe, it, expect } from '@jest/globals';
 import { FaucetRateLimiter, normaliseAddress } from '../src/rateLimit';
 
 describe('FaucetRateLimiter', () => {
-  const ADDR = 'EQAbcDefGhiJklMnoPqrStuVwxYz0123456789ABCDEFGHIjk';
-  const ADDR_VARIANT = '  eqabcdefghijklmnopqrstuvwxyz0123456789abcdefghijk  ';
+  const ADDR = '0:' + 'b'.repeat(64);
+  const ADDR_VARIANT = '  ' + Address.parse(ADDR).toString({bounceable:false,testOnly:true}) + '  ';
 
   it('allows the first dispense and records the slot', () => {
     let now = 1_700_000_000_000;
@@ -26,7 +27,7 @@ describe('FaucetRateLimiter', () => {
     expect(second.nextAvailableAt).toBe(1_700_000_000_000 + 60_000);
   });
 
-  it('treats mixed-case / whitespace variants of the same address as one identity', () => {
+  it('treats friendly / raw variants of the same address as one identity', () => {
     let now = 1_700_000_000_000;
     const limiter = new FaucetRateLimiter({ windowMs: 60_000, maxPerWindow: 1, now: () => now });
 
@@ -76,7 +77,8 @@ describe('FaucetRateLimiter', () => {
 });
 
 describe('normaliseAddress', () => {
-  it('lower-cases and trims', () => {
-    expect(normaliseAddress('  EQAbc  ')).toBe('eqabc');
+  it('canonicalizes a checksummed address', () => {
+    const raw = '0:' + 'b'.repeat(64);
+    expect(normaliseAddress('  ' + Address.parse(raw).toString() + '  ')).toBe(raw);
   });
 });

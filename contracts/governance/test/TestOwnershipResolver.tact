@@ -19,12 +19,16 @@ message RegisterOwner {
     owner: Address;
 }
 
+message SetTestResponseMode { mode: Int as uint8; }
+
 contract TestOwnershipResolver with Deployable {
 
     // nft_id -> current owner
     owners: map<Int, Address>;
 
-    init() {}
+    response_mode: Int as uint8;
+    init() { self.response_mode = 0; }
+    receive(msg: SetTestResponseMode) { self.response_mode = msg.mode; }
 
     // Seed ownership for tests.
     receive(msg: RegisterOwner) {
@@ -33,6 +37,8 @@ contract TestOwnershipResolver with Deployable {
 
     // Answer the registry's ownership query with the authoritative owner.
     receive(msg: ResolveOwnership) {
+        if (self.response_mode == 1) { return; }
+        require(self.response_mode != 2, "Test resolver rejection");
         let registry: Address = sender();
         let known: Address? = self.owners.get(msg.nft_id);
 

@@ -1,3 +1,5 @@
+import { Address } from '@ton/core';
+import { buildWalletLink } from '@tonbankcard/merchant-sdk/wallet-link';
 /**
  * TONBANKCARD Mobile Core - Payment Service
  *
@@ -54,25 +56,19 @@ export class PaymentService {
     }
 
     const amount = assertAmount(request.amountTbc);
+    if (!/^[0-9]+$/.test(amount)) throw new Error('Invalid amount: expected integer TBC nanocoins');
 
-    const parts = [
-      'TONBANKCARD Payment',
-      request.orderId ? `Order: ${request.orderId}` : '',
-      request.description || '',
-    ]
-      .filter(Boolean)
-      .join(' | ');
-
-    const merchant = encodeURIComponent(request.merchantNft);
-    const text = encodeURIComponent(parts);
-    let link = `ton://transfer/${merchant}?amount=${encodeURIComponent(amount)}&text=${text}`;
-
-    if (request.returnUrl) {
-      const returnUrl = assertReturnUrl(request.returnUrl, {
-        allowedHosts: this.config.allowedReturnUrlHosts,
-      });
-      link += `&return=${encodeURIComponent(returnUrl)}`;
-    }
+    if (!request.payerNft) throw new Error('payerNft is required');
+    const returnUrl = request.returnUrl ? assertReturnUrl(request.returnUrl, {
+      allowedHosts: this.config.allowedReturnUrlHosts,
+    }) : undefined;
+    const link = buildWalletLink({
+      ...this.config, paymentHubAddress: Address.parse(this.config.paymentHubAddress),
+    }, {
+      payerNft: Address.parse(request.payerNft), returnUrl,
+      invoice: { id: request.orderId || 'mobile-payment', merchantNft: Address.parse(request.merchantNft),
+        amountTbc: BigInt(amount), description: request.description, createdAt: Math.floor(Date.now()/1000) },
+    });
 
     return link;
   }

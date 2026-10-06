@@ -40,11 +40,22 @@ export class InMemoryInvoiceStorage implements IInvoiceStorage {
   private readonly store = new Map<string, Invoice>();
 
   async set(invoice: Invoice): Promise<void> {
-    this.store.set(invoice.invoice_id, invoice);
+    this.store.set(invoice.invoice_id, structuredClone(invoice));
   }
 
   async get(invoiceId: string): Promise<Invoice | undefined> {
-    return this.store.get(invoiceId);
+    const invoice = this.store.get(invoiceId);
+    return invoice ? structuredClone(invoice) : undefined;
+  }
+
+  async transition(invoiceId: string, from: Invoice['status'], to: Invoice['status'],
+    patch: Pick<Invoice, 'settlement'> = {}): Promise<Invoice | undefined> {
+    const current = this.store.get(invoiceId);
+    if (!current || current.status !== from) return undefined;
+    if (to === 'expired' && new Date(current.expires_at).getTime() > Date.now()) return undefined;
+    const next = { ...current, ...patch, status: to };
+    this.store.set(invoiceId, structuredClone(next));
+    return structuredClone(next);
   }
 
   async delete(invoiceId: string): Promise<void> {
@@ -52,7 +63,7 @@ export class InMemoryInvoiceStorage implements IInvoiceStorage {
   }
 
   async entries(): Promise<Iterable<[string, Invoice]>> {
-    return this.store.entries();
+    return Array.from(this.store.entries(), ([id, invoice]) => [id, structuredClone(invoice)] as [string, Invoice]);
   }
 }
 

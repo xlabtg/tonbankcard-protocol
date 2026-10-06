@@ -31,6 +31,7 @@ const int op::set_collateral_lock = 0x1003;
 const int op::clear_collateral_lock = 0x1004;
 const int op::check_can_send = 0x2001;
 const int op::get_lock_state = 0x3001;
+const int op::bind_payment_hub = 0x5001;
 
 ;; Role transfer operation codes (Issue #96: two-phase transfer with 7-day timelock)
 ;; risk_authority role transfer
@@ -53,6 +54,8 @@ const int err::timelock_not_expired = 406;
 ;; Timelock delay: 7 days in seconds
 const int ROLE_TRANSFER_DELAY = 7 * 24 * 60 * 60;
 
+global slice payment_hub;
+
 ;; Storage structure
 ;; cell storage contains:
 ;; - dict: nft_address -> (fraud_locked, collateral_locked)
@@ -64,6 +67,7 @@ const int ROLE_TRANSFER_DELAY = 7 * 24 * 60 * 60;
 ;; - int: pending_lending_adapter_present (0 or 1)
 ;; - slice: pending_lending_adapter_address (only valid if pending_lending_adapter_present == 1)
 ;; - int: pending_lending_adapter_executable_at (unix timestamp)
+;; - ref: cell containing immutable payment_hub address (addr_none before binding)
 
 (cell, slice, slice, int, slice, int, int, slice, int) load_data() inline {
     slice ds = get_data().begin_parse();
@@ -76,6 +80,8 @@ const int ROLE_TRANSFER_DELAY = 7 * 24 * 60 * 60;
     int pending_lending_present = ds~load_uint(1);
     slice pending_lending = ds~load_msg_addr();
     int pending_lending_at = ds~load_uint(32);
+    slice hub_data = ds~load_ref().begin_parse();
+    payment_hub = hub_data~load_msg_addr();
     return (lock_dict, risk_authority, lending_adapter,
             pending_risk_present, pending_risk, pending_risk_at,
             pending_lending_present, pending_lending, pending_lending_at);
@@ -95,6 +101,7 @@ const int ROLE_TRANSFER_DELAY = 7 * 24 * 60 * 60;
             .store_uint(pending_lending_present, 1)
             .store_slice(pending_lending)
             .store_uint(pending_lending_at, 32)
+            .store_ref(begin_cell().store_slice(payment_hub).end_cell())
         .end_cell()
     );
 }
@@ -146,7 +153,7 @@ int can_receive(slice nft_address) method_id {
 
 ;; Set lock state for an NFT account
 ;; INVARIANT I6: This function ONLY sets lock flags, does NOT modify balances or ownership
-() set_lock(cell lock_dict, slice nft_address, int fraud_locked, int collateral_locked) impure inline {
+(cell, ()) set_lock(cell lock_dict, slice nft_address, int fraud_locked, int collateral_locked) impure inline {
     int key = slice_hash(nft_address);
 
     cell value = begin_cell()
@@ -155,34 +162,25 @@ int can_receive(slice nft_address) method_id {
     .end_cell();
 
     lock_dict~udict_set(256, key, value.begin_parse());
+    return (lock_dict, ());
 }
 
-;; Emit AccountLocked event
-() emit_account_locked(slice nft_address, int lock_type) impure inline {
+ ;; Send the exact Tact ApplyAccountLock ABI to the immutable hub.
+;; Non-bounceable message; separate gas payment, no authority value sent to NFT.
+() emit_account_lock(slice nft_address) impure inline {
+    throw_unless(err::invalid_operation, payment_hub.preload_uint(2) == 2);
+    (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
     var msg = begin_cell()
-        .store_uint(0x18, 6)  ;; nobounce
-        .store_slice(nft_address)
-        .store_coins(0)
+        .store_uint(0x10, 6)
+        .store_slice(payment_hub)
+        .store_coins(50000000)
         .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-        .store_uint(0x4c6f636b, 32)  ;; "Lock" marker
-        .store_uint(lock_type, 8)
-    .end_cell();
-
-    send_raw_message(msg, 64);  ;; carry remaining value
-}
-
-;; Emit AccountUnlocked event
-() emit_account_unlocked(slice nft_address, int lock_type) impure inline {
-    var msg = begin_cell()
-        .store_uint(0x18, 6)  ;; nobounce
+        .store_uint(1170261328, 32) ;; ApplyAccountLock
         .store_slice(nft_address)
-        .store_coins(0)
-        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-        .store_uint(0x556e6c6b, 32)  ;; "Unlk" marker
-        .store_uint(lock_type, 8)
+        .store_uint(fraud_locked, 1)
+        .store_uint(collateral_locked, 1)
     .end_cell();
-
-    send_raw_message(msg, 64);  ;; carry remaining value
+    send_raw_message(msg, 1); ;; pay fees separately; do not silently ignore failures
 }
 
 ;; Main message receiver
@@ -206,6 +204,18 @@ int can_receive(slice nft_address) method_id {
      int pending_risk_present, slice pending_risk, int pending_risk_at,
      int pending_lending_present, slice pending_lending, int pending_lending_at) = load_data();
 
+    ;; One-time hub binding avoids circular StateInit address dependencies.
+    if (op == op::bind_payment_hub) {
+        throw_unless(err::unauthorized, equal_slice_bits(sender_address, risk_authority));
+        throw_unless(err::invalid_operation, payment_hub.preload_uint(2) == 0);
+        payment_hub = in_msg_body~load_msg_addr();
+        throw_unless(err::invalid_operation, payment_hub.preload_uint(2) == 2);
+        save_data(lock_dict, risk_authority, lending_adapter,
+                  pending_risk_present, pending_risk, pending_risk_at,
+                  pending_lending_present, pending_lending, pending_lending_at);
+        return ();
+    }
+
     ;; Set FRAUD_LOCK
     if (op == op::set_fraud_lock) {
         ;; INVARIANT I3: Only risk authority can set fraud lock (no fund control)
@@ -214,12 +224,12 @@ int can_receive(slice nft_address) method_id {
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
-        set_lock(lock_dict, nft_address, 1, collateral_locked);
+        lock_dict~set_lock(nft_address, 1, collateral_locked);
         save_data(lock_dict, risk_authority, lending_adapter,
                   pending_risk_present, pending_risk, pending_risk_at,
                   pending_lending_present, pending_lending, pending_lending_at);
 
-        emit_account_locked(nft_address, FRAUD_LOCK);
+        emit_account_lock(nft_address);
         return ();
     }
 
@@ -231,12 +241,12 @@ int can_receive(slice nft_address) method_id {
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
-        set_lock(lock_dict, nft_address, 0, collateral_locked);
+        lock_dict~set_lock(nft_address, 0, collateral_locked);
         save_data(lock_dict, risk_authority, lending_adapter,
                   pending_risk_present, pending_risk, pending_risk_at,
                   pending_lending_present, pending_lending, pending_lending_at);
 
-        emit_account_unlocked(nft_address, FRAUD_LOCK);
+        emit_account_lock(nft_address);
         return ();
     }
 
@@ -248,12 +258,12 @@ int can_receive(slice nft_address) method_id {
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
-        set_lock(lock_dict, nft_address, fraud_locked, 1);
+        lock_dict~set_lock(nft_address, fraud_locked, 1);
         save_data(lock_dict, risk_authority, lending_adapter,
                   pending_risk_present, pending_risk, pending_risk_at,
                   pending_lending_present, pending_lending, pending_lending_at);
 
-        emit_account_locked(nft_address, COLLATERAL_LOCK);
+        emit_account_lock(nft_address);
         return ();
     }
 
@@ -265,12 +275,12 @@ int can_receive(slice nft_address) method_id {
         slice nft_address = in_msg_body~load_msg_addr();
         (int fraud_locked, int collateral_locked) = get_lock_state(nft_address);
 
-        set_lock(lock_dict, nft_address, fraud_locked, 0);
+        lock_dict~set_lock(nft_address, fraud_locked, 0);
         save_data(lock_dict, risk_authority, lending_adapter,
                   pending_risk_present, pending_risk, pending_risk_at,
                   pending_lending_present, pending_lending, pending_lending_at);
 
-        emit_account_unlocked(nft_address, COLLATERAL_LOCK);
+        emit_account_lock(nft_address);
         return ();
     }
 
@@ -413,4 +423,10 @@ slice get_lending_adapter() method_id {
 (int, slice, int) get_pending_lending_adapter() method_id {
     (_, _, _, _, _, _, int pending_present, slice pending_addr, int executable_at) = load_data();
     return (pending_present, pending_addr, executable_at);
+}
+
+;; Immutable hub binding exposed for block-pinned deployment verification.
+slice get_payment_hub() method_id {
+    load_data();
+    return payment_hub;
 }

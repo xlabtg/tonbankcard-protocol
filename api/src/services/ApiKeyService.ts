@@ -60,7 +60,51 @@ const AUTH_CACHE_TTL_MS = 60 * 1000;
 /** Short-lived authorization cache: `${keyHash}:${merchantNft}` → AuthCacheEntry */
 const authCache = new Map<string, AuthCacheEntry>();
 
+export interface ApiKeyStore {
+  get(hash: string): Promise<ApiKey | undefined>;
+  set(key: ApiKey): Promise<void>;
+  findById(id: string): Promise<ApiKey | undefined>;
+  revoke(id: string): Promise<boolean>;
+  touch(hash: string): Promise<void>;
+}
+
 export class ApiKeyService {
+  private persistentStore?: ApiKeyStore;
+  configureStorage(store: ApiKeyStore): void { this.persistentStore = store; }
+  async registerApiKeyAsync(...args: Parameters<ApiKeyService['registerApiKey']>): Promise<ApiKey> {
+    const key = this.registerApiKey(...args);
+    if (this.persistentStore) {
+      try { await this.persistentStore.set(key); }
+      finally { apiKeyRegistry.delete(key.key_hash); }
+    }
+    return key;
+  }
+  async findAndValidateKeyAsync(plaintext: string): Promise<ApiKey> {
+    if (!this.persistentStore) return this.findAndValidateKey(plaintext);
+    const key = await this.persistentStore.get(hashApiKey(plaintext));
+    if (!key || !key.is_active || (key.expires_at && new Date(key.expires_at).getTime() < Date.now())) {
+      throw new ValidationError(ErrorCode.INVALID_API_KEY, 'Invalid API key');
+    }
+    return key;
+  }
+  async isAuthorizedMerchantAsync(plaintext: string, merchant: string): Promise<boolean> {
+    if (!this.persistentStore) return this.isAuthorizedMerchant(plaintext, merchant);
+    try { return (await this.findAndValidateKeyAsync(plaintext)).merchant_nft === merchant; }
+    catch (error) { if (error instanceof ValidationError) return false; throw error; }
+  }
+  async getKeyIdAsync(plaintext: string): Promise<string | undefined> {
+    if (!this.persistentStore) return this.getKeyId(plaintext);
+    return (await this.findAndValidateKeyAsync(plaintext)).key_id;
+  }
+  async touchKeyAsync(hash: string): Promise<void> {
+    if (this.persistentStore) await this.persistentStore.touch(hash);
+    else this.touchKey(hash);
+  }
+  async revokeByKeyIdAsync(id: string): Promise<boolean> {
+    if (this.persistentStore) return this.persistentStore.revoke(id);
+    return this.revokeByKeyId(id);
+  }
+
   /**
    * Register a new API key.
    *

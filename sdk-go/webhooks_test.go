@@ -178,3 +178,27 @@ func TestVerifyWebhookRejectsNonObjectJSON(t *testing.T) {
 		t.Fatalf("expected non-object payload to be rejected, got %v", err)
 	}
 }
+
+func TestBlankSecretConformance(t *testing.T) {
+	for _, secret := range []string{"", " ", "\t\n"} {
+		if _, err := VerifyWebhook([]byte(secret), []byte(`{}`), SignWebhook([]byte(secret), []byte(`{}`), 1700000000), WithNow(func() time.Time { return time.Unix(1700000000, 0) })); err == nil {
+			t.Fatalf("accepted blank secret %q", secret)
+		}
+	}
+}
+func TestDecimalTimestampConformance(t *testing.T) {
+	for _, ts := range []string{"0x6553f100", "1.7e9", "+1700000000", "١٧٠٠٠٠٠٠٠٠"} {
+		if _, _, err := parseSignatureHeader("t=" + ts + ",v1=abcd"); err == nil {
+			t.Fatalf("accepted timestamp %q", ts)
+		}
+	}
+}
+
+func TestLeadingZeroTimestampPreservesSignedBytes(t *testing.T) {
+	body := samplePayload(t)
+	ts := "01700000000"
+	signature := "t=" + ts + ",v1=" + ComputeSignature([]byte(webhookSecret), ts, body)
+	if _, err := VerifyWebhook([]byte(webhookSecret), body, signature, WithNow(fixedNow(1700000000))); err != nil {
+		t.Fatal(err)
+	}
+}

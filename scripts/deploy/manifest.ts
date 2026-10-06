@@ -27,6 +27,7 @@ export interface DeploymentManifest {
   timestamp: string;
   commit: string;
   configuration: {
+    deployerAddress?: string;
     adminAddress: string;
     riskAuthority: string;
     lendingAdapter: string | null;

@@ -145,25 +145,25 @@ describe('Utils', () => {
 
     it('should generate a basic ton:// link', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
       });
       expect(link).toContain('ton://transfer/');
       expect(link).toContain(merchantNft);
-      expect(link).toContain('amount=1000000000');
+      expect(link).toContain('amount=50000000');
     });
 
     it('should encode raw-form merchant addresses in the link path', () => {
       const link = generateInvoiceLink(rawMerchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
       });
 
-      expect(link).toContain(`ton://transfer/${encodeURIComponent(rawMerchantNft)}?`);
+      expect(link).toContain(`ton://transfer/${merchantNft}?`);
       expect(link).not.toContain(`ton://transfer/${rawMerchantNft}?`);
     });
 
     it('should include order ID in link text', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
         orderId: 'ORD-123',
       });
       expect(link).toContain('ORD-123');
@@ -171,15 +171,15 @@ describe('Utils', () => {
 
     it('should include description in link text', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
         description: 'Premium Plan',
       });
-      expect(link).toContain('Premium%20Plan');
+      expect(link).toContain('Premium+Plan');
     });
 
     it('should include expiration when provided', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
         expirationMinutes: 30,
       });
       expect(link).toContain('exp=');
@@ -187,30 +187,30 @@ describe('Utils', () => {
 
     it('should not include expiration when not provided', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
       });
       expect(link).not.toContain('exp=');
     });
 
     it('should generate link without optional fields', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '500000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '500000000',
       });
       expect(link.startsWith('ton://transfer/')).toBe(true);
-      expect(link).toContain('amount=500000000');
+      expect(link).toContain('amount=50000000');
       expect(link).toContain('text=');
     });
 
     it('should include all optional fields together', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '2000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '2000000000',
         orderId: 'ORD-999',
         description: 'Full package',
         expirationMinutes: 60,
       });
-      expect(link).toContain('amount=2000000000');
+      expect(link).toContain('amount=50000000');
       expect(link).toContain('ORD-999');
-      expect(link).toContain('Full%20package');
+      expect(link).toContain('Full+package');
       expect(link).toContain('exp=');
     });
 
@@ -219,7 +219,7 @@ describe('Utils', () => {
     it('should reject an amount that injects extra query parameters', () => {
       expect(() =>
         generateInvoiceLink(merchantNft, {
-          amountTbc: '10&bin=evil',
+          payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '10&bin=evil',
         })
       ).toThrow(/Invalid amount/);
     });
@@ -227,7 +227,7 @@ describe('Utils', () => {
     it('should reject a non-numeric amount', () => {
       expect(() =>
         generateInvoiceLink(merchantNft, {
-          amountTbc: 'abc',
+          payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: 'abc',
         })
       ).toThrow(/Invalid amount/);
     });
@@ -235,7 +235,7 @@ describe('Utils', () => {
     it('should reject a negative amount', () => {
       expect(() =>
         generateInvoiceLink(merchantNft, {
-          amountTbc: '-1',
+          payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '-1',
         })
       ).toThrow(/Invalid amount/);
     });
@@ -243,22 +243,21 @@ describe('Utils', () => {
     it('should reject an empty amount', () => {
       expect(() =>
         generateInvoiceLink(merchantNft, {
-          amountTbc: '',
+          payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '',
         })
       ).toThrow(/Invalid amount/);
     });
 
-    it('should accept a decimal amount', () => {
-      const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1.5',
-      });
-      expect(link).toContain('amount=1.5');
+    it('should reject fractional nanocoins', () => {
+      expect(() => generateInvoiceLink(merchantNft, {
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1.5',
+      })).toThrow(/Invalid amount/);
     });
 
     it('should reject an invalid merchant address', () => {
       expect(() =>
         generateInvoiceLink('not-a-ton-address', {
-          amountTbc: '1000000000',
+          payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
         })
       ).toThrow(/Invalid TON address/);
     });
@@ -266,14 +265,14 @@ describe('Utils', () => {
     it('should reject a merchant address carrying an injected parameter', () => {
       expect(() =>
         generateInvoiceLink(`${merchantNft}?bin=evil`, {
-          amountTbc: '1000000000',
+          payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
         })
       ).toThrow(/Invalid TON address/);
     });
 
     it('should not inject parameters from the description field', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
         description: 'Pay&bin=evil',
       });
       // The raw `&bin=` must be encoded inside text, not appear as its own param.
@@ -283,7 +282,7 @@ describe('Utils', () => {
 
     it('should produce exactly one amount parameter', () => {
       const link = generateInvoiceLink(merchantNft, {
-        amountTbc: '1000000000',
+        payerNft: merchantNft, paymentHubAddress: merchantNft, amountTbc: '1000000000',
         orderId: 'ORD-1',
         description: 'Plan',
         expirationMinutes: 15,

@@ -1,4 +1,4 @@
-/* Build the deployable PaymentHub source used by scripts/deploy. */
+/* Build the deployable AccountStateMachine; legacy PaymentHub is test-only. */
 'use strict';
 
 const path = require('path');
@@ -16,12 +16,6 @@ const projects = [
   {
     name: 'account-state',
     path: './payment-hub/account-state.tact',
-    output: './payment-hub/dist',
-    options: { debug: true, external: true, experimental: { inline: true } },
-  },
-  {
-    name: 'PaymentHub',
-    path: './payments/PaymentHub.tact',
     output: './payment-hub/dist',
     options: { debug: true, external: true, experimental: { inline: true } },
   },

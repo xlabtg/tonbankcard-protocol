@@ -26,6 +26,8 @@ on:
       - 'scripts/tooling/check-workflow-permissions.sh'
       - 'scripts/tooling/check-workflow-action-pins.sh'
       - 'scripts/tooling/check-ci-npm-ci.sh'
+      - 'experiments/issue-521/publish-security.test.cjs'
+      - 'scripts/tooling/check-publish-environment.sh'
   pull_request:
     branches: [main]
     paths:
@@ -33,6 +35,8 @@ on:
       - 'scripts/tooling/check-workflow-permissions.sh'
       - 'scripts/tooling/check-workflow-action-pins.sh'
       - 'scripts/tooling/check-ci-npm-ci.sh'
+      - 'experiments/issue-521/publish-security.test.cjs'
+      - 'scripts/tooling/check-publish-environment.sh'
 
 permissions:
   contents: read
@@ -52,3 +56,6 @@ jobs:
 
       - name: Check CI npm installs use lockfile mode
         run: bash scripts/tooling/check-ci-npm-ci.sh
+
+      - name: Test publish input and branch guards
+        run: node --test experiments/issue-521/publish-security.test.cjs

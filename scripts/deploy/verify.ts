@@ -32,6 +32,7 @@ export interface ChainContractState {
   code: Cell | null;
   data: Cell | null;
   adminAddress: string | null;
+  configurationValues?: Record<string, string>;
 }
 
 export interface ChainStateProvider {
@@ -51,6 +52,18 @@ interface RpcStackResult {
   block_id?: { seqno?: number };
 }
 
+// Every deployable contract exposes its authority/configuration through getters.
+export const REQUIRED_INIT_GETTERS: Record<string, Record<string, string>> = {
+  AccountLocks: { risk_authority: 'get_risk_authority', lending_adapter: 'get_lending_adapter', payment_hub: 'get_payment_hub' },
+  AccountStateMachine: { owner: 'getOwner' },
+  VerifiedNFTAccountResolver: { collection7777: 'getCollection7777', collection8888: 'getCollection8888' },
+  MerchantPaymentHub: { admin: 'getAdmin', account_locks: 'getAccountLocksContract', nft_resolver: 'getNFTResolver', tbc_settlement: 'getTBCSettlement' },
+  CollateralSignal: { nft_resolver: 'getNFTResolver' },
+  ProposalRegistry: { deployer: 'getDeployer' },
+  SnapshotVerifier: { deployer: 'getDeployer' },
+  TransparencyRegistry: { deployer: 'getDeployer' },
+};
+
 export class TonJsonRpcStateProvider implements ChainStateProvider {
   constructor(private readonly endpoint: string, private readonly apiKey?: string) {}
 
@@ -63,12 +76,19 @@ export class TonJsonRpcStateProvider implements ChainStateProvider {
 
     const code = result.code ? Cell.fromBase64(result.code) : null;
     const data = result.data ? Cell.fromBase64(result.data) : null;
+    const configurationValues: Record<string, string> = {};
+    const getters = REQUIRED_INIT_GETTERS[contractName];
+    if (!getters) throw new Error(`Missing configuration getters for ${contractName}`);
+    for (const [parameter, getter] of Object.entries(getters)) {
+      configurationValues[parameter] = await this.queryAddress(address, block, getter);
+    }
     return {
       block: returnedBlock!,
       state: result.status === 'active' ? 'active' : result.status === 'frozen' ? 'frozen' : 'uninitialized',
       code,
       data,
-      adminAddress: await this.queryAuthority(address, block, contractName),
+      adminAddress: Object.values(configurationValues)[0],
+      configurationValues,
     };
   }
 
@@ -89,11 +109,7 @@ export class TonJsonRpcStateProvider implements ChainStateProvider {
     return payload.result;
   }
 
-  private async queryAuthority(address: Address, block: number, contractName: string): Promise<string | null> {
-    const getter = contractName === 'AccountLocks' ? 'get_risk_authority' :
-      new Set(['PaymentHub', 'MerchantPaymentHub']).has(contractName) ? 'getAdmin' :
-      new Set(['ProposalRegistry', 'SnapshotVerifier', 'TransparencyRegistry']).has(contractName) ? 'getDeployer' : null;
-    if (!getter) return null;
+  private async queryAddress(address: Address, block: number, getter: string): Promise<string> {
     const result = await this.call<RpcStackResult>('runGetMethod', {
       address: address.toString(), method: getter, stack: [], seqno: block,
     });
@@ -132,6 +148,14 @@ export async function verifyManifest(
   for (const [contractName, deployment] of Object.entries(manifest.contracts)) {
     const errors = verifyInvariants(contractName);
     try {
+      const {deployerAddress, adminAddress, riskAuthority} = manifest.configuration;
+      if (!deployerAddress) throw new Error('Missing deployerAddress');
+      const roles = [deployerAddress, adminAddress, riskAuthority].map(value => Address.parse(value).toRawString());
+      if (new Set(roles).size !== 3) throw new Error('Deployer, admin and risk authority must be distinct');
+    } catch (error) {
+      errors.push(`Invalid deployment roles: ${(error as Error).message}`);
+    }
+    try {
       const stateInit = loadStateInit(Cell.fromBase64(deployment.stateInitBoc).beginParse());
       const compiledCodeHash = stateInit.code?.hash().toString('hex') ?? '';
       const compiledDataHash = stateInit.data?.hash().toString('hex') ?? '';
@@ -157,18 +181,31 @@ export async function verifyManifest(
       const actualCodeHash = chain.code?.hash().toString('hex') ?? '';
       codeHashMatch = actualCodeHash === deployment.codeHash;
       if (!codeHashMatch) errors.push(`Code hash mismatch: expected ${deployment.codeHash}, actual ${actualCodeHash || 'missing'}`);
-      const actualDataHash = chain.data?.hash().toString('hex') ?? '';
-      const dataHashMatch = actualDataHash === deployment.dataHash;
-      if (!dataHashMatch) errors.push(`Init state hash mismatch: expected ${deployment.dataHash}, actual ${actualDataHash || 'missing'}`);
-      stateValid = chain.block === block && chain.state === 'active' && dataHashMatch;
-
-      const expectedAdmin = deployment.initParameters.admin ?? deployment.initParameters.risk_authority;
-      if (typeof expectedAdmin === 'string') {
-        adminAddressMatch = chain.adminAddress !== null &&
-          Address.parse(chain.adminAddress).equals(Address.parse(expectedAdmin));
-        if (!adminAddressMatch) errors.push(`Admin address mismatch: expected ${expectedAdmin}, actual ${chain.adminAddress ?? 'unavailable'}`);
-      } else {
-        adminAddressMatch = true;
+      // Tact runs init on its first message; live data deliberately differs from StateInit.
+      stateValid = chain.block === block && chain.state === 'active' && chain.data !== null;
+      if (!chain.data) errors.push('Missing initialized live data');
+      const getters = REQUIRED_INIT_GETTERS[contractName];
+      if (!getters) errors.push(`No authority policy for ${contractName}`);
+      adminAddressMatch = !!getters;
+      for (const parameter of Object.keys(getters ?? {})) {
+        const expected = deployment.initParameters[parameter];
+        const actual = chain.configurationValues?.[parameter];
+        const role = parameter === 'admin' ? manifest.configuration.adminAddress :
+          parameter === 'risk_authority' ? manifest.configuration.riskAuthority :
+          parameter === 'deployer' ? manifest.configuration.deployerAddress : undefined;
+        if (role && typeof expected === 'string' && !Address.parse(role).equals(Address.parse(expected))) {
+          errors.push(`Manifest role mismatch for ${parameter}`);
+          adminAddressMatch = false;
+        }
+        if (typeof expected !== 'string' || !expected) {
+          errors.push(`Required init authority/configuration missing: ${parameter}`);
+          adminAddressMatch = false;
+          continue;
+        }
+        if (!actual || !Address.parse(actual).equals(Address.parse(expected))) {
+          errors.push(`Configuration mismatch for ${parameter}: expected ${expected}, actual ${actual ?? 'unavailable'}`);
+          adminAddressMatch = false;
+        }
       }
     } catch (error) {
       errors.push(`On-chain query failed: ${(error as Error).message}`);

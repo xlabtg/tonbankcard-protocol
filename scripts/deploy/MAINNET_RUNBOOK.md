@@ -150,15 +150,20 @@ The operator records the dry-run timestamp and the on-chain budget estimate in [
 Phase 2 deploys exactly one contract per signing ceremony. The ceremony is fully described in [`MULTISIG_CEREMONY.md`](../../docs/deployments/B2-mainnet/MULTISIG_CEREMONY.md). The order matches `scripts/deploy/deploy.ts` (`DEPLOYMENT_ORDER`) and issue #118 §3:
 
 ```
-1. AccountLocks            (no dependencies)
-2. NFTAccountResolver      (no dependencies)
-3. AccountStateMachine     (depends on AccountLocks)
-4. PaymentHub              (depends on AccountLocks, NFTAccountResolver, AccountStateMachine)
-5. PublicCollateralLookup  (depends on CollateralSignal — deployed at step 6 of B1; mainnet uses the deployed address)
-6. MerchantPaymentHub      (init() takes AccountLocks + NFTAccountResolver + audited TBC settlement addresses; Issues #397, #428)
+1. AccountLocks                (risk authority + lending adapter; hub initially addr_none)
+2. VerifiedNFTAccountResolver  (authentic collection 7777 + 8888 addresses)
+3. AccountStateMachine         (immutable owner)
+4. MerchantPaymentHub          (AccountLocks + VerifiedNFTAccountResolver + audited TBC settlement)
+5. CollateralSignal            (VerifiedNFTAccountResolver)
+6. ProposalRegistry            (governance deployer)
+7. SnapshotVerifier            (governance deployer)
+8. TransparencyRegistry        (governance deployer)
 ```
 
-> The issue lists `contracts/payments/account-locks.fc` separately from `contracts/nft-resolver/`. Internally the deploy script enforces `AccountLocks` first (no deps) and treats `account-locks` initialisation as the first ceremony so that downstream init parameters resolve cleanly. `PublicCollateralLookup` requires `CollateralSignal` which is deployed in the same ceremony chain to satisfy issue scope item §3(4).
+После шага 4 risk authority однократно привязывает hub к AccountLocks; live manifest
+указывает `initParameters.payment_hub`, проверяемый через `get_payment_hub`.
+Legacy PaymentHub, NFTAccountResolver и PublicCollateralLookup исключены из
+production map и build projects; они не входят в церемонию.
 
 For each contract:
 
@@ -211,7 +216,7 @@ For every deployed contract:
 After the full Phase 2 deploy:
 
 1. Mint a fresh NFT card from the official Series-7777 testnet collection (test environment only — production users are NOT used as guinea pigs). Mint (or reuse) a second card for the merchant account.
-2. Confirm the **NFT Account Resolver registers both the payer and merchant NFT accounts** in `MerchantPaymentHub` via `ResolveNFTOwner` (binds `nft_owners` and marks `account_states = ACTIVE`, write-once). Until this runs the hub returns `ERROR_PAYER_NOT_EXISTS` / `ERROR_MERCHANT_NOT_EXISTS` and every payment fails (Issue #397). Verify with the `accountExists` / `getNFTResolver` get-methods.
+2. Confirm the **NFT Account Resolver registers both the payer and merchant NFT accounts** in `MerchantPaymentHub` via `ResolveNFTOwner` (binds `nft_owners` and marks new `account_states = ACTIVE`, refresh preserves existing state). Until this runs the hub returns `ERROR_PAYER_NOT_EXISTS` / `ERROR_MERCHANT_NOT_EXISTS` and every payment fails (Issue #397). Verify with the `accountExists` / `getNFTResolver` get-methods.
 3. Verify `getTBCSettlement()` equals the audited settlement contract address recorded in the manifest; admin, deployer, and resolver addresses must differ from it.
 4. Submit one `TBCDeposit` with a globally unique `deposit_id`, fund the payer with ≤ 0.1 TBC, and record both the source settlement transaction and deposit ID. Confirm `isDepositProcessed(deposit_id) = true`; replaying the same ID must fail without changing the balance.
 5. Use the [Merchant SDK](../../sdk/) to issue a low-value (≤ 0.1 TBC) invoice against the freshly deployed `MerchantPaymentHub`.
@@ -309,3 +314,36 @@ The green CI badge is a prerequisite for flipping [`STATUS.md`](../../docs/deplo
 - [Engagement B1](../../docs/deployments/B1-testnet/ENGAGEMENT.md)
 - [D6 — Acton/Tolk evaluation](../../ISSUE/D6-acton-toolchain-evaluation.md)
 - [Issue #118 — B2 Mainnet Deployment Plan](https://github.com/xlabtg/tonbankcard-protocol/issues/118)
+
+## Уточнения после аудита #521
+
+`PaymentHub.tact` — legacy, не deployable. Для платежей используется `MerchantPaymentHub`.
+Production resolver — `VerifiedNFTAccountResolver`, исходник
+`contracts/nft-resolver/VerifiedNFTAccountResolver.tact`. Его фактический адрес берётся
+из `contracts.VerifiedNFTAccountResolver.address` **прошедшего verify live manifest**;
+перед deploy MerchantPaymentHub и CollateralSignal передайте этот адрес как `nft_resolver`.
+
+TEP-62 `get_nft_data` нельзя вызвать сообщением из другого контракта. Для этих аккаунтов
+collection 7777/8888 должна сама отправить `RegisterAccountItem` resolver, а item должен
+поддерживать `QueryAccountNFTData` (0x474e4644, query_id:uint64) и отвечать
+`AccountNFTData` (0x4e464452, query_id:uint64, collection:Address, owner:Address).
+Resolver проверяет sender=item, зарегистрированную collection, query и TTL=300s.
+Произвольный кошелёк не может зарегистрировать item или подтвердить ownership.
+После NFT transfer выполните `RefreshAccountOwner{nft_address,target}` отдельно для
+hub и CollateralSignal и дождитесь обработанного callback. Balance/collateral не сбрасываются.
+Pending query можно удалить `CleanupOwnerQuery{nft_address}` после TTL; суммарный предел 64.
+Обычный NFT без extension несовместим; не подменяйте проверку владельца oracle-администратором.
+
+AccountLocks и MerchantPaymentHub имеют взаимную привязку. Создайте AccountLocks
+StateInit с прежними полями и дополнительным ref-cell `addr_none` для payment hub;
+затем вычислите/создайте MerchantPaymentHub с адресом AccountLocks. Risk authority
+один раз отправляет opcode 0x5001 + hub Address в AccountLocks. После bind адрес
+hub неизменяем; проверьте end-to-end fraud/collateral set/clear. На уведомление hub
+уходит 50m nanoTON; authority должна прикладывать достаточно TON для gas. Это не TBC.
+
+В configuration manifest обязательны для verify `deployerAddress`, `adminAddress`,
+`riskAuthority`: три разных адреса. Перед подготовкой установите `DEPLOYER_ADDRESS`.
+В initParameters задавайте все ключи из `REQUIRED_INIT_GETTERS` в `verify.ts`.
+Verifier проверяет оригинальный StateInit/address/codeHash и текущие getters на одном
+block, не требует равенства изменяемого live data hash и исходного init hash.
+Новый bytecode/StateInit требует нового deploy; скрытое обновление существующего кода запрещено.

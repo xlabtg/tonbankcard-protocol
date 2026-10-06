@@ -52,7 +52,7 @@ export function buildPaymentDeepLink(
   const search = tonLink.includes('?') ? tonLink.slice(tonLink.indexOf('?')) : '';
   return {
     tonLink,
-    walletLink: `${base}${encodeURIComponent(options.request.merchantNft)}${search}`,
+    walletLink: `${base}${tonLink.slice('ton://transfer/'.length, tonLink.indexOf('?'))}${search}`,
     scheme,
   };
 }

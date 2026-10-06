@@ -1,3 +1,4 @@
+import { isPositiveDecimal } from './validation';
 /**
  * TONBANKCARD Cross-Chain Bridge Adapter
  *
@@ -124,7 +125,7 @@ export class CrossChainBridgeAdapter {
     }
 
     // Validate amount
-    if (!amount || parseFloat(amount) <= 0) {
+    if (!isPositiveDecimal(amount)) {
       throw this.createError('Invalid bridge amount', 'INVALID_AMOUNT');
     }
 

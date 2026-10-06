@@ -30,7 +30,7 @@
 // immutably at init) via `receive(msg: ResolveNFTOwner)` — directly analogous to
 // how MerchantPaymentHub (Issue #363) replaced the admin `SetAccountLock` handler
 // with the Account-Locks-contract-gated `ApplyAccountLock`. The deployer can no
-// longer register ownership, and the one-time write-once binding (CONTRACTS-M1)
+// longer register ownership, and the authenticated owner refresh (CONTRACTS-M1)
 // is preserved. A CI regression guard
 // (`contracts/payment-hub/non-production-stubs.spec.ts`, Issue #364 block) fails
 // the build if the deployer-gated `RegisterNFTOwner` handler ever reappears.
@@ -123,7 +123,7 @@ contract CollateralSignal with ICollateralSignal {
     // NFT ownership via ResolveNFTOwner. Set ONCE at init() and never mutated.
     // INVARIANT I3 (No Admin Control): this address cannot move funds or change
     // collateral signal state — it can only bind an NFT to its resolved owner
-    // (write-once). The deployer has NO ownership-registration path (Issue #364).
+    // (authenticated refresh). The deployer has NO ownership-registration path (Issue #364).
     nft_resolver: Address;
 
     // @param nft_resolver  the on-chain NFT Account Resolver contract whose
@@ -392,12 +392,11 @@ contract CollateralSignal with ICollateralSignal {
     // see audit CONTRACTS-H3 / #260) and pushes the result here. This handler
     // neither moves funds nor changes any collateral signal state.
     //
-    // The binding is write-once (CONTRACTS-M1 / #279): once an NFT is bound to an
-    // owner it cannot be silently re-pointed, so even a buggy resolver cannot
-    // hijack an existing collateral signal.
+    // Authenticated resolver refresh replaces the owner after NFT transfer.
+    // Account balances, lock/state and collateral values remain intact.
     receive(msg: ResolveNFTOwner) {
         require(sender() == self.nft_resolver, "Unauthorized: only NFT resolver");
-        require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
+
         self.nft_owners.set(msg.nft_address, msg.owner);
 
         emit(NFTOwnerRegistered{
@@ -413,7 +412,7 @@ contract CollateralSignal with ICollateralSignal {
 // ============================================
 
 // Sent by the trusted NFT Account Resolver to bind an NFT account to its
-// resolved owner (Issue #364). Accepted ONLY from `nft_resolver`; write-once.
+// resolved owner (Issue #364). Accepted ONLY from immutable `nft_resolver`; authenticated refresh.
 message ResolveNFTOwner {
     nft_address: Address;
     owner: Address;

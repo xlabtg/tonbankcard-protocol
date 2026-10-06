@@ -12,7 +12,7 @@
 ;; Test helper: Create a mock NFT address
 slice create_nft_address(int wc, int addr) inline {
     return begin_cell()
-        .store_uint(4, 3)  ;; addr_std$10
+        .store_uint(2, 2)  ;; addr_std$10
         .store_uint(0, 1)  ;; anycast nothing
         .store_uint(wc, 8)
         .store_uint(addr, 256)
@@ -44,7 +44,8 @@ slice create_authority_address(int addr) inline {
     slice nft_addr = create_nft_address(0, 12345);
 
     cell lock_dict = new_dict();
-    save_data(lock_dict, risk_authority, lending_adapter);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Simulate message from risk authority
     cell msg = begin_cell()
@@ -57,7 +58,7 @@ slice create_authority_address(int addr) inline {
     .end_cell();
 
     ;; This should succeed
-    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+    recv_internal(1000000000, 100000000, msg, begin_cell().store_uint(op::set_fraud_lock, 32).store_slice(nft_addr).end_cell().begin_parse());
 
     (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
 
@@ -75,7 +76,8 @@ slice create_authority_address(int addr) inline {
     slice nft_addr = create_nft_address(0, 12345);
 
     cell lock_dict = new_dict();
-    save_data(lock_dict, risk_authority, lending_adapter);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Simulate message from lending adapter
     cell msg = begin_cell()
@@ -87,7 +89,7 @@ slice create_authority_address(int addr) inline {
         .store_slice(nft_addr)
     .end_cell();
 
-    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+    recv_internal(1000000000, 100000000, msg, begin_cell().store_uint(op::set_collateral_lock, 32).store_slice(nft_addr).end_cell().begin_parse());
 
     (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
 
@@ -107,8 +109,9 @@ slice create_authority_address(int addr) inline {
     cell lock_dict = new_dict();
 
     ;; Set fraud lock first
-    set_lock(lock_dict, nft_addr, 1, 0);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    lock_dict~set_lock(nft_addr, 1, 0);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Verify lock is set
     (int fraud_locked_before, _) = get_lock_state(nft_addr);
@@ -124,7 +127,7 @@ slice create_authority_address(int addr) inline {
         .store_slice(nft_addr)
     .end_cell();
 
-    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+    recv_internal(1000000000, 100000000, msg, begin_cell().store_uint(op::clear_fraud_lock, 32).store_slice(nft_addr).end_cell().begin_parse());
 
     (int fraud_locked_after, int collateral_locked_after) = get_lock_state(nft_addr);
 
@@ -143,8 +146,9 @@ slice create_authority_address(int addr) inline {
     cell lock_dict = new_dict();
 
     ;; Set collateral lock first
-    set_lock(lock_dict, nft_addr, 0, 1);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    lock_dict~set_lock(nft_addr, 0, 1);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Verify lock is set
     (_, int collateral_locked_before) = get_lock_state(nft_addr);
@@ -160,7 +164,7 @@ slice create_authority_address(int addr) inline {
         .store_slice(nft_addr)
     .end_cell();
 
-    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+    recv_internal(1000000000, 100000000, msg, begin_cell().store_uint(op::clear_collateral_lock, 32).store_slice(nft_addr).end_cell().begin_parse());
 
     (int fraud_locked_after, int collateral_locked_after) = get_lock_state(nft_addr);
 
@@ -178,8 +182,9 @@ slice create_authority_address(int addr) inline {
     cell lock_dict = new_dict();
 
     ;; Set both locks
-    set_lock(lock_dict, nft_addr, 1, 1);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    lock_dict~set_lock(nft_addr, 1, 1);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
 
@@ -199,8 +204,9 @@ slice create_authority_address(int addr) inline {
     cell lock_dict = new_dict();
 
     ;; Set both locks
-    set_lock(lock_dict, nft_addr, 1, 1);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    lock_dict~set_lock(nft_addr, 1, 1);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Clear fraud lock
     cell msg = begin_cell()
@@ -212,7 +218,7 @@ slice create_authority_address(int addr) inline {
         .store_slice(nft_addr)
     .end_cell();
 
-    recv_internal(1000000, 1000000, msg, msg.begin_parse().skip_bits(4 + 267 + 124 + 32));
+    recv_internal(1000000000, 100000000, msg, begin_cell().store_uint(op::clear_fraud_lock, 32).store_slice(nft_addr).end_cell().begin_parse());
 
     (int fraud_locked, int collateral_locked) = get_lock_state(nft_addr);
 
@@ -232,7 +238,8 @@ slice create_authority_address(int addr) inline {
     slice nft_addr = create_nft_address(0, 12345);
 
     cell lock_dict = new_dict();
-    save_data(lock_dict, risk_authority, lending_adapter);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Attempt to set fraud lock from unauthorized address
     ;; This should throw err::unauthorized (401)
@@ -248,17 +255,18 @@ slice create_authority_address(int addr) inline {
     cell lock_dict = new_dict();
 
     ;; Account 1: fraud locked
-    set_lock(lock_dict, nft_addr_1, 1, 0);
+    lock_dict~set_lock(nft_addr_1, 1, 0);
 
     ;; Account 2: collateral locked
-    set_lock(lock_dict, nft_addr_2, 0, 1);
+    lock_dict~set_lock(nft_addr_2, 0, 1);
 
     ;; Account 3: no locks
     ;; (no need to set, defaults to unlocked)
 
     slice risk_authority = create_authority_address(999);
     slice lending_adapter = create_authority_address(888);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Verify account 1
     (int f1, int c1) = get_lock_state(nft_addr_1);
@@ -284,13 +292,14 @@ slice create_authority_address(int addr) inline {
     slice risk_authority = create_authority_address(999);
     slice lending_adapter = create_authority_address(888);
     slice nft_addr = create_nft_address(0, 12345);
-    slice payment_hub = create_authority_address(777);
+    payment_hub = create_authority_address(777);
 
     cell lock_dict = new_dict();
 
     ;; Set fraud lock
-    set_lock(lock_dict, nft_addr, 1, 0);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    lock_dict~set_lock(nft_addr, 1, 0);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Simulate check_can_send operation from Payment Hub
     cell msg = begin_cell()
@@ -314,11 +323,12 @@ slice create_authority_address(int addr) inline {
     cell lock_dict = new_dict();
 
     ;; Lock account with both types
-    set_lock(lock_dict, nft_addr_locked, 1, 1);
+    lock_dict~set_lock(nft_addr_locked, 1, 1);
 
     slice risk_authority = create_authority_address(999);
     slice lending_adapter = create_authority_address(888);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Verify locked account can still receive
     throw_unless(1100, can_receive(nft_addr_locked) == 1);
@@ -336,11 +346,12 @@ slice create_authority_address(int addr) inline {
     cell lock_dict = new_dict();
 
     ;; Set lock on NFT
-    set_lock(lock_dict, nft_addr, 1, 0);
+    lock_dict~set_lock(nft_addr, 1, 0);
 
     slice risk_authority = create_authority_address(999);
     slice lending_adapter = create_authority_address(888);
-    save_data(lock_dict, risk_authority, lending_adapter);
+    payment_hub = create_authority_address(777);
+    save_data(lock_dict, risk_authority, lending_adapter, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0, 0, begin_cell().store_uint(0, 2).end_cell().begin_parse(), 0);
 
     ;; Verify lock exists
     (int fraud_locked, _) = get_lock_state(nft_addr);
@@ -354,7 +365,7 @@ slice create_authority_address(int addr) inline {
 }
 
 ;; Main test runner
-() run_tests() impure {
+() run_tests() impure method_id {
     test_initial_state();
     test_set_fraud_lock_authorized();
     test_set_collateral_lock_authorized();

@@ -16,11 +16,9 @@ import {
   formatBalance,
   openUrlWithBiometricGate,
   parseDecimalToNanocoins,
-  validateAppConfig,
-  type AppConfig,
+  getPaymentContext,
   type BiometricAuthenticator,
 } from '../lib';
-import { DEFAULT_MAINNET_CONFIG } from '../lib/config';
 import { colors, radius, spacing, typography } from '../theme';
 
 let defaultBiometricAuthenticator: BiometricAuthenticator | undefined;
@@ -54,10 +52,7 @@ function SendPaymentScreenContent({
   const onSubmit = React.useCallback(() => {
     setError(null);
     try {
-      const config: AppConfig = validateAppConfig({
-        ...DEFAULT_MAINNET_CONFIG,
-        paymentHubAddress: recipient,
-      });
+      const { config, accountNft } = getPaymentContext();
       const amountTbc = parseDecimalToNanocoins(amount);
       const description = note || undefined;
 
@@ -72,6 +67,7 @@ function SendPaymentScreenContent({
                 const facade = new PaymentFacade(config);
                 return facade.buildPaymentLink({
                   merchantNft: recipient,
+                  payerNft: accountNft,
                   amountTbc,
                   description,
                 }).link;

@@ -1,0 +1,27 @@
+# План решения #521
+
+- [x] Прочитать родительскую задачу, все 18 подзадач и обсуждения PR; проверить ветку и CONTRIBUTING.md.
+- [x] Сверить последние связанные PR, upstream-документацию TON, Redis, GitHub Actions и advisory braces.
+- [x] Для каждого требования записать варианты решения, выбранный путь и воспроизводящую проверку.
+- [x] #503: модифицирующий FunC set_lock; Sandbox set/clear обоих локов, независимость адресов; исправить FunC unit-тесты.
+- [x] #504: аутентифицированный ApplyAccountLock на hub; настоящий AccountLocks в e2e, отказ платежа и успешный clear.
+- [x] #505: безопасное обновление владельца в обоих контрактах; отзыв старых прав, выдача новых; production resolver и runbook.
+- [x] #506: ошибка TON API останавливает batch без продвижения курсора; failure→retry regression.
+- [x] #507: все три клиента используют hub/gas/bin, TBC только в payload; тесты ссылок и UI-снимки при визуальных изменениях.
+- [x] #508: убрать нефункциональный PaymentHub из deployable map и build projects либо добавить проверенный deposit/owner lifecycle.
+- [x] #509: реальный Tact StateInit успешно проверяется после init; обязательные authority и различие ролей; Sandbox regression.
+- [x] #510: quorum 23 согласно #281 (расхождение 22 в #510 задокументировано) и ограниченный duration; отказ низкого quorum и переполнения.
+- [x] #511: атомарные переходы invoice вместо lost update; interleaving mock pool test.
+- [x] #512: production factory Postgres/Redis, persistent API keys, тест wiring/restart.
+- [x] #513: Address.parse/CRC/canonical bucket, лимиты IP/global, default amount cap; regression.
+- [x] #514: пустой и пробельный secret отвергаются всеми SDK; conformance.
+- [x] #515: inputs только env, validation, main/tag guard, tests и version guard PyPI, корректный skip; workflow checks.
+- [x] #516: TTL, cleanup и лимиты pending governance; тест ограниченности.
+- [x] #517: canonical decimal/BigInt и safe integer; тест мусора во всех adapters, поиск аналогичных мест.
+- [x] #518: SET NX race не возвращает успех без записи; mock regression.
+- [x] #519: общий decimal timestamp и исходная строка для HMAC; conformance трех SDK.
+- [x] #520: устранить braces advisory и вернуть audit high, проверить docs build/audit.
+- [x] Установить зависимости, сохранять большие логи, ограничивать стресс-пробы, дождаться всех фоновых процессов.
+- [x] Проверить затронутые подсистемы и полный локальный CI; прочитать diff, сохранить атомарные коммиты.
+- [x] Слить актуальный main, push только issue-521-5d570cb874e1; обновить русский PR с Fixes #503…#521.
+- [ ] Проверить свежие CI SHA/time, скачать ошибки в ci-logs и исправить; чистое дерево, gh pr ready 522.

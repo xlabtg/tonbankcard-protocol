@@ -85,7 +85,7 @@ describe('requireAdminToken middleware', () => {
     else process.env.API_KEY_ADMIN_TOKEN = originalEnv;
   });
 
-  it('rejects when API_KEY_ADMIN_TOKEN is unset (endpoints disabled)', () => {
+  it('rejects when API_KEY_ADMIN_TOKEN is unset (endpoints disabled)', async () => {
     delete process.env.API_KEY_ADMIN_TOKEN;
     const req = makeMockReq({ headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
     const res = makeMockRes();
@@ -98,7 +98,7 @@ describe('requireAdminToken middleware', () => {
     expect(res.body.error.code).toBe(ErrorCode.UNAUTHORIZED_MERCHANT);
   });
 
-  it('rejects when the Authorization header is missing', () => {
+  it('rejects when the Authorization header is missing', async () => {
     const req = makeMockReq({});
     const res = makeMockRes();
     const next: NextFunction = jest.fn();
@@ -109,7 +109,7 @@ describe('requireAdminToken middleware', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('rejects when the bearer token does not match', () => {
+  it('rejects when the bearer token does not match', async () => {
     const req = makeMockReq({ headers: { authorization: 'Bearer wrong-token' } });
     const res = makeMockRes();
     const next: NextFunction = jest.fn();
@@ -120,7 +120,7 @@ describe('requireAdminToken middleware', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('passes through on exact bearer match', () => {
+  it('passes through on exact bearer match', async () => {
     const req = makeMockReq({ headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
     const res = makeMockRes();
     const next: NextFunction = jest.fn();
@@ -137,13 +137,13 @@ describe('POST /v1/keys', () => {
     apiKeyService.clearAll();
   });
 
-  it('issues a canonical-format plaintext key exactly once', () => {
+  it('issues a canonical-format plaintext key exactly once', async () => {
     const req = makeMockReq({
       body: { merchant_nft: MERCHANT_NFT, environment: 'live' },
     });
     const res = makeMockRes();
 
-    createApiKey(req, res as unknown as Response);
+    await createApiKey(req, res as unknown as Response);
 
     expect(res.statusCode).toBe(201);
     expect(res.body.api_key).toBeDefined();
@@ -158,7 +158,7 @@ describe('POST /v1/keys', () => {
     expect(apiKeyService.size()).toBe(1);
   });
 
-  it('respects an explicit permissions allowlist', () => {
+  it('respects an explicit permissions allowlist', async () => {
     const req = makeMockReq({
       body: {
         merchant_nft: MERCHANT_NFT,
@@ -167,43 +167,43 @@ describe('POST /v1/keys', () => {
     });
     const res = makeMockRes();
 
-    createApiKey(req, res as unknown as Response);
+    await createApiKey(req, res as unknown as Response);
 
     expect(res.statusCode).toBe(201);
     expect(res.body.permissions).toEqual(['invoice:status']);
   });
 
-  it('rejects an unknown permission', () => {
+  it('rejects an unknown permission', async () => {
     const req = makeMockReq({
       body: { merchant_nft: MERCHANT_NFT, permissions: ['invoice:steal'] },
     });
     const res = makeMockRes();
 
-    createApiKey(req, res as unknown as Response);
+    await createApiKey(req, res as unknown as Response);
 
     expect(res.statusCode).toBe(400);
     expect(res.body.error.code).toBe(ErrorCode.INVALID_METADATA);
   });
 
-  it('rejects a malformed merchant_nft', () => {
+  it('rejects a malformed merchant_nft', async () => {
     const req = makeMockReq({
       body: { merchant_nft: 'not-an-address' },
     });
     const res = makeMockRes();
 
-    createApiKey(req, res as unknown as Response);
+    await createApiKey(req, res as unknown as Response);
 
     expect(res.statusCode).toBe(400);
     expect(res.body.error.code).toBe(ErrorCode.INVALID_NFT_ADDRESS);
   });
 
-  it('rejects an unknown environment', () => {
+  it('rejects an unknown environment', async () => {
     const req = makeMockReq({
       body: { merchant_nft: MERCHANT_NFT, environment: 'staging' },
     });
     const res = makeMockRes();
 
-    createApiKey(req, res as unknown as Response);
+    await createApiKey(req, res as unknown as Response);
 
     expect(res.statusCode).toBe(400);
     expect(res.body.error.code).toBe(ErrorCode.INVALID_METADATA);
@@ -215,38 +215,38 @@ describe('DELETE /v1/keys/:key_id', () => {
     apiKeyService.clearAll();
   });
 
-  it('deactivates a registered key', () => {
+  it('deactivates a registered key', async () => {
     const issueReq = makeMockReq({
       body: { merchant_nft: MERCHANT_NFT, environment: 'live' },
     });
     const issueRes = makeMockRes();
-    createApiKey(issueReq, issueRes as unknown as Response);
+    await createApiKey(issueReq, issueRes as unknown as Response);
     const { key_id, api_key } = issueRes.body;
 
     const revokeReq = makeMockReq({ params: { key_id } });
     const revokeRes = makeMockRes();
-    revokeApiKey(revokeReq, revokeRes as unknown as Response);
+    await revokeApiKey(revokeReq, revokeRes as unknown as Response);
 
     expect(revokeRes.statusCode).toBe(200);
     expect(revokeRes.body).toEqual({ key_id, revoked: true });
     expect(() => apiKeyService.findAndValidateKey(api_key)).toThrow();
   });
 
-  it('revokes only the targeted key when two live keys are issued (API-C1 regression)', () => {
+  it('revokes only the targeted key when two live keys are issued (API-C1 regression)', async () => {
     // Issue two live keys for the same merchant. Before the fix both collapsed
     // to key_id `key_tbc_live`, so revoking one revoked an arbitrary key.
     const issueFirst = makeMockReq({
       body: { merchant_nft: MERCHANT_NFT, environment: 'live' },
     });
     const issueFirstRes = makeMockRes();
-    createApiKey(issueFirst, issueFirstRes as unknown as Response);
+    await createApiKey(issueFirst, issueFirstRes as unknown as Response);
     const first = issueFirstRes.body;
 
     const issueSecond = makeMockReq({
       body: { merchant_nft: MERCHANT_NFT, environment: 'live' },
     });
     const issueSecondRes = makeMockRes();
-    createApiKey(issueSecond, issueSecondRes as unknown as Response);
+    await createApiKey(issueSecond, issueSecondRes as unknown as Response);
     const second = issueSecondRes.body;
 
     // key_id must be unique per key and must not be a shared prefix.
@@ -255,7 +255,7 @@ describe('DELETE /v1/keys/:key_id', () => {
     // Revoke the first key only.
     const revokeReq = makeMockReq({ params: { key_id: first.key_id } });
     const revokeRes = makeMockRes();
-    revokeApiKey(revokeReq, revokeRes as unknown as Response);
+    await revokeApiKey(revokeReq, revokeRes as unknown as Response);
     expect(revokeRes.statusCode).toBe(200);
 
     // The first key is now invalid; the second remains valid and usable.
@@ -265,11 +265,11 @@ describe('DELETE /v1/keys/:key_id', () => {
     );
   });
 
-  it('returns INVALID_API_KEY when the id is unknown', () => {
+  it('returns INVALID_API_KEY when the id is unknown', async () => {
     const req = makeMockReq({ params: { key_id: 'key_does_not_exist' } });
     const res = makeMockRes();
 
-    revokeApiKey(req, res as unknown as Response);
+    await revokeApiKey(req, res as unknown as Response);
 
     expect(res.statusCode).toBe(401);
     expect(res.body.error.code).toBe(ErrorCode.INVALID_API_KEY);

@@ -2,7 +2,7 @@
   "name": "@tonbankcard/docs-site",
   "version": "0.1.0",
   "private": true,
-  "description": "Tonbankcard Protocol — public documentation site (Docusaurus)",
+  "description": "Tonbankcard Protocol \u2014 public documentation site (Docusaurus)",
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
@@ -16,7 +16,8 @@
     "typecheck": "tsc",
     "gen:sdk-api": "typedoc",
     "test:image-safety": "node --test tests/image-safety.test.mjs",
-    "prebuild": "npm run gen:sdk-api"
+    "prebuild": "npm run gen:sdk-api",
+    "test:braces": "node --stack-size=256 --max-old-space-size=128 --test tests/braces-safety.test.cjs"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",
@@ -28,7 +29,9 @@
     "prism-react-renderer": "^2.3.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "unist-util-visit": "^5.1.0"
+    "unist-util-visit": "^5.1.0",
+    "braces": "file:vendor/braces-patched.tgz",
+    "fill-range": "^7.1.1"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "3.10.2",
@@ -55,6 +58,7 @@
   },
   "overrides": {
     "serialize-javascript": "7.1.0",
-    "tinypool": "2.2.0"
+    "tinypool": "2.2.0",
+    "braces": "$braces"
   }
 }

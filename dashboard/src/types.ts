@@ -10,6 +10,8 @@
  * Dashboard configuration options
  */
 export interface DashboardConfig {
+  paymentHubAddress?: string;
+  payerNft?: string;
   /** Merchant's NFT account address (required) */
   merchantNft: string;
 
@@ -115,6 +117,11 @@ export enum DashboardView {
  * Parameters for generating a payment invoice link
  */
 export interface InvoiceGeneratorParams {
+  /** Payer NFT required to serialize the on-chain payment request. */
+  payerNft?: string;
+  paymentHubAddress?: string;
+  network?: 'mainnet' | 'testnet';
+
   /** Payment amount in TBC nanocoins */
   amountTbc: string;
 

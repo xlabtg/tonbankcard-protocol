@@ -1,3 +1,5 @@
+import { Address } from '@ton/core';
+import { buildWalletLink } from '@tonbankcard/merchant-sdk/wallet-link';
 /**
  * Utility functions for TONBANKCARD Merchant Dashboard
  *
@@ -6,7 +8,6 @@
  * They do NOT sign transactions, store keys, or custody funds.
  */
 
-import { Address } from '@ton/core';
 
 import { InvoiceGeneratorParams } from './types';
 
@@ -15,7 +16,7 @@ import { InvoiceGeneratorParams } from './types';
  * or other characters. Matches values such as "10", "0", "1000000000",
  * and "1.5", but rejects "-1", "1e9", "10&bin=evil", or empty strings.
  */
-const NON_NEGATIVE_AMOUNT = /^\d+(\.\d+)?$/;
+const NON_NEGATIVE_AMOUNT = /^[0-9]+$/;
 const NANOCOINS_PER_TBC = 1_000_000_000n;
 
 /**
@@ -156,30 +157,19 @@ export function generateInvoiceLink(
   merchantNft: string,
   params: InvoiceGeneratorParams
 ): string {
-  const textParts = [
-    'TONBANKCARD Payment',
-    params.orderId ? `Order: ${params.orderId}` : '',
-    params.description || '',
-  ]
-    .filter(Boolean)
-    .join(' | ');
-
-  // Validate every interpolated field before building the link so no input
-  // can inject additional query parameters (see audit finding FRONTEND-H1).
-  // Each field is encoded exactly once with encodeURIComponent, which escapes
-  // `&`, `=`, and spaces (as %20, the correct escaping for a URI query — unlike
-  // URLSearchParams, which would emit form-style `+` for spaces).
-  const address = assertTonAddress(merchantNft);
-
-  const query: string[] = [
-    `amount=${encodeURIComponent(assertAmount(params.amountTbc))}`,
-    `text=${encodeURIComponent(textParts)}`,
-  ];
-
-  if (params.expirationMinutes !== undefined) {
-    const expiresAt = Math.floor(Date.now() / 1000) + params.expirationMinutes * 60;
-    query.push(`exp=${encodeURIComponent(String(expiresAt))}`);
+  if (!params.paymentHubAddress || !params.payerNft) {
+    throw new Error('paymentHubAddress and payerNft are required');
   }
-
-  return `ton://transfer/${encodeURIComponent(address)}?${query.join('&')}`;
+  const merchant = Address.parse(assertTonAddress(merchantNft));
+  const link = buildWalletLink({ network: params.network || 'mainnet', paymentHubAddress: Address.parse(params.paymentHubAddress) }, {
+    payerNft: Address.parse(params.payerNft),
+    invoice: { id: params.orderId || 'dashboard-payment', merchantNft: merchant,
+      amountTbc: BigInt(assertAmount(params.amountTbc)), description: params.description,
+      createdAt: Math.floor(Date.now()/1000) },
+  });
+  if (params.expirationMinutes !== undefined) {
+    if (!Number.isSafeInteger(params.expirationMinutes) || params.expirationMinutes <= 0) throw new Error('Invalid expiration');
+    return `${link}&exp=${Math.floor(Date.now()/1000) + params.expirationMinutes * 60}`;
+  }
+  return link;
 }

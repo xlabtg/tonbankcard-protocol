@@ -310,7 +310,7 @@ jobs:
 () test_many_locks() impure {
     repeat(1000) {
         slice nft = create_random_nft_address();
-        set_lock(lock_dict, nft, 1, 0);
+        lock_dict~set_lock(nft, 1, 0);
     }
 
     ;; Verify performance doesn't degrade

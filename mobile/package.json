@@ -56,11 +56,13 @@
     "prettier": "^3.4.2",
     "ts-jest": "^29.4.11",
     "tsup": "^8.5.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "@tonbankcard/merchant-sdk": "file:../sdk"
   },
   "peerDependencies": {
     "@ton/core": ">=0.56.0",
-    "@ton/ton": ">=13.0.0"
+    "@ton/ton": ">=13.0.0",
+    "@tonbankcard/merchant-sdk": "^2.0.4"
   },
   "overrides": {
     "axios": "^1.16.1",

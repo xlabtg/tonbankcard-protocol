@@ -9,11 +9,9 @@
 import * as React from 'react';
 import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { PaymentFacade, parseDecimalToNanocoins, validateAppConfig, type AppConfig } from '../lib';
-import { DEFAULT_MAINNET_CONFIG } from '../lib/config';
+import { PaymentFacade, parseDecimalToNanocoins, getPaymentContext } from '../lib';
 import { colors, radius, spacing, typography } from '../theme';
 
-const DEMO_NFT_ADDRESS = 'EQAjHkHtt1MIoU5c7dks73Rz8NMxAA3oStSrcQ_qgn3il-Le';
 
 export function ReceivePaymentScreen(): React.ReactElement {
   const [amount, setAmount] = React.useState('');
@@ -23,13 +21,12 @@ export function ReceivePaymentScreen(): React.ReactElement {
   const generate = React.useCallback(() => {
     setError(null);
     try {
-      const config: AppConfig = validateAppConfig({
-        ...DEFAULT_MAINNET_CONFIG,
-        paymentHubAddress: DEMO_NFT_ADDRESS,
-      });
+      const {config, accountNft, requestPayerNft} = getPaymentContext();
+      if (!requestPayerNft) throw new Error('Select the payer NFT before generating a payment request');
       const facade = new PaymentFacade(config);
       const bundle = facade.buildPaymentLink({
-        merchantNft: DEMO_NFT_ADDRESS,
+        merchantNft: accountNft,
+        payerNft: requestPayerNft,
         amountTbc: parseDecimalToNanocoins(amount || '0.0001'),
       });
       setLink(bundle.link);

@@ -671,14 +671,12 @@ export function checkContractEvidence(content: string | null): CheckResult[] {
         detail: 'SPECIFICATION.md §4.2 floor',
     });
 
-    // Pre-RP-CH-1 marker: mandateKey still uses integer addition.
-    // If a PR replaces the combinator without ALSO updating §3.2 of
-    // SPECIFICATION.md and CONTRACT_HARDENING.md §3 RP-CH-1, this trips.
+    // CONTRACTS-H1 already replaced integer addition with a serialized cell hash.
     results.push({
-        id: 'CT.mandateKey.addition',
-        name: 'RecurringPayments.tact mandateKey still uses integer addition (RP-CH-1 pending)',
-        passed: /fun mandateKey[\s\S]{0,200}sha256\(nft_address\.asSlice\(\)\)\s*\+\s*mandate_id/.test(content),
-        detail: 'Confirms RP-CH-1 has not landed yet — see CONTRACT_HARDENING.md §3',
+        id: 'CT.mandateKey.hash',
+        name: 'RecurringPayments.tact hashes the serialized composite mandate key',
+        passed: /fun mandateKey[\s\S]{0,600}\.storeAddress\(nft_address\)[\s\S]{0,100}\.storeInt\(mandate_id, 257\)[\s\S]{0,100}\.hash\(\)/.test(content),
+        detail: 'CONTRACTS-H1: distinct tuples do not collide through integer addition',
     });
 
     // RP-CH-2 / Issue #432: test-only authority seeding is absent from production.

@@ -182,7 +182,7 @@ export function authenticateWithPermission(
 
       // Look up API key by hash — throws INVALID_API_KEY if not found,
       // deactivated, or expired.
-      const apiKey = apiKeyService.findAndValidateKey(apiKeyValue);
+      const apiKey = await apiKeyService.findAndValidateKeyAsync(apiKeyValue);
 
       if (!hasPermission(apiKey, requiredPermission)) {
         throw new ValidationError(
@@ -192,7 +192,7 @@ export function authenticateWithPermission(
         );
       }
 
-      apiKeyService.touchKey(apiKey.key_hash);
+      await apiKeyService.touchKeyAsync(apiKey.key_hash);
 
       // Expose the resolved key to subsequent middleware (rate limiter,
       // route handler). Typed as `any` to avoid extending the global

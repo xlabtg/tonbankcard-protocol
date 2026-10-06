@@ -1,75 +1,5 @@
-/**
- * PostgreSQL Invoice Storage — Production Stub
- *
- * This file provides a skeleton for a PostgreSQL-backed `IInvoiceStorage`
- * implementation suitable for production use.
- *
- * ## Prerequisites
- *
- *   npm install pg @types/pg
- *
- * ## Setup steps
- *
- * 1. Create the invoices table (run once, or via a migration tool):
- *
- *   ```sql
- *   CREATE TABLE invoices (
- *     invoice_id   VARCHAR(32)  PRIMARY KEY,
- *     merchant_nft VARCHAR(64)  NOT NULL,
- *     amount_tbc   VARCHAR(40)  NOT NULL,
- *     currency     VARCHAR(8)   NOT NULL DEFAULT 'TBC',
- *     status       VARCHAR(16)  NOT NULL DEFAULT 'pending',
- *     metadata     JSONB,
- *     settlement   JSONB,
- *     created_at   TIMESTAMPTZ  NOT NULL,
- *     expires_at   TIMESTAMPTZ  NOT NULL,
- *     payment_url  TEXT         NOT NULL
- *   );
- *
- *   -- Indexes for common query patterns
- *   CREATE INDEX idx_invoices_status       ON invoices (status);
- *   CREATE INDEX idx_invoices_merchant_nft ON invoices (merchant_nft);
- *   CREATE INDEX idx_invoices_expires_at   ON invoices (expires_at);
- *   ```
- *
- * 2. Set the following environment variables before starting the server:
- *
- *   ```env
- *   POSTGRES_HOST=localhost
- *   POSTGRES_PORT=5432
- *   POSTGRES_DB=tonbankcard
- *   POSTGRES_USER=api_user
- *   POSTGRES_PASSWORD=<secret>
- *   POSTGRES_POOL_MIN=2
- *   POSTGRES_POOL_MAX=10
- *   ```
- *
- * 3. Instantiate and inject into InvoiceService:
- *
- *   ```typescript
- *   import { Pool } from 'pg';
- *   import { PostgresInvoiceStorage } from './storage/PostgresStorage';
- *   import { RedisIdempotencyStorage } from './storage/RedisIdempotencyStorage';
- *   import { InvoiceService } from './services/InvoiceService';
- *
- *   const pool = new Pool({
- *     host:     process.env.POSTGRES_HOST,
- *     port:     Number(process.env.POSTGRES_PORT ?? 5432),
- *     database: process.env.POSTGRES_DB,
- *     user:     process.env.POSTGRES_USER,
- *     password: process.env.POSTGRES_PASSWORD,
- *     min:      Number(process.env.POSTGRES_POOL_MIN ?? 2),
- *     max:      Number(process.env.POSTGRES_POOL_MAX ?? 10),
- *   });
- *
- *   const invoiceStorage     = new PostgresInvoiceStorage(pool);
- *   const idempotencyStorage = new RedisIdempotencyStorage(redisClient);
- *
- *   export const invoiceService = new InvoiceService(invoiceStorage, idempotencyStorage);
- *   ```
- *
- * @see IStorage.ts for the interface contract
- * @see RedisIdempotencyStorage.ts for the idempotency counterpart
+/** PostgreSQL invoice persistence. Apply migrations/001-production-storage.sql and set DATABASE_URL.
+ * Production startup wires this store before accepting traffic.
  */
 
 import { Invoice } from '../types/invoice';
@@ -122,6 +52,17 @@ export class PostgresInvoiceStorage implements IInvoiceStorage {
         invoice.payment_url,
       ]
     );
+  }
+
+  async transition(invoiceId: string, from: Invoice['status'], to: Invoice['status'],
+    patch: Pick<Invoice, 'settlement'> = {}): Promise<Invoice | undefined> {
+    const result = await this.pool.query(
+      `UPDATE invoices SET status = $3,
+       settlement = COALESCE($4::jsonb, settlement)
+       WHERE invoice_id = $1 AND status = $2
+       AND ($3 <> 'expired' OR expires_at <= NOW()) RETURNING *`,
+      [invoiceId, from, to, patch.settlement ? JSON.stringify(patch.settlement) : null]);
+    return result.rows[0] ? this.rowToInvoice(result.rows[0]) : undefined;
   }
 
   async get(invoiceId: string): Promise<Invoice | undefined> {

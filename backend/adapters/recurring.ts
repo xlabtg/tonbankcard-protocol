@@ -1,3 +1,4 @@
+import { isPositiveDecimal } from './validation';
 /**
  * TONBANKCARD Recurring Payments Adapter
  *
@@ -235,14 +236,14 @@ export class RecurringPaymentsAdapter {
     periodSeconds: number,
     maxExecutions: number
   ): void {
-    if (!amountPerPeriod || parseFloat(amountPerPeriod) <= 0) {
+    if (!isPositiveDecimal(amountPerPeriod)) {
       throw this.createError(
         'Amount per period must be positive',
         'INVALID_AMOUNT'
       );
     }
 
-    if (periodSeconds < MIN_PERIOD_SECONDS) {
+    if (!Number.isSafeInteger(periodSeconds) || periodSeconds < MIN_PERIOD_SECONDS) {
       throw this.createError(
         `Period must be at least ${MIN_PERIOD_SECONDS} seconds (1 hour)`,
         'INVALID_PERIOD'
@@ -256,7 +257,7 @@ export class RecurringPaymentsAdapter {
       );
     }
 
-    if (maxExecutions < 0) {
+    if (!Number.isSafeInteger(maxExecutions) || maxExecutions < 0) {
       throw this.createError(
         'Max executions must be non-negative',
         'INVALID_MAX_EXECUTIONS'

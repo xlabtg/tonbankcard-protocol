@@ -119,9 +119,9 @@ describe('CONTRACTS-H3: non-production FunC stubs excluded from deployable set',
     }
   });
 
-  it('keeps the production PaymentHub source in the deployable map', () => {
+  it('excludes the unfundable legacy PaymentHub from the deployable map', () => {
     const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
-    expect(deployable).toContain('contracts/payments/PaymentHub.tact');
+    expect(deployable).not.toContain('contracts/payments/PaymentHub.tact');
   });
 
   it('deploy/verify scripts source their contract set from the shared manifest', () => {
@@ -309,9 +309,9 @@ describe('Issue #397: MerchantPaymentHub registers accounts only via the trusted
     expect(source).toContain('self.account_states.set(msg.nft_address, ACCOUNT_STATE_ACTIVE)');
   });
 
-  it('keeps the write-once owner binding guard (CONTRACTS-M1 / #279)', () => {
-    expect(source).toContain('NFT owner already registered');
-    expect(source).toMatch(/self\.nft_owners\.get\(msg\.nft_address\)\s*==\s*null/);
+  it('permits authenticated ownership refresh after an NFT transfer (#505)', () => {
+    expect(source).not.toContain('NFT owner already registered');
+    expect(source).toContain('self.nft_owners.set(msg.nft_address, msg.owner)');
   });
 
   it('does not register accounts through an admin/deployer or test-only path', () => {
@@ -382,10 +382,10 @@ describe('Issue #364: CollateralSignal binds NFT ownership only via the trusted 
     expect(source).toContain('Unauthorized: only NFT resolver');
   });
 
-  it('keeps the write-once owner binding guard (CONTRACTS-M1 / #279)', () => {
+  it('permits authenticated ownership refresh after an NFT transfer (#505)', () => {
     const source = read(PRODUCTION);
-    expect(source).toContain('NFT owner already registered');
-    expect(source).toMatch(/self\.nft_owners\.get\(msg\.nft_address\)\s*==\s*null/);
+    expect(source).not.toContain('NFT owner already registered');
+    expect(source).toContain('self.nft_owners.set(msg.nft_address, msg.owner)');
   });
 });
 
@@ -523,9 +523,9 @@ describe('Issue #427 (CHECK423-H3): PaymentHub excludes admin balance minting', 
   const PRODUCTION = 'contracts/payments/PaymentHub.tact';
   const source = read(PRODUCTION);
 
-  it('keeps the production hub in the deployable map', () => {
+  it('excludes the unfundable legacy hub from the deployable map (#508)', () => {
     const deployable = extractLiteral(read(MANIFEST), 'const DEPLOYABLE_CONTRACTS', '{', '}');
-    expect(deployable).toContain(PRODUCTION);
+    expect(deployable).not.toContain(PRODUCTION);
   });
 
   it('contains neither the InitializeAccount message nor its receiver', () => {

@@ -18,7 +18,7 @@ function service(): PaymentService {
 describe('buildPaymentDeepLink', () => {
   it('defaults to a universal ton:// link', () => {
     const bundle = buildPaymentDeepLink(service(), {
-      request: { merchantNft: MERCHANT, amountTbc: '1000000000' },
+      request: { payerNft: MERCHANT, merchantNft: MERCHANT, amountTbc: '1000000000' },
     });
     expect(bundle.scheme).toBe('universal');
     expect(bundle.tonLink.startsWith('ton://transfer/')).toBe(true);
@@ -27,39 +27,39 @@ describe('buildPaymentDeepLink', () => {
 
   it('builds a Tonkeeper universal HTTPS link', () => {
     const bundle = buildPaymentDeepLink(service(), {
-      request: { merchantNft: MERCHANT, amountTbc: '1000000000' },
+      request: { payerNft: MERCHANT, merchantNft: MERCHANT, amountTbc: '1000000000' },
       scheme: 'tonkeeper',
     });
     expect(bundle.scheme).toBe('tonkeeper');
     expect(bundle.walletLink.startsWith('https://app.tonkeeper.com/transfer/')).toBe(true);
-    expect(bundle.walletLink).toContain(MERCHANT);
-    expect(bundle.walletLink).toContain('amount=1000000000');
+    expect(bundle.walletLink).toContain(VALID_HUB);
+    expect(bundle.walletLink).toContain('amount=50000000');
   });
 
   it('encodes raw-form merchant addresses in wallet universal links', () => {
     const bundle = buildPaymentDeepLink(service(), {
-      request: { merchantNft: RAW_MERCHANT, amountTbc: '1000000000' },
+      request: { payerNft: MERCHANT, merchantNft: RAW_MERCHANT, amountTbc: '1000000000' },
       scheme: 'tonkeeper',
     });
 
     expect(bundle.walletLink).toContain(
-      `/transfer/${encodeURIComponent(RAW_MERCHANT)}?`
+      `/transfer/${VALID_HUB}?`
     );
   });
 
   it('builds a Tonhub HTTPS link', () => {
     const bundle = buildPaymentDeepLink(service(), {
-      request: { merchantNft: MERCHANT, amountTbc: '500000000' },
+      request: { payerNft: MERCHANT, merchantNft: MERCHANT, amountTbc: '500000000' },
       scheme: 'tonhub',
     });
     expect(bundle.walletLink.startsWith('https://tonhub.com/transfer/')).toBe(true);
-    expect(bundle.walletLink).toContain('amount=500000000');
+    expect(bundle.walletLink).toContain('amount=50000000');
   });
 
   it('rejects invalid merchant addresses', () => {
     expect(() =>
       buildPaymentDeepLink(service(), {
-        request: { merchantNft: 'garbage', amountTbc: '1000' },
+        request: { payerNft: MERCHANT, merchantNft: 'garbage', amountTbc: '1000' },
       }),
     ).toThrow(/Invalid merchant NFT address/);
   });
@@ -87,13 +87,13 @@ describe('parseTonLink', () => {
   it('decodes text exactly once when parsing generated payment links', () => {
     const literalText = 'Literal percent sequences: %20 and %26';
     const link = service().generatePaymentLink({
-      merchantNft: MERCHANT,
+      payerNft: MERCHANT, merchantNft: MERCHANT,
       amountTbc: '1000000000',
       description: literalText,
     });
 
     const parsed = parseTonLink(link);
-    expect(parsed?.text).toBe(`TONBANKCARD Payment | ${literalText}`);
+    expect(parsed?.text).toBe(`TONBANKCARD Payment: mobile-payment - ${literalText}`);
   });
 
   it('rejects unsafe return URLs', () => {
@@ -114,12 +114,12 @@ describe('parseTonLink', () => {
 
   it('parses generated raw-form recipient links', () => {
     const link = service().generatePaymentLink({
-      merchantNft: RAW_MERCHANT,
+      payerNft: MERCHANT, merchantNft: RAW_MERCHANT,
       amountTbc: '1000000000',
     });
 
     const parsed = parseTonLink(link);
-    expect(parsed?.recipient).toBe(RAW_MERCHANT);
+    expect(parsed?.recipient).toBe(VALID_HUB);
   });
 
   it('tolerates a missing optional text field', () => {

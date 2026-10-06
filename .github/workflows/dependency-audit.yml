@@ -59,10 +59,7 @@ jobs:
             audit_level: high
           - name: docs-site
             path: docs-site
-            # Temporary exception (CHECK501-L5): braces@3.0.3 (GHSA-vfj7-8cjw-p6xm)
-            # has no patched release and is pulled in at build time by
-            # chokidar/micromatch inside Docusaurus. Restore `high` once fixed.
-            audit_level: critical
+            audit_level: high
     steps:
       - uses: actions/checkout@v6
 

@@ -51,6 +51,14 @@ class DurableInvoiceStorage implements IInvoiceStorage {
     return this.store.get(invoiceId);
   }
 
+  async transition(id: string, from: Invoice['status'], to: Invoice['status'], patch?: Pick<Invoice, 'settlement'>): Promise<Invoice | undefined> {
+    const current = this.store.get(id);
+    if (!current || current.status !== from) return undefined;
+    const next = { ...current, ...patch, status: to };
+    this.store.set(id, next);
+    return next;
+  }
+
   async delete(invoiceId: string): Promise<void> {
     this.store.delete(invoiceId);
   }

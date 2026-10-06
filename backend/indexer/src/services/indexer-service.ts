@@ -366,8 +366,7 @@ export class IndexerService {
     try {
       const block = await this.getBlockByNumber(blockNumber);
       if (!block) {
-        this.logger.warn({ blockNumber }, 'Block not found');
-        return;
+        throw new Error(`Block ${blockNumber} unavailable; cursor must not advance`);
       }
 
       const blockHash = this.getBlockHash(block);
@@ -1035,7 +1034,7 @@ export class IndexerService {
         seqno: blockNumber,
       })) as { ok?: boolean; result?: any };
       if (!lookupData.ok || !lookupData.result) {
-        return null;
+        throw new Error(`TON API returned no block data for ${blockNumber}`);
       }
 
       const blockId = lookupData.result;
@@ -1047,7 +1046,7 @@ export class IndexerService {
         seqno: blockId.seqno,
       })) as { ok?: boolean; result?: any };
       if (!headerData.ok || !headerData.result) {
-        return null;
+        throw new Error(`TON API returned no block data for ${blockNumber}`);
       }
 
       const header = headerData.result;
@@ -1070,7 +1069,7 @@ export class IndexerService {
         },
         'Error fetching block'
       );
-      return null;
+      throw error;
     }
   }
 

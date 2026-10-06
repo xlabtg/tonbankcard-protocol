@@ -1,8 +1,8 @@
 import { Address, beginCell, Cell } from '@ton/core';
 import { Invoice, TonbankcardConfig, WalletLinkParams } from './types';
-import { isValidTonAddress } from './utils';
 
-export const MERCHANT_PAYMENT_REQUEST_OP = 0x16b56831;
+
+export const MERCHANT_PAYMENT_REQUEST_OP = 112790503;
 export const DEFAULT_WALLET_LINK_NATIVE_AMOUNT = 50_000_000n;
 
 const INVOICE_ID_PAYLOAD_TYPE = 2;
@@ -12,7 +12,7 @@ function assertAddress(address: Address, fieldName: string): void {
     if (address == null || typeof address.toString !== 'function') {
       throw new Error('missing address');
     }
-    if (!isValidTonAddress(address.toString())) {
+    if (!Address.parse(address.toString())) {
       throw new Error('invalid address');
     }
   } catch {
@@ -38,8 +38,8 @@ export function buildMerchantPaymentRequestBody(
 ): Cell {
   return beginCell()
     .storeUint(MERCHANT_PAYMENT_REQUEST_OP, 32)
-    .storeAddress(payerNft)
-    .storeAddress(invoice.merchantNft)
+    .storeAddress(Address.parse(payerNft.toString()))
+    .storeAddress(Address.parse(invoice.merchantNft.toString()))
     .storeCoins(invoice.amountTbc)
     .storeMaybeRef(payload ?? buildDefaultInvoicePayload(invoice))
     .endCell();

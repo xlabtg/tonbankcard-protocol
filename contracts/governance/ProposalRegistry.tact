@@ -79,6 +79,12 @@ const CONFIG_TIMELOCK_DELAY: Int = 7 * 24 * 60 * 60;
 
 // Default voting window (7 days in seconds)
 const DEFAULT_VOTING_DURATION: Int = 604800;
+const MIN_VOTING_DURATION: Int = 3600;
+const MAX_VOTING_DURATION: Int = 2592000;
+const PENDING_TTL: Int = 3600;
+const MAX_PENDING_TOTAL: Int = 64;
+const MAX_PENDING_PER_CLAIMANT: Int = 4;
+message CleanupPending { query_id: Int as uint64; }
 
 // TBC Diamonds total supply and quorum policy.
 const DIAMONDS_TOTAL_SUPPLY: Int = 222;
@@ -343,6 +349,10 @@ contract ProposalRegistry with Deployable {
     // In-flight ownership-resolution requests, keyed by query_id. A vote/proposal
     // is only materialised once the resolver confirms the claimant owns the NFT.
     pending_votes: map<Int, PendingVote>;
+    pending_expiry: map<Int, Int>;
+    pending_claimants: map<Int, Address>;
+    claimant_pending: map<Address, Int>;
+    pending_count: Int as uint16;
     pending_proposals: map<Int, PendingProposal>;
 
     // In-flight snapshot eligibility requests, keyed by query_id. A vote is
@@ -370,6 +380,7 @@ contract ProposalRegistry with Deployable {
 
     init() {
         self.proposal_count = 0;
+        self.pending_count = 0;
         self.deployer = sender();
         self.owner_resolver = null;
         self.snapshot_verifier = null;
@@ -549,6 +560,51 @@ contract ProposalRegistry with Deployable {
         }.toCell());
     }
 
+    fun reservePending(qid: Int, claimant: Address) {
+        let stored: Int? = self.claimant_pending.get(claimant);
+        let count: Int = stored == null ? 0 : stored!!;
+        require(self.pending_count < MAX_PENDING_TOTAL, "Pending capacity reached");
+        require(count < MAX_PENDING_PER_CLAIMANT, "Claimant pending limit reached");
+        self.pending_count = self.pending_count + 1;
+        self.claimant_pending.set(claimant, count + 1);
+        self.pending_expiry.set(qid, now() + PENDING_TTL);
+        self.pending_claimants.set(qid, claimant);
+    }
+    fun pendingIsFresh(qid: Int): Bool {
+        let expiry: Int? = self.pending_expiry.get(qid);
+        return expiry != null && expiry!! > now();
+    }
+    fun releasePending(qid: Int) {
+        let claimant: Address? = self.pending_claimants.get(qid);
+        if (claimant != null) {
+            let stored: Int? = self.claimant_pending.get(claimant!!);
+            let count: Int = stored == null ? 0 : stored!!;
+            if (count <= 1) { self.claimant_pending.del(claimant!!); }
+            else { self.claimant_pending.set(claimant!!, count - 1); }
+            self.pending_count = self.pending_count - 1;
+            self.pending_claimants.del(qid);
+            self.pending_expiry.del(qid);
+        }
+    }
+    fun clearPending(qid: Int) {
+        self.releasePending(qid);
+        self.pending_proposals.del(qid);
+        self.pending_votes.del(qid);
+        self.pending_eligibility_votes.del(qid);
+    }
+    receive(msg: CleanupPending) {
+        require(!self.pendingIsFresh(msg.query_id), "Pending request has not expired");
+        self.clearPending(msg.query_id);
+    }
+    bounced(msg: bounced<ResolveOwnership>) {
+        self.clearPending(msg.query_id);
+    }
+    bounced(msg: EligibilityCheckRequest) {
+        self.clearPending(msg.query_id);
+    }
+
+    get fun getPendingCount(): Int { return self.pending_count; }
+
     // ==================== SUBMIT PROPOSAL ====================
 
     receive(msg: SubmitProposal) {
@@ -572,7 +628,8 @@ contract ProposalRegistry with Deployable {
 
         // Validate quorum threshold
         let quorum: Int = msg.quorum_threshold > 0 ? msg.quorum_threshold : DEFAULT_QUORUM_THRESHOLD;
-        require(quorum > 0, "Quorum must be positive");
+        require(quorum == DEFAULT_QUORUM_THRESHOLD, "Quorum is fixed by protocol");
+        require(voting_duration >= MIN_VOTING_DURATION && voting_duration <= MAX_VOTING_DURATION, "Invalid voting duration");
         require(quorum <= DIAMONDS_TOTAL_SUPPLY, "Quorum exceeds total supply");
 
         // The proposal is NOT recorded here. The sender's ownership of
@@ -585,6 +642,7 @@ contract ProposalRegistry with Deployable {
         let qid: Int = self.next_query_id;
         self.next_query_id = self.next_query_id + 1;
 
+        self.reservePending(qid, sender());
         self.pending_proposals.set(qid, PendingProposal{
             metadata_hash: msg.metadata_hash,
             author_nft_id: msg.author_nft_id,
@@ -598,7 +656,7 @@ contract ProposalRegistry with Deployable {
             to: resolver,
             value: 0,
             mode: SendRemainingValue,
-            bounce: false,
+            bounce: true,
             body: ResolveOwnership{
                 query_id: qid,
                 nft_id: msg.author_nft_id,
@@ -657,6 +715,7 @@ contract ProposalRegistry with Deployable {
         let qid: Int = self.next_query_id;
         self.next_query_id = self.next_query_id + 1;
 
+        self.reservePending(qid, sender());
         self.pending_votes.set(qid, PendingVote{
             proposal_id: msg.proposal_id,
             nft_id: msg.voter_nft_id,
@@ -668,7 +727,7 @@ contract ProposalRegistry with Deployable {
             to: resolver,
             value: 0,
             mode: SendRemainingValue,
-            bounce: false,
+            bounce: true,
             body: ResolveOwnership{
                 query_id: qid,
                 nft_id: msg.voter_nft_id,
@@ -691,9 +750,11 @@ contract ProposalRegistry with Deployable {
         require(sender() == self.owner_resolver!!, "Unauthorized resolver");
 
         // Route to a pending vote, if any.
+        if (!self.pendingIsFresh(msg.query_id)) { self.clearPending(msg.query_id); return; }
         let pv: PendingVote? = self.pending_votes.get(msg.query_id);
         if (pv != null) {
             let v: PendingVote = pv!!;
+            self.releasePending(msg.query_id);
             self.pending_votes.del(msg.query_id);
             self.requestVoteEligibility(v, msg.nft_id, msg.owner);
             return;
@@ -703,6 +764,7 @@ contract ProposalRegistry with Deployable {
         let pp: PendingProposal? = self.pending_proposals.get(msg.query_id);
         if (pp != null) {
             let pr: PendingProposal = pp!!;
+            self.releasePending(msg.query_id);
             self.pending_proposals.del(msg.query_id);
             self.finalizeProposal(pr, msg.nft_id, msg.owner);
             return;
@@ -718,12 +780,14 @@ contract ProposalRegistry with Deployable {
         require(self.snapshot_verifier != null, "Snapshot verifier not set");
         require(sender() == self.snapshot_verifier!!, "Unauthorized snapshot verifier");
 
+        if (!self.pendingIsFresh(msg.query_id)) { self.clearPending(msg.query_id); return; }
         let pv: PendingVote? = self.pending_eligibility_votes.get(msg.query_id);
         if (pv == null) {
             return;
         }
 
         let v: PendingVote = pv!!;
+        self.releasePending(msg.query_id);
         self.pending_eligibility_votes.del(msg.query_id);
 
         if (msg.proposal_id != v.proposal_id) { return; }
@@ -790,13 +854,14 @@ contract ProposalRegistry with Deployable {
         let qid: Int = self.next_query_id;
         self.next_query_id = self.next_query_id + 1;
 
+        self.reservePending(qid, v.claimant);
         self.pending_eligibility_votes.set(qid, v);
 
         send(SendParameters{
             to: verifier,
             value: 0,
             mode: SendRemainingValue,
-            bounce: false,
+            bounce: true,
             body: EligibilityCheckRequest{
                 query_id: qid,
                 proposal_id: v.proposal_id,
