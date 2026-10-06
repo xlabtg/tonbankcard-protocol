@@ -438,7 +438,7 @@ trait MerchantPaymentHubBase {
         emit(MerchantNFTOwnerRegistered{
             nft_address: msg.nft_address,
             owner: msg.owner,
-            state: ACCOUNT_STATE_ACTIVE,
+            state: self.getAccountState(msg.nft_address),
             timestamp: now()
         }.toCell());
     }

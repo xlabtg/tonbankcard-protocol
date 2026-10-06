@@ -1,9 +1,10 @@
+import { MerchantPaymentHubHarness } from './dist/MerchantPaymentHubHarness_MerchantPaymentHubHarness';
 import '@ton/test-utils';
 import { Blockchain } from '@ton/sandbox';
 import { beginCell, toNano } from '@ton/core';
 import { VerifiedNFTAccountResolver } from './dist/VerifiedNFTAccountResolver_VerifiedNFTAccountResolver';
 import { AccountNFTHarness } from './dist/AccountNFTHarness_AccountNFTHarness';
-import { MerchantPaymentHub, storeMerchantPaymentResponse } from './dist/MerchantPaymentHub_MerchantPaymentHub';
+import { MerchantPaymentHub, storeMerchantPaymentResponse, loadMerchantNFTOwnerRegistered } from './dist/MerchantPaymentHub_MerchantPaymentHub';
 test('verified NFT response refreshes hub authority after transfer and rejects forged callbacks #505', async () => {
  const chain = await Blockchain.create();
  const old = await chain.treasury('old'), next = await chain.treasury('next');
@@ -36,4 +37,21 @@ test('verified NFT response refreshes hub authority after transfer and rejects f
  await hub.send(next.getSender(),gas,request);
  expect(await hub.getGetBalance(nft.address)).toBe(90n);
  expect(await resolver.getGetPendingCount()).toBe(0n);
+},60000);
+
+test('resolver refresh preserves frozen state, balance and the emitted state #505', async () => {
+ const chain=await Blockchain.create();
+ const admin=await chain.treasury('state-admin'), old=await chain.treasury('state-old'), next=await chain.treasury('state-next');
+ const resolver=await chain.treasury('state-resolver'), locks=await chain.treasury('state-locks'), settlement=await chain.treasury('state-settlement');
+ const nft=(await chain.treasury('state-nft')).address;
+ const hub=chain.openContract(await MerchantPaymentHubHarness.fromInit(admin.address,locks.address,resolver.address,settlement.address));
+ const gas={value:toNano('0.2')};
+ await hub.send(admin.getSender(),gas,{$$type:'SetAccountState',nft_address:nft,state:1n,owner:old.address});
+ await hub.send(admin.getSender(),gas,{$$type:'SetAccountBalance',nft_address:nft,balance:100n});
+ const refreshed=await hub.send(resolver.getSender(),gas,{$$type:'ResolveNFTOwner',nft_address:nft,owner:next.address});
+ expect(await hub.getGetAccountState(nft)).toBe(1n);
+ expect(await hub.getGetBalance(nft)).toBe(100n);
+ const event=refreshed.transactions.flatMap(t=>Array.from(t.outMessages.values())).find(m=>m.info.type==='external-out');
+ expect(event).toBeDefined();
+ expect(loadMerchantNFTOwnerRegistered(event!.body.beginParse()).state).toBe(1n);
 },60000);
