@@ -52,6 +52,8 @@ jobs:
       version: ${{ steps.parse.outputs.version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Parse release tag and verify package version
         id: parse
@@ -61,7 +63,7 @@ jobs:
           if [[ ! "$tag" =~ ^sdk-v(.+)$ ]]; then
             echo "::notice::Tag '$tag' is not an SDK release (expected sdk-v<semver>); skipping."
             echo "version=" >> "$GITHUB_OUTPUT"
-            exit 78  # neutral exit code: do not run publish
+            exit 0  # publish is skipped via the empty output
           fi
           version="${BASH_REMATCH[1]}"
           pkg_version="$(node -p "require('./sdk/package.json').version")"
@@ -83,13 +85,15 @@ jobs:
     if: |
       always() && (
         github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'release' && needs.guard.outputs.version != '')
+        (github.event_name == 'release' && needs.guard.result == 'success' && needs.guard.outputs.version != '')
       )
     environment:
       name: npm-publish
       url: https://www.npmjs.com/package/@tonbankcard/merchant-sdk
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -99,15 +103,26 @@ jobs:
           cache: 'npm'
           cache-dependency-path: sdk/package-lock.json
 
-      - name: Verify dispatched version matches package.json
-        if: github.event_name == 'workflow_dispatch'
+      - name: Verify protected ref and release inputs
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DIST_TAG: ${{ inputs.dist_tag }}
         run: |
           set -euo pipefail
-          pkg_version="$(node -p "require('./sdk/package.json').version")"
-          if [[ "${{ inputs.version }}" != "$pkg_version" ]]; then
-            echo "::error::Input version (${{ inputs.version }}) does not match sdk/package.json version ($pkg_version)"
-            exit 1
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Manual publish requires main'; exit 1; }
+            [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || exit 1
+            [[ "$INPUT_DIST_TAG" =~ ^[a-z0-9-]+$ ]] || exit 1
+            [[ "$INPUT_VERSION" == "$(node -p "require('./sdk/package.json').version")" ]] || exit 1
+          else
+            git merge-base --is-ancestor HEAD origin/main || { echo 'Release commit must belong to main'; exit 1; }
           fi
+
+      - name: Verify publication approval gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_ENVIRONMENT: npm-publish
+        run: bash scripts/tooling/check-publish-environment.sh
 
       - name: Install dependencies
         working-directory: sdk
@@ -157,7 +172,8 @@ jobs:
           # automatically requests an OIDC token from GitHub when --provenance
           # is enabled and no NPM_TOKEN is configured.
           NPM_CONFIG_PROVENANCE: 'true'
+          INPUT_DIST_TAG: ${{ inputs.dist_tag }}
         run: |
           set -euo pipefail
-          dist_tag="${{ github.event_name == 'workflow_dispatch' && inputs.dist_tag || 'latest' }}"
+          dist_tag="${INPUT_DIST_TAG:-latest}"
           npm publish --provenance --access public --tag "$dist_tag"

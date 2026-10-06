@@ -37,6 +37,10 @@ jobs:
         working-directory: docs-site
         run: npm ci --no-audit --no-fund
 
+      - name: Verify bounded braces parser
+        working-directory: docs-site
+        run: npm run test:braces
+
       - name: Generate SDK API reference
         working-directory: docs-site
         run: npm run gen:sdk-api
