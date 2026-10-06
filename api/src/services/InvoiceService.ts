@@ -148,8 +148,8 @@ export interface ProcessSettlementResult {
  */
 export class InvoiceService {
   private readonly apiKeyService: ApiKeyService;
-  private readonly invoiceStorage: IInvoiceStorage;
-  private readonly idempotencyStorage: IIdempotencyStorage;
+  private invoiceStorage: IInvoiceStorage;
+  private idempotencyStorage: IIdempotencyStorage;
 
   /**
    * @param keyService         - API key service for merchant authorization.
@@ -176,6 +176,11 @@ export class InvoiceService {
    * process must inject durable invoice storage and an atomic shared
    * idempotency backend before it starts accepting requests.
    */
+  configureStorage(invoiceStorage: IInvoiceStorage, idempotencyStorage: IIdempotencyStorage): void {
+    this.invoiceStorage = invoiceStorage;
+    this.idempotencyStorage = idempotencyStorage;
+  }
+
   assertProductionStorageConfigured(
     env: NodeJS.ProcessEnv = process.env,
   ): void {
@@ -215,7 +220,7 @@ export class InvoiceService {
     // This prevents any API key holder from creating invoices on behalf of
     // a merchant they are not linked to (UNAUTHORIZED_MERCHANT protection).
     if (
-      !this.apiKeyService.isAuthorizedMerchant(
+      !await this.apiKeyService.isAuthorizedMerchantAsync(
         merchantApiKey,
         request.merchant_nft,
       )
@@ -243,7 +248,7 @@ export class InvoiceService {
     //     expiry — audit finding API-M2).
     // `getKeyId` resolves the public identifier without exposing the plaintext
     // key; it is defined here because authorization above already succeeded.
-    const keyId = this.apiKeyService.getKeyId(merchantApiKey);
+    const keyId = await this.apiKeyService.getKeyIdAsync(merchantApiKey);
     const idempotencyKey = generateIdempotencyKey(request, keyId);
     const existingEntry = await this.idempotencyStorage.get(idempotencyKey);
 
@@ -347,7 +352,7 @@ export class InvoiceService {
   async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
     validateInvoiceId(invoiceId);
 
-    const invoice = await this.invoiceStorage.get(invoiceId);
+    let invoice = await this.invoiceStorage.get(invoiceId);
 
     if (!invoice) {
       throw new ValidationError(
@@ -359,8 +364,8 @@ export class InvoiceService {
 
     // Check if expired
     if (isExpired(invoice.expires_at) && invoice.status === 'pending') {
-      invoice.status = 'expired';
-      await this.invoiceStorage.set(invoice);
+      invoice = await this.invoiceStorage.transition(invoiceId, 'pending', 'expired')
+        ?? await this.invoiceStorage.get(invoiceId) ?? invoice;
     }
 
     return invoice;
@@ -407,7 +412,7 @@ export class InvoiceService {
     const invoice = await this.getInvoice(invoiceId);
 
     if (
-      !this.apiKeyService.isAuthorizedMerchant(
+      !await this.apiKeyService.isAuthorizedMerchantAsync(
         merchantApiKey,
         invoice.merchant_nft,
       )
@@ -466,7 +471,7 @@ export class InvoiceService {
     const invoice = await this.getInvoice(invoiceId);
 
     if (
-      !this.apiKeyService.isAuthorizedMerchant(
+      !await this.apiKeyService.isAuthorizedMerchantAsync(
         merchantApiKey,
         invoice.merchant_nft,
       )
@@ -689,11 +694,8 @@ export class InvoiceService {
         is_final: true,
       };
 
-      invoice.status = 'settled';
-      invoice.settlement = settlement;
-      await this.invoiceStorage.set(invoice);
-
-      return { settled: true, invoiceId: invoice.invoice_id };
+      const updated = await this.invoiceStorage.transition(invoice.invoice_id, 'pending', 'settled', { settlement });
+      if (updated) return { settled: true, invoiceId: invoice.invoice_id };
     }
 
     return { settled: false, reason: 'no_matching_invoice' };
@@ -717,10 +719,11 @@ export class InvoiceService {
     const now = Date.now();
 
     // Clean up expired invoices
-    for (const [invoiceId, invoice] of await this.invoiceStorage.entries()) {
+    for (const [invoiceId, storedInvoice] of await this.invoiceStorage.entries()) {
+      let invoice = storedInvoice;
       if (isExpired(invoice.expires_at) && invoice.status === 'pending') {
-        invoice.status = 'expired';
-        await this.invoiceStorage.set(invoice);
+        invoice = await this.invoiceStorage.transition(invoiceId, 'pending', 'expired')
+          ?? await this.invoiceStorage.get(invoiceId) ?? invoice;
       }
 
       // Remove invoices that have been expired for >7 days

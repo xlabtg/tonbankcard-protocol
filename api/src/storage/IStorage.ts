@@ -56,6 +56,9 @@ export interface IInvoiceStorage {
    * @param invoice - Invoice to store
    */
   set(invoice: Invoice): Promise<void>;
+  /** Atomic compare-and-set; patch cannot overwrite unrelated columns. */
+  transition(invoiceId: string, from: Invoice['status'], to: Invoice['status'],
+    patch?: Pick<Invoice, 'settlement'>): Promise<Invoice | undefined>;
 
   /**
    * Retrieve an invoice by its ID.

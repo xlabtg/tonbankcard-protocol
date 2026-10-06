@@ -182,7 +182,7 @@ function parseExpiresAt(value: unknown): string | null {
  *     "expires_at":  null
  *   }
  */
-export function createApiKey(req: Request, res: Response): Response {
+export async function createApiKey(req: Request, res: Response): Promise<Response> {
   try {
     const body = (req.body ?? {}) as CreateKeyRequest;
 
@@ -205,7 +205,7 @@ export function createApiKey(req: Request, res: Response): Response {
       throw new Error('Generated API key failed format validation');
     }
 
-    const apiKey = apiKeyService.registerApiKey(
+    const apiKey = await apiKeyService.registerApiKeyAsync(
       plaintext,
       body.merchant_nft,
       permissions,
@@ -245,14 +245,14 @@ export function createApiKey(req: Request, res: Response): Response {
  *
  * Idempotent: returns 200 on success or when the key is already inactive.
  */
-export function revokeApiKey(req: Request, res: Response): Response {
+export async function revokeApiKey(req: Request, res: Response): Promise<Response> {
   try {
     const { key_id } = req.params;
     if (!key_id || typeof key_id !== 'string') {
       throw new ValidationError(ErrorCode.INVALID_API_KEY, 'key_id path parameter is required');
     }
 
-    const revoked = apiKeyService.revokeByKeyId(key_id);
+    const revoked = await apiKeyService.revokeByKeyIdAsync(key_id);
     if (!revoked) {
       throw new ValidationError(ErrorCode.INVALID_API_KEY, 'Unknown key_id');
     }

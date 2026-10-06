@@ -16,6 +16,7 @@ import { setupApiKeyRoutes } from './routes/apiKeyRoutes';
 import { installSandboxMode, isSandboxMode } from './middleware/sandbox';
 import { configureTrustProxy } from './config/trustProxy';
 import { assertApiKeySecretConfigured } from './config/secrets';
+import { configureProductionStorage } from './storage/production';
 import { invoiceService } from './services/InvoiceService';
 
 const PORT = process.env.PORT || 3000;
@@ -69,12 +70,13 @@ export function createApp(): Express {
 /**
  * Boot the server: fail fast on insecure secrets, then bind the port.
  */
-function startServer(): void {
+async function startServer(): Promise<void> {
   // Fail fast before binding any port if the API-key HMAC secret is missing or
   // insecurely configured. Without this guard a misconfigured deployment would
   // silently hash every API key with a publicly known constant (audit API-H1).
   try {
     assertApiKeySecretConfigured();
+    await configureProductionStorage();
     invoiceService.assertProductionStorageConfigured();
   } catch (err) {
     console.error(`[FATAL] ${(err as Error).message}`);
@@ -97,7 +99,7 @@ function startServer(): void {
 // Only start the server when this file is the entry point. Importing the module
 // (e.g. from tests) just exposes `createApp` without binding a port.
 if (require.main === module) {
-  startServer();
+  startServer().catch(error => { console.error(`[FATAL] ${error.message}`); process.exitCode = 1; });
 }
 
 export default createApp;

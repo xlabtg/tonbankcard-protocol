@@ -112,14 +112,17 @@ export class RedisIdempotencyStorage implements IIdempotencyStorage {
   ): Promise<IdempotencyRecord | undefined> {
     const redisKey = KEY_PREFIX + key;
     const value = JSON.stringify(record);
-    const ttlMs = Math.max(1, record.expiresAt - Date.now());
 
-    const result = await this.client.set(redisKey, value, 'PX', ttlMs, 'NX');
-    if (result) {
-      return undefined;
+    // A rejected NX followed by an expired/deleted key is not an acquisition.
+    // Retry with a fresh TTL; bound contention and fail closed if no winner exists.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const result = await this.client.set(redisKey, value, 'PX',
+        Math.max(1, record.expiresAt - Date.now()), 'NX');
+      if (result === 'OK') return undefined;
+      const existing = await this.get(key);
+      if (existing) return existing;
     }
-
-    return this.get(key);
+    throw new Error('Unable to acquire idempotency key after concurrent expiry');
   }
 
   async get(key: string): Promise<IdempotencyRecord | undefined> {
