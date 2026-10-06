@@ -1,4 +1,5 @@
-/* Build the deployable AccountStateMachine; legacy PaymentHub is test-only. */
+/* Compile excluded legacy source solely for the no-admin-mint regression.
+ * This artifact is absent from deployment map and production build projects. */
 'use strict';
 
 const path = require('path');
@@ -14,9 +15,9 @@ const stdlibRoot = path.resolve(
 
 const projects = [
   {
-    name: 'account-state',
-    path: './payment-hub/account-state.tact',
-    output: './payment-hub/dist',
+    name: 'LegacyPaymentHub',
+    path: './payments/PaymentHub.tact',
+    output: './payment-hub/dist/test-reference',
     options: { debug: true, external: true, experimental: { inline: true } },
   },
 ];

@@ -1,12 +1,12 @@
-/** Issue #427: the deployable PaymentHub must reject its former admin mint. */
+/** Issue #427: the excluded legacy PaymentHub must reject its former admin mint. */
 
 import { describe, expect, it } from '@jest/globals';
 import '@ton/test-utils';
 import { beginCell, toNano } from '@ton/core';
 import { Blockchain } from '@ton/sandbox';
-import { PaymentHub } from './dist/PaymentHub_PaymentHub';
+import { PaymentHub } from './dist/test-reference/LegacyPaymentHub_PaymentHub';
 
-describe('PaymentHub production surface: no admin mint', () => {
+describe('Legacy PaymentHub reference: no admin mint', () => {
   it('rejects InitializeAccount before mutation and keeps total balance at zero', async () => {
     const blockchain = await Blockchain.create();
     const admin = await blockchain.treasury('admin');

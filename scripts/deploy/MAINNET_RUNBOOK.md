@@ -216,7 +216,7 @@ For every deployed contract:
 After the full Phase 2 deploy:
 
 1. Mint a fresh NFT card from the official Series-7777 testnet collection (test environment only — production users are NOT used as guinea pigs). Mint (or reuse) a second card for the merchant account.
-2. Confirm the **NFT Account Resolver registers both the payer and merchant NFT accounts** in `MerchantPaymentHub` via `ResolveNFTOwner` (binds `nft_owners` and marks `account_states = ACTIVE`, write-once). Until this runs the hub returns `ERROR_PAYER_NOT_EXISTS` / `ERROR_MERCHANT_NOT_EXISTS` and every payment fails (Issue #397). Verify with the `accountExists` / `getNFTResolver` get-methods.
+2. Confirm the **NFT Account Resolver registers both the payer and merchant NFT accounts** in `MerchantPaymentHub` via `ResolveNFTOwner` (binds `nft_owners` and marks new `account_states = ACTIVE`, refresh preserves existing state). Until this runs the hub returns `ERROR_PAYER_NOT_EXISTS` / `ERROR_MERCHANT_NOT_EXISTS` and every payment fails (Issue #397). Verify with the `accountExists` / `getNFTResolver` get-methods.
 3. Verify `getTBCSettlement()` equals the audited settlement contract address recorded in the manifest; admin, deployer, and resolver addresses must differ from it.
 4. Submit one `TBCDeposit` with a globally unique `deposit_id`, fund the payer with ≤ 0.1 TBC, and record both the source settlement transaction and deposit ID. Confirm `isDepositProcessed(deposit_id) = true`; replaying the same ID must fail without changing the balance.
 5. Use the [Merchant SDK](../../sdk/) to issue a low-value (≤ 0.1 TBC) invoice against the freshly deployed `MerchantPaymentHub`.

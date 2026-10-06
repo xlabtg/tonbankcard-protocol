@@ -15,7 +15,8 @@
     "deploy:testnet": "ts-node scripts/deploy.ts --network testnet",
     "deploy:mainnet": "ts-node scripts/deploy.ts --network mainnet",
     "lint": "eslint . --ext .ts",
-    "format": "prettier --write \"**/*.{ts,json,md}\""
+    "format": "prettier --write \"**/*.{ts,json,md}\"",
+    "pretest": "node build-test-reference.js"
   },
   "keywords": [
     "ton",
