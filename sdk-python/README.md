@@ -49,6 +49,7 @@ with MerchantClient(api_key="tbck_live_...") as client:
 import asyncio
 from tonbankcard_merchant import AsyncMerchantClient
 
+
 async def main() -> None:
     async with AsyncMerchantClient(api_key="tbck_live_...") as client:
         invoice = await client.create_invoice(
@@ -57,6 +58,7 @@ async def main() -> None:
             callback_url="https://merchant.example.com/webhook",
         )
         print(invoice.payment_url)
+
 
 asyncio.run(main())
 ```
@@ -69,6 +71,7 @@ and breaks the signature.
 
 ```python
 from tonbankcard_merchant import verify_webhook, SignatureVerificationError
+
 
 def fastapi_handler(request, secret: str):
     raw = request.body  # bytes
