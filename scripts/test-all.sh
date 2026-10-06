@@ -23,7 +23,7 @@ for pkg in "${PACKAGES[@]}"; do
     continue
   fi
   echo "==> Testing $pkg"
-  if ! (cd "$REPO_ROOT/$pkg" && npm test); then
+  if ! (cd "$REPO_ROOT/$pkg" && npm test -- "$@"); then
     failures+=("$pkg")
   fi
 done

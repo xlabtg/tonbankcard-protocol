@@ -4,7 +4,7 @@
 Установите `NODE_ENV=production`, `DATABASE_URL` и `REDIS_URL` (с аутентификацией Redis).
 Startup проверяет соединения и наличие таблиц до открытия HTTP listener. При ошибке
 запуск завершается; fallback в память отсутствует. Все реплики используют одну базу
-и Redis; API keys сохраняются как SHA-256 hash, plaintext key не записывается.
+и Redis; API keys сохраняются как HMAC-SHA256 hash, plaintext key не записывается.
 Регистрация/отзыв ключей сохраняются в PostgreSQL, validation не использует локальный кэш.
 
 Интеграционная проверка: `TEST_DATABASE_URL=... TEST_REDIS_URL=... npm test -- --runInBand ProductionStorage.integration`.
