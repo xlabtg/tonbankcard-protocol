@@ -28,6 +28,8 @@ const SignatureVersion = "v1"
 const DefaultToleranceSeconds = 300
 
 // versionKeyRe matches a versioned signature key such as "v1" or "v2".
+var decimalTimestampRe = regexp.MustCompile(`^[0-9]+$`)
+
 var versionKeyRe = regexp.MustCompile(`^v\d+$`)
 
 // ComputeSignature returns the HMAC-SHA256 hex digest of `${timestamp}.${payload}`
@@ -96,7 +98,7 @@ func VerifyWebhook(secret, payload []byte, signature string, opts ...VerifyOptio
 		opt(&options)
 	}
 
-	if len(secret) == 0 {
+	if len(strings.TrimSpace(string(secret))) == 0 {
 		return nil, fmt.Errorf("%w: empty secret", ErrSignatureVerification)
 	}
 	if signature == "" {
@@ -125,7 +127,14 @@ func VerifyWebhook(secret, payload []byte, signature string, opts ...VerifyOptio
 	if err != nil {
 		return nil, fmt.Errorf("%w: signature is not valid hex: %v", ErrSignatureVerification, err)
 	}
-	expected, err := hex.DecodeString(ComputeSignature(secret, strconv.FormatInt(timestamp, 10), payload))
+	timestampText := ""
+	for _, part := range strings.Split(signature, ",") {
+		key, val, _ := strings.Cut(part, "=")
+		if strings.TrimSpace(key) == "t" {
+			timestampText = strings.TrimSpace(val)
+		}
+	}
+	expected, err := hex.DecodeString(ComputeSignature(secret, timestampText, payload))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrSignatureVerification, err)
 	}
@@ -170,7 +179,7 @@ func parseSignatureHeader(value string) (int64, map[string]string, error) {
 		switch {
 		case key == "t":
 			parsed, err := strconv.ParseInt(val, 10, 64)
-			if err != nil || parsed <= 0 {
+			if err != nil || parsed <= 0 || parsed > 9007199254740991 || !decimalTimestampRe.MatchString(val) {
 				return 0, nil, fmt.Errorf("%w: malformed signature timestamp", ErrSignatureVerification)
 			}
 			timestamp = parsed

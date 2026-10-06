@@ -44,6 +44,7 @@ export interface WebhookVerificationResult {
   valid: boolean;
   /** Machine-readable reason on failure. */
   reason?:
+    | 'invalid_secret'
     | 'missing_signature'
     | 'malformed_signature'
     | 'unsupported_version'
@@ -62,6 +63,7 @@ export interface VerifyWebhookOptions {
 /** Internal representation of a parsed signature header. */
 interface ParsedSignature {
   timestamp: number;
+  timestampText: string;
   versionedSignatures: Map<string, string>;
 }
 
@@ -69,6 +71,7 @@ function parseSignatureHeader(value: string): ParsedSignature | null {
   if (typeof value !== 'string' || value.length === 0) return null;
 
   let timestamp: number | undefined;
+  let timestampText = '';
   const versionedSignatures = new Map<string, string>();
 
   for (const part of value.split(',')) {
@@ -77,9 +80,11 @@ function parseSignatureHeader(value: string): ParsedSignature | null {
     const key = rawKey.trim();
     const val = rawVal.trim();
     if (key === 't') {
+      if (!/^[0-9]+$/.test(val)) return null;
       const parsed = Number(val);
-      if (!Number.isInteger(parsed) || parsed <= 0) return null;
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) return null;
       timestamp = parsed;
+      timestampText = val;
     } else if (/^v\d+$/.test(key)) {
       versionedSignatures.set(key, val);
     }
@@ -89,7 +94,7 @@ function parseSignatureHeader(value: string): ParsedSignature | null {
     return null;
   }
 
-  return { timestamp, versionedSignatures };
+  return { timestamp, timestampText, versionedSignatures };
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -143,6 +148,9 @@ export function verifyWebhook(
   signature: string | undefined | null,
   options: VerifyWebhookOptions = {}
 ): WebhookVerificationResult {
+  if (typeof secret !== 'string' || secret.trim().length === 0) {
+    return { valid: false, reason: 'invalid_secret' };
+  }
   if (!signature) {
     return { valid: false, reason: 'missing_signature' };
   }
@@ -165,7 +173,7 @@ export function verifyWebhook(
 
   const expected = computeWebhookSignature(
     secret,
-    parsed.timestamp.toString(),
+    parsed.timestampText,
     rawBody
   );
   // Compare hex case-insensitively for cross-SDK parity. `computeWebhookSignature`

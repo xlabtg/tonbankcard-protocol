@@ -25,7 +25,7 @@ import {
  * Mirrors the constant in `src/sdk.ts` and the indexer's event parser.
  */
 const MERCHANT_PAYMENT_OP = 0x3b4c2365;
-const MERCHANT_PAYMENT_REQUEST_OP = 0x16b56831;
+const MERCHANT_PAYMENT_REQUEST_OP = 112790503;
 const MAX_TBC_NANOCOINS = (2n ** 120n) - 1n;
 
 /**

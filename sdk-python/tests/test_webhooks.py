@@ -165,3 +165,29 @@ def test_verify_webhook_accepts_string_payload() -> None:
     body, sig = _sign(_payload())
     parsed = verify_webhook(SECRET, body.decode("utf-8"), sig, now=NOW)
     assert parsed.invoice_id == "inv_xyz"
+
+
+@pytest.mark.parametrize("secret", ["", " ", b"", b"\t\n"])
+def test_blank_secret_conformance(secret):
+    body = "{}"
+    ts = 1700000000
+    signature = f"t={ts},v1={compute_signature(secret, ts, body)}"
+    with pytest.raises(SignatureVerificationError):
+        verify_webhook(secret, body, signature, now=ts)
+
+
+@pytest.mark.parametrize(
+    "ts", ["0x6553f100", "1.7e9", "+1700000000", "\u0661\u0667" + "\u0660" * 8]
+)
+def test_decimal_timestamp_conformance(ts):
+    body = "{}"
+    signature = f"t={ts},v1={compute_signature('secret', ts, body)}"
+    with pytest.raises(SignatureVerificationError):
+        verify_webhook("secret", body, signature, now=1700000000)
+
+
+def test_leading_zero_timestamp_preserves_signed_bytes() -> None:
+    body = json.dumps(_payload())
+    timestamp = "0" + str(NOW)
+    signature = f"t={timestamp},v1={compute_signature(SECRET, timestamp, body)}"
+    assert verify_webhook(SECRET, body, signature, now=NOW).invoice_id == "inv_xyz"

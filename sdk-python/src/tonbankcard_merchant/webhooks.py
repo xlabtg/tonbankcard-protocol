@@ -65,13 +65,14 @@ def compute_signature(
     return mac.hexdigest()
 
 
-def _parse_signature_header(value: str) -> Optional[tuple[int, dict[str, str]]]:
+def _parse_signature_header(value: str) -> Optional[tuple[int, str, dict[str, str]]]:
     """Parse a ``t=<ts>,vN=<hex>`` header into its timestamp and signatures.
 
     Unknown keys are ignored for forward compatibility. Returns ``None`` if the
     header is malformed.
     """
     timestamp: Optional[int] = None
+    timestamp_text = ""
     versioned: dict[str, str] = {}
 
     for part in value.split(","):
@@ -81,19 +82,20 @@ def _parse_signature_header(value: str) -> Optional[tuple[int, dict[str, str]]]:
         key = key.strip()
         val = val.strip()
         if key == "t":
-            if not val.isdigit():
+            if not re.fullmatch(r"[0-9]+", val):
                 return None
             parsed = int(val)
-            if parsed <= 0:
+            if parsed <= 0 or parsed > 9007199254740991:
                 return None
             timestamp = parsed
+            timestamp_text = val
         elif _VERSION_KEY_RE.match(key):
             versioned[key] = val
         # Ignore unknown keys.
 
     if timestamp is None or not versioned:
         return None
-    return timestamp, versioned
+    return timestamp, timestamp_text, versioned
 
 
 def verify_webhook(
@@ -128,13 +130,15 @@ def verify_webhook(
             signature does not match (constant-time compare), or the payload is
             not a valid JSON object.
     """
+    if not secret or not secret.strip():
+        raise SignatureVerificationError("Invalid webhook secret")
     if not signature:
         raise SignatureVerificationError("Missing webhook signature")
 
     parsed = _parse_signature_header(signature.strip())
     if parsed is None:
         raise SignatureVerificationError("Malformed webhook signature header")
-    timestamp, versioned = parsed
+    timestamp, timestamp_text, versioned = parsed
 
     current = time.time() if now is None else now
     if abs(current - timestamp) > tolerance:
@@ -146,7 +150,7 @@ def verify_webhook(
     if not provided or not _HEX_RE.match(provided):
         raise SignatureVerificationError("Webhook signature is not a hex digest")
 
-    expected = compute_signature(secret, timestamp, payload)
+    expected = compute_signature(secret, timestamp_text, payload)
     if not hmac.compare_digest(expected.lower(), provided.lower()):
         raise SignatureVerificationError("Webhook signature mismatch")
 

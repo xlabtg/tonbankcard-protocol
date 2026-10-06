@@ -1,6 +1,6 @@
 {
   "name": "@tonbankcard/merchant-sdk",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Non-custodial Merchant SDK for TONBANKCARD payments integration",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,7 +18,12 @@
       "import": "./dist/browser.mjs",
       "require": "./dist/browser.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./wallet-link": {
+      "types": "./dist/wallet-link.d.ts",
+      "import": "./dist/wallet-link.mjs",
+      "require": "./dist/wallet-link.js"
+    }
   },
   "scripts": {
     "build": "tsup",
@@ -92,5 +97,12 @@
     "dist",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "typesVersions": {
+    "*": {
+      "wallet-link": [
+        "dist/wallet-link.d.ts"
+      ]
+    }
+  }
 }
