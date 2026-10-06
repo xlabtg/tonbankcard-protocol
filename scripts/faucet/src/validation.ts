@@ -1,14 +1,4 @@
-/**
- * Address validation for the TBC faucet.
- *
- * The faucet accepts the two TON address forms most wallets emit:
- *
- *   - Raw form: `<workchain>:<hex64>` (e.g. `0:abc…`)
- *   - User-friendly base64url form: 48 chars, e.g. `EQAbc…` / `kQAbc…`
- *
- * We intentionally avoid pulling in `@ton/core` here so the faucet can run as
- * a tiny standalone service without the heavier TON SDK dependency.
- */
+import { Address } from '@ton/core';
 
 export class FaucetValidationError extends Error {
   constructor(
@@ -24,13 +14,9 @@ export class FaucetValidationError extends Error {
   }
 }
 
-const RAW_ADDRESS_RE = /^-?[0-9]+:[0-9a-fA-F]{64}$/;
-const FRIENDLY_ADDRESS_RE = /^[A-Za-z0-9_-]{48}$/;
-
 export function isValidTonAddress(address: string): boolean {
-  if (!address || typeof address !== 'string') return false;
-  const trimmed = address.trim();
-  return RAW_ADDRESS_RE.test(trimmed) || FRIENDLY_ADDRESS_RE.test(trimmed);
+  if (typeof address !== 'string' || !address.trim()) return false;
+  try { Address.parse(address.trim()); return true; } catch { return false; }
 }
 
 export function assertValidTonAddress(address: unknown): string {
@@ -44,7 +30,7 @@ export function assertValidTonAddress(address: unknown): string {
       'address must be a TON address in raw (`0:hex`) or user-friendly (48-char base64url) form',
     );
   }
-  return trimmed;
+  return Address.parse(trimmed).toRawString();
 }
 
 /** Default dispense amount in TBC nanocoins (10 TBC). */
@@ -53,13 +39,14 @@ export const DEFAULT_DISPENSE_NANOCOINS = 10_000_000_000n;
 /** Hard upper bound the sandbox will ever hand out per call (100 TBC). */
 export const MAX_DISPENSE_NANOCOINS = 100_000_000_000n;
 
-export function parseDispenseAmount(raw: unknown): bigint {
+export function parseDispenseAmount(raw: unknown, maximum = DEFAULT_DISPENSE_NANOCOINS): bigint {
   if (raw === undefined || raw === null || raw === '') {
-    return DEFAULT_DISPENSE_NANOCOINS;
+    return maximum;
   }
   let value: bigint;
   try {
-    value = typeof raw === 'bigint' ? raw : BigInt(String(raw));
+    if (!/^[0-9]+$/.test(String(raw))) throw new Error('Invalid decimal');
+    value = BigInt(String(raw));
   } catch {
     throw new FaucetValidationError(
       'INVALID_AMOUNT',
@@ -69,10 +56,10 @@ export function parseDispenseAmount(raw: unknown): bigint {
   if (value <= 0n) {
     throw new FaucetValidationError('INVALID_AMOUNT', 'amount must be positive');
   }
-  if (value > MAX_DISPENSE_NANOCOINS) {
+  if (value > maximum) {
     throw new FaucetValidationError(
       'AMOUNT_EXCEEDED',
-      `amount may not exceed ${MAX_DISPENSE_NANOCOINS.toString()} nanocoins per dispense`,
+      `amount may not exceed ${maximum.toString()} nanocoins per dispense`,
     );
   }
   return value;

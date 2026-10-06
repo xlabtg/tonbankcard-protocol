@@ -67,6 +67,9 @@ export interface CardAccount {
  * This is informational only - it does NOT execute payments.
  */
 export interface PaymentRequest {
+  /** Payer NFT required to serialize the on-chain payment request. */
+  payerNft?: string;
+
   /** Merchant's NFT account address */
   merchantNft: string;
 

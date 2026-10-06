@@ -32,3 +32,5 @@ export type {
   HttpsClientOptions,
   HttpsFetchOptions,
 } from './network/httpsClient';
+
+export { configurePaymentContext, getPaymentContext } from './paymentContext';

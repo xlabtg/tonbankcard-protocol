@@ -51,6 +51,8 @@ export interface DispenseResult {
 export interface FaucetServerOptions {
   dispenser: IDispenser;
   rateLimiter?: FaucetRateLimiter;
+  ipMaxPerHour?: number;
+  globalMaxPerHour?: number;
   /** Default dispense amount in TBC nanocoins (overrides per-request defaults). */
   defaultDispenseNanocoins?: bigint;
   /** Surfaced in `/faucet/status`; e.g. `ton-testnet`. */
@@ -75,6 +77,15 @@ export function createFaucetServer(options: FaucetServerOptions): Express {
     logger = console,
   } = options;
 
+  if (defaultDispenseNanocoins <= 0n || defaultDispenseNanocoins > 100_000_000_000n) throw new Error('Invalid dispense configuration');
+  const budget = new Map<string, number[]>();
+  const allowBudget = (key: string, maximum: number) => {
+    const now = Date.now();
+    for (const [id, hits] of budget) if (hits.every(t => t <= now - 3600000)) budget.delete(id);
+    const hits = (budget.get(key) ?? []).filter(t => t > now - 3600000);
+    if (hits.length >= maximum) return false;
+    hits.push(now); budget.set(key, hits); return true;
+  };
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '2kb' }));
@@ -140,7 +151,11 @@ export function createFaucetServer(options: FaucetServerOptions): Express {
   app.post('/faucet/dispense', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const address = assertValidTonAddress(req.body?.address);
-      const amount = parseDispenseAmount(req.body?.amount ?? defaultDispenseNanocoins);
+      const amount = parseDispenseAmount(req.body?.amount, defaultDispenseNanocoins);
+      if (!allowBudget(`ip:${req.ip}`, options.ipMaxPerHour ?? 5) || !allowBudget('global', options.globalMaxPerHour ?? 100)) {
+        res.setHeader('Retry-After', '3600');
+        return res.status(429).json({ error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Faucet budget exceeded' } });
+      }
 
       const decision = rateLimiter.consume(address);
       if (!decision.allowed) {

@@ -1,3 +1,4 @@
+import { Address } from '@ton/core';
 /**
  * Faucet rate limiter — per-wallet sliding window.
  *
@@ -67,6 +68,7 @@ export class FaucetRateLimiter {
   peek(address: string): RateLimitDecision {
     const key = normaliseAddress(address);
     const now = this.now();
+    for (const existing of this.hits.keys()) this.activeTimestamps(existing, now);
     const timestamps = this.activeTimestamps(key, now);
     return this.decide(timestamps, now);
   }
@@ -79,6 +81,7 @@ export class FaucetRateLimiter {
   consume(address: string): RateLimitDecision {
     const key = normaliseAddress(address);
     const now = this.now();
+    for (const existing of this.hits.keys()) this.activeTimestamps(existing, now);
     const timestamps = this.activeTimestamps(key, now);
     const decision = this.decide(timestamps, now);
 
@@ -119,7 +122,8 @@ export class FaucetRateLimiter {
     const cutoff = now - this.windowMs;
     const previous = this.hits.get(key) ?? [];
     const fresh = previous.filter((ts) => ts > cutoff);
-    if (fresh.length !== previous.length) {
+    if (!fresh.length) this.hits.delete(key);
+    else if (fresh.length !== previous.length) {
       this.hits.set(key, fresh);
     }
     return fresh;
@@ -142,5 +146,5 @@ export class FaucetRateLimiter {
  * + hash pair; we let strict validation happen in the route layer.
  */
 export function normaliseAddress(address: string): string {
-  return address.trim().toLowerCase();
+  return Address.parse(address.trim()).toRawString();
 }

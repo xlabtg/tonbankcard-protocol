@@ -1,3 +1,4 @@
+import { Address } from '@ton/core';
 import { describe, it, expect } from '@jest/globals';
 import {
   assertValidTonAddress,
@@ -12,8 +13,8 @@ describe('isValidTonAddress', () => {
   it.each([
     '0:' + 'a'.repeat(64),
     '-1:' + 'F'.repeat(64),
-    'EQ' + 'A'.repeat(46),
-    'kQ' + 'A'.repeat(46),
+    Address.parse('0:' + 'a'.repeat(64)).toString(),
+    Address.parse('0:' + 'a'.repeat(64)).toString({testOnly:true}),
   ])('accepts %s', (addr) => {
     expect(isValidTonAddress(addr)).toBe(true);
   });

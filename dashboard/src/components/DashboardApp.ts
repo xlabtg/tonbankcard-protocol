@@ -534,6 +534,8 @@ export class TonbankcardDashboard {
       const expVal = expInput?.value ? parseInt(expInput.value, 10) : undefined;
 
       const link = generateInvoiceLink(this.config.merchantNft, {
+        paymentHubAddress: this.config.paymentHubAddress,
+        payerNft: this.config.payerNft,
         amountTbc: amountVal,
         orderId: orderVal,
         description: descVal,
