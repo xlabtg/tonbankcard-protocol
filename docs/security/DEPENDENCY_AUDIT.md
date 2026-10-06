@@ -4,7 +4,25 @@
 > Roadmap reference: [TEMP/DEVELOPMENT_ROADMAP.md — Track D, D5](../../TEMP/DEVELOPMENT_ROADMAP.md)
 > Related security artefacts: [SECURITY.md](../../SECURITY.md), [docs/security/audits/](audits/)
 
-## 0. Current control status (2026-08-13)
+## 0. Current control status (2026-10-06)
+
+CHECK501 ([#501](https://github.com/xlabtg/tonbankcard-protocol/issues/501))
+found the audit job failing in all nine workspaces because of new advisories.
+Lockfiles were refreshed, `jest` was upgraded to 30.5.2 in `sdk`, `api`,
+`backend/indexer` and `scripts/faucet` (jest 30 no longer depends on the
+unpatched `braces`), and docs-site pins `tinypool@2.2.0` via `overrides`.
+
+| Workspace | High/Critical after remediation | CI threshold |
+|---|---:|---|
+| `sdk`, `api`, `backend/indexer`, `scripts/faucet` | 0 | High |
+| `wallet-ui`, `mobile`, `mobile-app`, `dashboard` | 0 | High |
+| `docs-site` | 1 High (`braces@3.0.3`, no patched release) | Critical (temporary) |
+
+The docs-site exception is tracked in
+[#520](https://github.com/xlabtg/tonbankcard-protocol/issues/520); restore the
+High threshold once upstream ships a fix.
+
+## 0.1 Previous control status (2026-08-13)
 
 The CHECK423 audit re-ran `npm audit` against every shipped npm workspace with
 a committed lockfile after fresh CI run
