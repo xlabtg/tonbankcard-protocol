@@ -54,6 +54,7 @@
     "node": ">=18.0"
   },
   "overrides": {
-    "serialize-javascript": "7.1.0"
+    "serialize-javascript": "7.1.0",
+    "tinypool": "2.2.0"
   }
 }

@@ -1,0 +1,9 @@
+== sdk: braces(high,fix={"name":"jest","version":"30.5.2","isSemVerMajor":true}) prod:ok
+== api: braces(high,fix={"name":"jest","version":"30.5.2","isSemVerMajor":true}) prod:ok
+== backend/indexer: braces(high,fix={"name":"jest","version":"30.5.2","isSemVerMajor":true}) prod:ok
+== wallet-ui:  prod:ok
+== mobile:  prod:ok
+== mobile-app:  prod:ok
+== dashboard:  prod:ok
+== scripts/faucet: braces(high,fix={"name":"jest","version":"30.5.2","isSemVerMajor":true}) prod:ok
+== docs-site: braces(high,fix={"name":"@docusaurus/core","version":"3.7.0","isSemVerMajor":true}) tinypool(critical,fix={"name":"@docusaurus/core","version":"3.7.0","isSemVerMajor":true}) prod:FAIL

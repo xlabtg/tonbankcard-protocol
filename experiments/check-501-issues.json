@@ -1,0 +1,164 @@
+[
+  {
+    "id": "CHECK501-C1",
+    "sev": "Critical",
+    "stage": "1-critical",
+    "area": "contracts",
+    "title": "AccountLocks.set_lock не сохраняет lock — fraud/collateral locks не действуют",
+    "file": "audit/check-501/findings/CHECK501-C1-account-locks-set-lock-noop.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/503"
+  },
+  {
+    "id": "CHECK501-H1",
+    "sev": "High",
+    "stage": "2-high",
+    "area": "contracts",
+    "title": "Lock-состояние AccountLocks никогда не доходит до MerchantPaymentHub",
+    "file": "audit/check-501/findings/CHECK501-H1-locks-not-propagated-to-merchant-hub.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/504"
+  },
+  {
+    "id": "CHECK501-H2",
+    "sev": "High",
+    "stage": "2-high",
+    "area": "contracts",
+    "title": "Владелец NFT записывается один раз — контроль не переходит при transfer NFT (нарушение I2)",
+    "file": "audit/check-501/findings/CHECK501-H2-nft-owner-write-once.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/505"
+  },
+  {
+    "id": "CHECK501-H3",
+    "sev": "High",
+    "stage": "2-high",
+    "area": "indexer",
+    "title": "Indexer молча пропускает блок и его события при ошибке TON API",
+    "file": "audit/check-501/findings/CHECK501-H3-indexer-skips-blocks-on-fetch-error.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/506"
+  },
+  {
+    "id": "CHECK501-H4",
+    "sev": "High",
+    "stage": "2-high",
+    "area": "mobile/dashboard",
+    "title": "Mobile и dashboard deep links передают сумму TBC как TON и шлют на NFT мерчанта",
+    "file": "audit/check-501/findings/CHECK501-H4-client-deeplinks-tbc-as-ton.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/507"
+  },
+  {
+    "id": "CHECK501-M1",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "contracts",
+    "title": "PaymentHub после #427 не имеет пути пополнения и привязки владельца",
+    "file": "audit/check-501/findings/CHECK501-M1-paymenthub-no-funding-path.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/508"
+  },
+  {
+    "id": "CHECK501-M2",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "deployment",
+    "title": "verify.ts не может пройти для реального Tact deploy, а проверка admin опциональна (неполный #425)",
+    "file": "audit/check-501/findings/CHECK501-M2-verifier-data-hash-and-admin.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/509"
+  },
+  {
+    "id": "CHECK501-M3",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "governance",
+    "title": "Автор proposal сам задаёт quorum и длительность голосования",
+    "file": "audit/check-501/findings/CHECK501-M3-proposal-author-controls-quorum.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/510"
+  },
+  {
+    "id": "CHECK501-M4",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "api",
+    "title": "Expiry и settlement invoice перезаписывают друг друга (lost update)",
+    "file": "audit/check-501/findings/CHECK501-M4-invoice-status-lost-update.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/511"
+  },
+  {
+    "id": "CHECK501-M5",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "api",
+    "title": "API не стартует в production: persistent storage не подключён, API keys только в памяти",
+    "file": "audit/check-501/findings/CHECK501-M5-api-production-storage-unwired.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/512"
+  },
+  {
+    "id": "CHECK501-M6",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "faucet",
+    "title": "Rate limit faucet обходится альтернативными записями адреса; клиент выбирает сумму до hard cap",
+    "file": "audit/check-501/findings/CHECK501-M6-faucet-rate-limit-bypass.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/513"
+  },
+  {
+    "id": "CHECK501-M7",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "sdk",
+    "title": "TS и Python SDK принимают пустой webhook secret (Go отклоняет)",
+    "file": "audit/check-501/findings/CHECK501-M7-webhook-empty-secret.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/514"
+  },
+  {
+    "id": "CHECK501-M8",
+    "sev": "Medium",
+    "stage": "3-medium",
+    "area": "CI/release",
+    "title": "Publish workflows: `inputs.*` интерполируются в `run:`, публикация с любой ветки, PyPI без тестов",
+    "file": "audit/check-501/findings/CHECK501-M8-publish-workflows-hardening.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/515"
+  },
+  {
+    "id": "CHECK501-L1",
+    "sev": "Low",
+    "stage": "4-low",
+    "area": "governance",
+    "title": "Pending-maps governance растут без ограничения",
+    "file": "audit/check-501/findings/CHECK501-L1-governance-pending-maps-unbounded.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/516"
+  },
+  {
+    "id": "CHECK501-L2",
+    "sev": "Low",
+    "stage": "4-low",
+    "area": "adapters",
+    "title": "Adapters валидируют суммы и периоды через `parseFloat` и принимают мусор",
+    "file": "audit/check-501/findings/CHECK501-L2-adapters-parsefloat-amounts.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/517"
+  },
+  {
+    "id": "CHECK501-L3",
+    "sev": "Low",
+    "stage": "4-low",
+    "area": "api",
+    "title": "Redis `setIfAbsent` может сообщить успех без записи ключа",
+    "file": "audit/check-501/findings/CHECK501-L3-redis-setifabsent-race.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/518"
+  },
+  {
+    "id": "CHECK501-L4",
+    "sev": "Low",
+    "stage": "4-low",
+    "area": "sdk",
+    "title": "Парсинг timestamp webhook расходится между SDK",
+    "file": "audit/check-501/findings/CHECK501-L4-webhook-timestamp-parity.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/519"
+  },
+  {
+    "id": "CHECK501-L5",
+    "sev": "Low",
+    "stage": "4-low",
+    "area": "dependencies",
+    "title": "docs-site временно аудируется на уровне Critical из-за неисправленного braces",
+    "file": "audit/check-501/findings/CHECK501-L5-docs-site-braces-exception.md",
+    "url": "https://github.com/xlabtg/tonbankcard-protocol/issues/520"
+  }
+]
