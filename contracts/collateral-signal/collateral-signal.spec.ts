@@ -126,30 +126,15 @@ describe('CollateralSignal — production hardening (Issue #364)', () => {
             });
         });
 
-        it('is write-once: even the resolver cannot overwrite an existing binding (CONTRACTS-M1)', async () => {
-            const res = await resolveOwner(nftResolver, aliceNft, attacker.address);
-            expect(res.transactions).toHaveTransaction({
-                from: nftResolver.address,
-                to: signal.address,
-                success: false,
-            });
-        });
-
-        it('preserves the original owner binding after a rejected overwrite (CONTRACTS-M1)', async () => {
-            // Attempt to re-point Alice's NFT to the attacker.
-            await resolveOwner(nftResolver, aliceNft, attacker.address);
-
-            // Alice can still act as the owner; the attacker cannot.
-            await signal.send(
-                aliceOwner.getSender(),
-                { value: GAS },
-                {
-                    $$type: 'UpdateCollateralSignalRequest',
-                    nft_address: aliceNft,
-                    new_state: COLLATERAL_SIGNAL_WARNING,
-                    collateral_amount_ton: toNano('500'),
-                },
-            );
+        it('refreshes ownership and revokes the previous owner without resetting signal state', async () => {
+            await signal.send(aliceOwner.getSender(), {value:GAS}, {$$type:'SignalCollateralRequest',nft_address:aliceNft,collateral_amount_ton:toNano('100')});
+            const refreshed = await resolveOwner(nftResolver, aliceNft, attacker.address);
+            expect(refreshed.transactions).toHaveTransaction({from:nftResolver.address,to:signal.address,success:true});
+            expect(await signal.getGetCollateralSignalState(aliceNft)).toBe(COLLATERAL_SIGNAL_ACTIVE);
+            const update = {$$type:'UpdateCollateralSignalRequest' as const,nft_address:aliceNft,new_state:COLLATERAL_SIGNAL_WARNING,collateral_amount_ton:toNano('500')};
+            await signal.send(aliceOwner.getSender(),{value:GAS},update);
+            expect(await signal.getGetCollateralSignalState(aliceNft)).toBe(COLLATERAL_SIGNAL_ACTIVE);
+            await signal.send(attacker.getSender(),{value:GAS},update);
             expect(await signal.getGetCollateralSignalState(aliceNft)).toBe(COLLATERAL_SIGNAL_WARNING);
         });
     });

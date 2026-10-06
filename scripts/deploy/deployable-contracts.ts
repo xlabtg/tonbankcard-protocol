@@ -12,8 +12,9 @@
  * (0xDEAD) on every message, and the resolver stub returns dummy/empty owner data.
  *
  * To make sure neither file can be deployed or verified as a production artefact,
- * the deployable contract map below resolves PaymentHub to its production Tact
- * source. NFTAccountResolver is excluded until its Tact placeholder implements
+ * the legacy PaymentHub is excluded because it cannot fund accounts (#508).
+ * VerifiedNFTAccountResolver implements authenticated owner refresh (#505).
+ * NFTAccountResolver is excluded until its Tact placeholder implements
  * an authenticated asynchronous TEP-62 request/callback flow and has Sandbox
  * coverage (Issue #426). PublicCollateralLookup is also excluded until it reads
  * Account Locks state instead of returning a stubbed result. The
@@ -34,7 +35,7 @@
 export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
   AccountLocks: ['contracts/payments/account-locks.fc'],
   AccountStateMachine: ['contracts/payment-hub/account-state.tact'],
-  PaymentHub: ['contracts/payments/PaymentHub.tact'],
+  VerifiedNFTAccountResolver: ['contracts/nft-resolver/VerifiedNFTAccountResolver.tact'],
   MerchantPaymentHub: ['contracts/MerchantPaymentHub.tact'],
   CollateralSignal: ['contracts/CollateralSignal.tact'],
   ProposalRegistry: ['contracts/governance/ProposalRegistry.tact'],
@@ -63,12 +64,14 @@ export const DEPLOYABLE_CONTRACTS: Record<string, string[]> = {
  *   owner/relayer bootstrap receivers and remain blocked from mainnet until A2.
  */
 export const NON_PRODUCTION_STUBS: string[] = [
+  'contracts/payments/PaymentHub.tact',
   'contracts/payments/payment-hub.fc',
   'contracts/nft-resolver/nft_account_resolver.fc',
   'contracts/nft-resolver/nft_account_resolver.tact',
   'contracts/collateral-lookup/PublicCollateralLookup.tact',
   'contracts/collateral-lookup/public-collateral-lookup.fc',
   'contracts/merchant-hub/test/MerchantPaymentHubHarness.tact',
+  'contracts/merchant-hub/test/AccountNFTHarness.tact',
   'contracts/phase4/test/RecurringPaymentsHarness.tact',
   'contracts/phase4/test/MultiSigCardHarness.tact',
   'contracts/phase4/test/CrossChainBridgeHarness.tact',

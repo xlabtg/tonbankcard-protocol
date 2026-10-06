@@ -399,6 +399,9 @@ cell storage = begin_cell()
   .store_dict(lock_dict)           // Dictionary: nft_hash -> LockState
   .store_slice(risk_authority)     // Address of risk authority
   .store_slice(lending_adapter)    // Address of lending adapter
+  .store_uint(0, 1).store_uint(0, 2).store_uint(0, 32) // No pending risk transfer
+  .store_uint(0, 1).store_uint(0, 2).store_uint(0, 32) // No pending lending transfer
+  .store_ref(begin_cell().store_uint(0, 2).end_cell()) // Hub initially addr_none
 .end_cell()
 
 Dictionary Entry (LockState):
@@ -581,3 +584,10 @@ if (fraudLocked) {
 - [Test Suite](tests/README.md) - Testing guidelines
 - [Architecture](../../docs/architecture.md) - System architecture
 - [Issue #7](https://github.com/xlabtg/tonbankcard-protocol/issues/7) - Original specification
+
+## Привязка production hub
+
+Risk authority один раз отправляет `0x5001:uint32` + адрес MerchantPaymentHub.
+`get_payment_hub` возвращает неизменяемую привязку. До неё операции lock
+отклоняются. Каждый set/clear отправляет `ApplyAccountLock` (opcode 1170261328)
+с NFT и двумя флагами, inline, non-bounceable, с 50 млн nanoTON на gas.

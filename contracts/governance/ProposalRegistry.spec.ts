@@ -159,6 +159,22 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
         );
     }
 
+    it('bounds silent requests, expires them and releases bounced requests #516', async () => {
+        await resolver.send(deployer.getSender(), {value:GAS}, {$$type:'SetTestResponseMode', mode:1n});
+        for (let i=0; i<4; i++) await submitProposal(ownerOf1, 1n);
+        expect(await registry.getGetPendingCount()).toBe(4n);
+        await submitProposal(ownerOf1, 1n);
+        expect(await registry.getGetPendingCount()).toBe(4n);
+        const early = await registry.send(attacker.getSender(), {value:GAS}, {$$type:'CleanupPending',query_id:0n});
+        expect(early.transactions).toHaveTransaction({to:registry.address,success:false});
+        blockchain.now = (blockchain.now ?? Math.floor(Date.now()/1000)) + 3601;
+        for (let i=0; i<4; i++) await registry.send(attacker.getSender(), {value:GAS}, {$$type:'CleanupPending',query_id:BigInt(i)});
+        expect(await registry.getGetPendingCount()).toBe(0n);
+        await resolver.send(deployer.getSender(), {value:GAS}, {$$type:'SetTestResponseMode', mode:2n});
+        for (let i=0; i<8; i++) await submitProposal(ownerOf1, 1n);
+        expect(await registry.getGetPendingCount()).toBe(0n);
+    });
+
     async function castVote(
         voter: SandboxContract<TreasuryContract>,
         proposalId: bigint,
@@ -332,11 +348,21 @@ describe('ProposalRegistry — on-chain NFT ownership verification', () => {
         expect(proposal!.quorum_threshold).toBe(RESOLVER_STYLE_DEFAULT_QUORUM);
     });
 
+    it.each([1n, 22n, 24n, 18446744073709551615n])('rejects caller-selected quorum %s', async (quorum) => {
+        await submitProposal(ownerOf1, 1n, 3600n, quorum);
+        expect(await registry.getGetProposalCount()).toBe(0n);
+        expect(await registry.getGetPendingCount()).toBe(0n);
+    });
+    it.each([1n, 3599n, 2592001n, 18446744073709551615n])('rejects unbounded voting duration %s', async (duration) => {
+        await submitProposal(ownerOf1, 1n, duration);
+        expect(await registry.getGetProposalCount()).toBe(0n);
+    });
+
     it('finalizes 22 default-threshold votes as NO_QUORUM, matching the resolver boundary', async () => {
         const startTime = (blockchain.now ?? Math.floor(Date.now() / 1000)) + 60;
         blockchain.now = startTime;
 
-        await submitProposal(ownerOf1, 1n, 10n);
+        await submitProposal(ownerOf1, 1n, 3600n);
         const proposal = await registry.getGetProposal(1n);
         expect(proposal).not.toBeNull();
         expect(proposal!.quorum_threshold).toBe(RESOLVER_STYLE_DEFAULT_QUORUM);

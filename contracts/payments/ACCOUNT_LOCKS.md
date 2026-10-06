@@ -49,6 +49,11 @@ The contract stores a dictionary mapping:
 nft_address_hash (256-bit) -> LockState
 ```
 
+The storage also includes pending role-transfer fields and a reference containing
+`payment_hub` (initially `addr_none`, bound once by risk authority with opcode `0x5001`).
+`get_payment_hub` exposes this immutable binding. Each set/clear sends the exact
+`ApplyAccountLock` Tact message to this hub with 50 million nanoTON gas.
+
 Plus two authority addresses:
 - `risk_authority`: Can set/clear fraud locks
 - `lending_adapter`: Can set/clear collateral locks

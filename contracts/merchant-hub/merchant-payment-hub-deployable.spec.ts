@@ -322,38 +322,38 @@ describe('MerchantPaymentHub — deployable production contract (Issue #397)', (
     // ========================================================================
     // (4) Write-once binding — a registered NFT cannot be silently re-pointed
     // ========================================================================
-    describe('write-once binding: a registered NFT cannot be silently re-pointed', () => {
+    describe('authenticated refresh: NFT transfer replaces spending authority', () => {
         beforeEach(async () => {
             await resolveOwner(payerNft, payerOwner.address);
             await resolveOwner(merchantNft, merchantOwner.address);
             await deposit(1n, payerNft, toNano('100'));
         });
 
-        it('rejects a second ResolveNFTOwner for the same NFT (even from the resolver)', async () => {
+        it('accepts refreshed ownership from the immutable resolver', async () => {
             const res = await resolveOwner(payerNft, attacker.address); // resolver re-point attempt
             expect(res.transactions).toHaveTransaction({
                 from: nftResolver.address,
                 to: hub.address,
-                success: false,
+                success: true,
             });
         });
 
-        it('keeps the original owner binding after a rejected re-registration', async () => {
+        it('revokes the old owner and authorizes the new owner without changing balances', async () => {
             await resolveOwner(payerNft, attacker.address); // rejected, must be a no-op
 
             // The attacker (the claimed "new owner") still cannot spend the payer NFT...
-            const usurp = await pay(attacker, payerNft, merchantNft, toNano('30'));
+            const usurp = await pay(payerOwner, payerNft, merchantNft, toNano('30'));
             expect(usurp.transactions).toHaveTransaction({
                 from: hub.address,
-                to: attacker.address,
+                to: payerOwner.address,
                 body: paymentResponse(false, ERROR_NOT_OWNER),
             });
 
             // ...and the original owner still can: the binding is unchanged.
-            const legit = await pay(payerOwner, payerNft, merchantNft, toNano('30'));
+            const legit = await pay(attacker, payerNft, merchantNft, toNano('30'));
             expect(legit.transactions).toHaveTransaction({
                 from: hub.address,
-                to: payerOwner.address,
+                to: attacker.address,
                 body: paymentResponse(true, ERROR_NONE),
             });
             expect(await hub.getGetBalance(payerNft)).toBe(toNano('70'));

@@ -24,8 +24,8 @@
 //   * Account registration (nft_owners / account_states) is performed ONLY by the
 //     trusted on-chain NFT Account Resolver (`nft_resolver`, set immutably at init)
 //     via `receive(msg: ResolveNFTOwner)`, NOT by an admin handler. The handler is
-//     write-once (CONTRACTS-M1 / #279): it binds an NFT to its resolved owner and
-//     marks the account ACTIVE, and cannot silently re-point an existing binding.
+//     resolver-authenticated: it refreshes ownership after transfer (#505).
+//     Only a new account is initialized ACTIVE; existing state is preserved.
 //     This directly mirrors how CollateralSignal (Issue #364) replaced its
 //     deployer-gated `RegisterNFTOwner` with the resolver-gated `ResolveNFTOwner`.
 //     Issue #363 documented this registration path but never implemented it, so a
@@ -178,7 +178,7 @@ message MerchantAccountLockApplied {
 // initial ACTIVE account state are bound by the dedicated NFT Account Resolver
 // (`nft_resolver`), which verifies real NFT ownership off-contract (synchronous
 // cross-contract owner resolution is impossible on TON; see CONTRACTS-H3 / #260)
-// and pushes the result here. Accepted ONLY from `nft_resolver`; write-once. This
+// and pushes the result here. Accepted ONLY from immutable `nft_resolver`; authenticated refresh. This
 // is the SAME message shape (and opcode) the resolver sends to CollateralSignal
 // (Issue #364), so a single resolver code path can register an NFT across the
 // protocol's consumer contracts.
@@ -247,7 +247,7 @@ trait MerchantPaymentHubBase {
     // the initial account state via ResolveNFTOwner (immutable, set at init).
     // INVARIANT I3 (No Admin Control): this address cannot move funds or change
     // balances — it can only bind an NFT to its resolved owner and mark it ACTIVE
-    // (write-once). The admin/deployer has NO account-registration path (Issue #397).
+    // (authenticated refresh). The admin/deployer has NO account-registration path (Issue #397).
     nft_resolver: Address;
 
     // Immutable TBC settlement contract authorised to attest deposits. Neither
@@ -425,14 +425,15 @@ trait MerchantPaymentHubBase {
     // funds nor mints balances (balances come from the on-chain TBC ledger /
     // settlement flow), so it does not re-introduce the admin-mint backdoor C-MPH-C1.
     //
-    // The binding is write-once (CONTRACTS-M1 / #279): once an NFT is bound to an
-    // owner it cannot be silently re-pointed, so even a buggy resolver cannot hijack
-    // an already-registered account. Mirrors CollateralSignal.ResolveNFTOwner (#364).
+    // Authenticated resolver refresh replaces the owner after NFT transfer.
+    // Account balances, lock/state and collateral values remain intact.
     receive(msg: ResolveNFTOwner) {
         require(sender() == self.nft_resolver, "Unauthorized: only NFT resolver");
-        require(self.nft_owners.get(msg.nft_address) == null, "NFT owner already registered");
+
         self.nft_owners.set(msg.nft_address, msg.owner);
-        self.account_states.set(msg.nft_address, ACCOUNT_STATE_ACTIVE);
+        if (self.account_states.get(msg.nft_address) == null) {
+            self.account_states.set(msg.nft_address, ACCOUNT_STATE_ACTIVE);
+        }
 
         emit(MerchantNFTOwnerRegistered{
             nft_address: msg.nft_address,

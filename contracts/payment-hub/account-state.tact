@@ -80,6 +80,8 @@ contract AccountStateMachine with Deployable {
     // ========================================================================
 
     // Get account state (read-only)
+    get fun getOwner(): Address { return self.owner; }
+
     get fun getAccountState(nft_address: Address): AccountState {
         return self.getOrDefault(nft_address);
     }

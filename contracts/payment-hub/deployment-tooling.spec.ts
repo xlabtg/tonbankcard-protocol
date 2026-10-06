@@ -1,7 +1,7 @@
 /** Regression coverage for CHECK423-H1 deployment integrity. */
 
 import { describe, expect, it, jest } from '@jest/globals';
-import { beginCell, Cell } from '@ton/core';
+import { Address, beginCell, Cell } from '@ton/core';
 import { Blockchain } from '@ton/sandbox';
 import { AccountStateMachine } from './dist/account-state_AccountStateMachine';
 import {
@@ -18,6 +18,7 @@ import {
   assertPhase4MainnetAllowed,
 } from '../../scripts/deploy/phase4-release-gate';
 
+const RISK = Address.parse('0:' + '11'.repeat(32)).toString();
 const ADMIN = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c';
 
 function cell(seed: number): Cell {
@@ -25,7 +26,7 @@ function cell(seed: number): Cell {
 }
 
 function liveManifest(code = cell(1), data = cell(2)): DeploymentManifest {
-  const prepared = buildUnsignedDeployment('PaymentHub', code, data, 0);
+  const prepared = buildUnsignedDeployment('MerchantPaymentHub', code, data, 0);
   return {
     version: '1.0.0',
     manifestType: 'tonbankcard.deploy.manifest',
@@ -33,17 +34,17 @@ function liveManifest(code = cell(1), data = cell(2)): DeploymentManifest {
     network: 'mainnet',
     timestamp: '2026-08-13T00:00:00.000Z',
     commit: 'a'.repeat(40),
-    configuration: { adminAddress: ADMIN, riskAuthority: ADMIN, lendingAdapter: null },
+    configuration: { deployerAddress: Address.parse("0:" + "33".repeat(32)).toString(), adminAddress: ADMIN, riskAuthority: RISK, lendingAdapter: null },
     verificationBlock: 123,
     contracts: {
-      PaymentHub: {
+      MerchantPaymentHub: {
         address: prepared.address,
         codeHash: prepared.codeHash,
         dataHash: prepared.dataHash,
         stateInitBoc: prepared.stateInitBoc,
         unsignedStateInitBoc: prepared.unsignedStateInitBoc,
         workchain: 0,
-        initParameters: { admin: ADMIN },
+        initParameters: { admin: ADMIN, account_locks: RISK, nft_resolver: RISK, tbc_settlement: RISK },
       },
     },
   };
@@ -63,7 +64,7 @@ describe('CHECK423-H1: unsigned deployment artefacts', () => {
 
   it('rejects dry-run markers and malformed live manifests', () => {
     const manifest = liveManifest();
-    manifest.contracts.PaymentHub.address = '[DRY RUN] fake';
+    manifest.contracts.MerchantPaymentHub.address = '[DRY RUN] fake';
 
     expect(() => validateDeploymentManifest(manifest, 'live')).toThrow(/address/i);
     expect(() => validateDeploymentManifest({ ...liveManifest(), artefactType: 'dry-run' }, 'live'))
@@ -78,7 +79,7 @@ describe('CHECK423-H1: unsigned deployment artefacts', () => {
 
   it('blocks Phase 4 mainnet manifests until the canonical A2 verdict is READY', () => {
     const phase4 = liveManifest();
-    phase4.contracts = { RecurringPayments: phase4.contracts.PaymentHub };
+    phase4.contracts = { RecurringPayments: phase4.contracts.MerchantPaymentHub };
     expect(() => validateDeploymentManifest(phase4, 'live')).toThrow(/A2 verdict.*READY/i);
 
     phase4.network = 'testnet';
@@ -91,37 +92,30 @@ describe('CHECK423-H1: unsigned deployment artefacts', () => {
     expect(a2VerdictAllowsMainnet('**Gating verdict:** READY')).toBe(true);
     expect(a2VerdictAllowsMainnet('**Gating verdict:** READY WITH ACCEPTED RISKS')).toBe(true);
 
-    expect(() => assertPhase4MainnetAllowed('mainnet', ['PaymentHub'])).not.toThrow();
+    expect(() => assertPhase4MainnetAllowed('mainnet', ['MerchantPaymentHub'])).not.toThrow();
     expect(() => assertPhase4MainnetAllowed('testnet', ['RecurringPayments'])).not.toThrow();
   });
 });
 
 describe('CHECK423-H1: block-pinned on-chain verification', () => {
-  it('matches code and init state obtained from TON Sandbox', async () => {
+  it('uses original fromInit artefact while verifying post-init Sandbox state', async () => {
     const blockchain = await Blockchain.create();
     const owner = await blockchain.treasury('deployment-owner');
-    const contract = blockchain.openContract(await AccountStateMachine.fromInit(owner.address));
-    const sender = await blockchain.treasury('deployment-sender');
-    await contract.send(sender.getSender(), { value: 50_000_000n }, { $$type: 'Deploy', queryId: 0n });
+    const wrapper = await AccountStateMachine.fromInit(owner.address);
+    const contract = blockchain.openContract(wrapper);
+    await contract.send(owner.getSender(), {value:100_000_000n}, {$$type:'Deploy',queryId:0n});
     const state = await blockchain.getContract(contract.address);
-    if (state.accountState?.type !== 'active') throw new Error('sandbox contract is not active');
-    const code = state.accountState.state.code;
-    const data = state.accountState.state.data;
-    if (!code || !data) throw new Error('sandbox active state has no code/data');
-    const prepared = buildUnsignedDeployment('AccountStateMachine', code, data, 0);
-    const manifest = liveManifest(code, data);
-    manifest.contracts = {
-      AccountStateMachine: {
-        ...prepared,
-        initParameters: {},
-      },
-    };
-    const provider: ChainStateProvider = {
-      getContractState: async () => ({ block: 123, state: 'active', code, data, adminAddress: null }),
-    };
-
-    const report = await verifyManifest(manifest, 'sandbox.json', provider);
-    expect(report.allPassed).toBe(true);
+    if (state.accountState?.type !== 'active') throw new Error('inactive');
+    const {code,data} = state.accountState.state;
+    const prepared = buildUnsignedDeployment('AccountStateMachine', wrapper.init!.code, wrapper.init!.data, 0);
+    expect(prepared.address).toBe(contract.address.toString());
+    expect(data!.hash().equals(wrapper.init!.data.hash())).toBe(false);
+    const manifest = liveManifest();
+    manifest.contracts = {AccountStateMachine:{...prepared,initParameters:{owner:owner.address.toString()}}};
+    const provider: ChainStateProvider = {getContractState:async()=>({block:123,state:'active',code:code!,data:data!,adminAddress:owner.address.toString(),configurationValues:{owner:(await contract.getGetOwner()).toString()}})};
+    expect((await verifyManifest(manifest,'sandbox.json',provider)).allPassed).toBe(true);
+    delete manifest.contracts.AccountStateMachine.initParameters.owner;
+    expect((await verifyManifest(manifest,'sandbox.json',provider)).allPassed).toBe(false);
   });
 
   it('passes when active chain code/data and admin match the manifest', async () => {
@@ -134,6 +128,7 @@ describe('CHECK423-H1: block-pinned on-chain verification', () => {
         code,
         data,
         adminAddress: ADMIN,
+        configurationValues: {admin:ADMIN,account_locks:RISK,nft_resolver:RISK,tbc_settlement:RISK},
       })),
     };
 
@@ -148,7 +143,7 @@ describe('CHECK423-H1: block-pinned on-chain verification', () => {
     expect(provider.getContractState).toHaveBeenCalledWith(
       expect.anything(),
       123,
-      'PaymentHub',
+      'MerchantPaymentHub',
     );
   });
 
@@ -161,6 +156,7 @@ describe('CHECK423-H1: block-pinned on-chain verification', () => {
         code: cell(99),
         data: cell(2),
         adminAddress: ADMIN,
+        configurationValues: {admin:ADMIN,account_locks:RISK,nft_resolver:RISK,tbc_settlement:RISK},
       }),
     };
 
@@ -173,10 +169,11 @@ describe('CHECK423-H1: block-pinned on-chain verification', () => {
 
   it('rejects a manifest hash that does not match the compiled StateInit', async () => {
     const manifest = liveManifest();
-    manifest.contracts.PaymentHub.codeHash = 'f'.repeat(64);
+    manifest.contracts.MerchantPaymentHub.codeHash = 'f'.repeat(64);
     const provider: ChainStateProvider = {
       getContractState: async () => ({
         block: 123, state: 'active', code: cell(1), data: cell(2), adminAddress: ADMIN,
+        configurationValues: {admin:ADMIN,account_locks:RISK,nft_resolver:RISK,tbc_settlement:RISK},
       }),
     };
 
@@ -193,6 +190,7 @@ describe('CHECK423-H1: block-pinned on-chain verification', () => {
         code: cell(1),
         data: cell(2),
         adminAddress: ADMIN,
+        configurationValues: {admin:ADMIN,account_locks:RISK,nft_resolver:RISK,tbc_settlement:RISK},
       }),
     };
 
@@ -204,10 +202,11 @@ describe('CHECK423-H1: block-pinned on-chain verification', () => {
 
   it('fails closed when verificationBlock precedes deployBlock', async () => {
     const manifest = liveManifest();
-    manifest.contracts.PaymentHub.deployBlock = 124;
+    manifest.contracts.MerchantPaymentHub.deployBlock = 124;
     const provider: ChainStateProvider = {
       getContractState: async () => ({
         block: 123, state: 'active', code: cell(1), data: cell(2), adminAddress: ADMIN,
+        configurationValues: {admin:ADMIN,account_locks:RISK,nft_resolver:RISK,tbc_settlement:RISK},
       }),
     };
 
@@ -215,4 +214,26 @@ describe('CHECK423-H1: block-pinned on-chain verification', () => {
     expect(report.allPassed).toBe(false);
     expect(report.results[0].errors.join(' ')).toMatch(/precedes deploy block 124/i);
   });
+});
+
+describe('required authorities and separated deployment roles #509', () => {
+ const provider:ChainStateProvider={getContractState:async()=>({block:123,state:'active',code:cell(1),data:cell(2),adminAddress:ADMIN,configurationValues:{admin:ADMIN,account_locks:RISK,nft_resolver:RISK,tbc_settlement:RISK}})};
+ it.each(['admin','account_locks','nft_resolver','tbc_settlement'])('fails if %s is absent',async parameter=>{
+  const manifest=liveManifest(); delete manifest.contracts.MerchantPaymentHub.initParameters[parameter];
+  expect((await verifyManifest(manifest,'manifest.json',provider)).allPassed).toBe(false);
+ });
+ it('fails when admin is mismatched',async()=>{
+  const manifest=liveManifest(); manifest.contracts.MerchantPaymentHub.initParameters.admin=RISK;
+  expect((await verifyManifest(manifest,'manifest.json',provider)).allPassed).toBe(false);
+ });
+ it.each(['deployerAddress','riskAuthority'] as const)('fails when %s equals admin',async role=>{
+  const manifest=liveManifest(); manifest.configuration[role]=ADMIN;
+  const report=await verifyManifest(manifest,'manifest.json',provider);
+  expect(report.allPassed).toBe(false);
+  expect(report.results[0].errors.join(' ')).toMatch(/must be distinct/);
+ });
+ it('fails when deployer is omitted',async()=>{
+  const manifest=liveManifest();delete manifest.configuration.deployerAddress;
+  expect((await verifyManifest(manifest,'manifest.json',provider)).allPassed).toBe(false);
+ });
 });

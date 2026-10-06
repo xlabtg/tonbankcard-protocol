@@ -21,7 +21,7 @@ const project = (
 export const DEPLOYABLE_BUILD_PROJECTS: DeployableBuildProject[] = [
   project('AccountLocks', 'contracts/payments/account-locks.fc', 'func'),
   project('AccountStateMachine', 'contracts/payment-hub/account-state.tact', 'tact'),
-  project('PaymentHub', 'contracts/payments/PaymentHub.tact', 'tact'),
+  project('VerifiedNFTAccountResolver', 'contracts/nft-resolver/VerifiedNFTAccountResolver.tact', 'tact'),
   project('MerchantPaymentHub', 'contracts/MerchantPaymentHub.tact', 'tact'),
   project('CollateralSignal', 'contracts/CollateralSignal.tact', 'tact'),
   project('ProposalRegistry', 'contracts/governance/ProposalRegistry.tact', 'tact'),

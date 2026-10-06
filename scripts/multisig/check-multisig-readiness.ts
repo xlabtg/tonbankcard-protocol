@@ -757,7 +757,7 @@ export function checkContractEvidence(content: string | null): CheckResult[] {
         name: 'MultiSigCard.tact proposalKey uses a packed-cell hash (MS-CH-1 landed)',
         // Tempered-greedy `(?:(?!\bfun )[\s\S])*?` keeps the match inside the
         // proposalKey body so it cannot bleed into the approvalKey function.
-        passed: /fun proposalKey\b(?:(?!\bfun )[\s\S])*?beginCell\(\)(?:(?!\bfun )[\s\S])*?storeAddress\(nft_address\)(?:(?!\bfun )[\s\S])*?storeUint\(proposal_id,\s*64\)(?:(?!\bfun )[\s\S])*?endCell\(\)\s*\.hash\(\)/.test(content),
+        passed: /fun proposalKey\b(?:(?!\bfun )[\s\S])*?beginCell\(\)(?:(?!\bfun )[\s\S])*?storeAddress\(nft_address\)(?:(?!\bfun )[\s\S])*?storeInt\(proposal_id,\s*257\)(?:(?!\bfun )[\s\S])*?endCell\(\)\s*\.hash\(\)/.test(content),
         detail: 'MS-CH-1 closed on-chain — see CONTRACT_HARDENING.md §3 and SPECIFICATION.md §3.3',
     });
 
@@ -766,7 +766,7 @@ export function checkContractEvidence(content: string | null): CheckResult[] {
     results.push({
         id: 'CT.approvalKey.hardened',
         name: 'MultiSigCard.tact approvalKey uses a packed-cell hash (MS-CH-1 landed)',
-        passed: /fun approvalKey\b(?:(?!\bfun )[\s\S])*?beginCell\(\)(?:(?!\bfun )[\s\S])*?storeAddress\(nft_address\)(?:(?!\bfun )[\s\S])*?storeUint\(proposal_id,\s*64\)(?:(?!\bfun )[\s\S])*?storeAddress\(signer\)(?:(?!\bfun )[\s\S])*?endCell\(\)\s*\.hash\(\)/.test(content),
+        passed: /fun approvalKey\b(?:(?!\bfun )[\s\S])*?beginCell\(\)(?:(?!\bfun )[\s\S])*?storeAddress\(nft_address\)(?:(?!\bfun )[\s\S])*?storeInt\(proposal_id,\s*257\)(?:(?!\bfun )[\s\S])*?storeAddress\(signer\)(?:(?!\bfun )[\s\S])*?endCell\(\)\s*\.hash\(\)/.test(content),
         detail: 'MS-CH-1 closed on-chain — see CONTRACT_HARDENING.md §3 and SPECIFICATION.md §3.3',
     });
 

@@ -35,6 +35,13 @@ const stdlibRoot = path.resolve(
 
 // Project paths/outputs are relative to contractsRoot (the VFS root).
 const PROJECTS = [
+  { name:'AccountNFTHarness', path:'./merchant-hub/test/AccountNFTHarness.tact', output:'./merchant-hub/dist', options:{debug:true,external:true} },
+  {
+    name: 'VerifiedNFTAccountResolver',
+    path: './nft-resolver/VerifiedNFTAccountResolver.tact',
+    output: './merchant-hub/dist',
+    options: { debug: true, external: true },
+  },
   {
     name: 'MerchantPaymentHub',
     path: './merchant-hub/entry/MerchantPaymentHub.tact',

@@ -122,6 +122,7 @@ function prepareManifest(inputPath: string, network: 'testnet' | 'mainnet'): Dep
     timestamp: new Date().toISOString(),
     commit: currentCommit(),
     configuration: {
+      deployerAddress: process.env.DEPLOYER_ADDRESS ?? '',
       adminAddress: process.env.ADMIN_ADDRESS ?? '',
       riskAuthority: process.env.RISK_AUTHORITY_ADDRESS ?? '',
       lendingAdapter: process.env.LENDING_ADAPTER_ADDRESS ?? null,
