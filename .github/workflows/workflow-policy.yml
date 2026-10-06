@@ -42,7 +42,7 @@ jobs:
     name: Every workflow declares least-privilege permissions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check workflow permissions blocks
         run: bash scripts/tooling/check-workflow-permissions.sh
